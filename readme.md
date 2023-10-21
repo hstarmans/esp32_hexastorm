@@ -1,6 +1,5 @@
 # ESP32
 
-
 # Development Notes
 The following is a list of notes of things I figured out so far.
 
@@ -23,6 +22,12 @@ The flash memory is available as /flash or /pyboard.
 ```repl``` gives you an interactive developer environment with
 the board.
 Esptool can also be used to flash and erase the ESP32. 
+
+# SD Card
+I made a board with a ESP32 microcontroller and a SD CARD.
+Too mount the SD card, I wrote some additional code. This
+is not needed in the latest version of the Hexastorm, as the
+the ESP32-S3-WROOM-2 has 32 MB onboard memory.
 
 # Fomuflash
 I made a frozen module for Fomuflash. 
@@ -49,7 +54,6 @@ Recompile, check the module is cross compiled, erase the flash
 and flash the new binary to the memory.
 
 # Pinout
-
-Pinout of the ESP32 can be found [here](https://microcontrollerslab.com/esp32-pinout-use-gpio-pins/).
+Pinout of the ESP32 board I used for this code, can be found [here](https://microcontrollerslab.com/esp32-pinout-use-gpio-pins/).
 Accessing the ports is outlined in the [quickref](https://docs.micropython.org/en/latest/esp32/quickref.html).
 
