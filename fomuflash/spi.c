@@ -970,7 +970,7 @@ int spiWrite(struct ff_spi *spi, uint32_t addr, const uint8_t *data, unsigned in
 	uint32_t check_byte;
 	for (erase_addr = addr; erase_addr < (addr + count); erase_addr += ERASE_BLOCK_SIZE) {
 		if (!quiet) {
-			printf("\rErasing @ %06x / %06x", erase_addr, addr + count);
+			printf("\rErasing @ %06lx / %06lx", erase_addr, addr + count);
 			fflush(stdout);
 		}
 
@@ -986,7 +986,7 @@ int spiWrite(struct ff_spi *spi, uint32_t addr, const uint8_t *data, unsigned in
 			spiRead(spi, check_addr, check_bfr, sizeof(check_bfr));
 			for (check_byte = 0; check_byte < sizeof(check_bfr); check_byte++) {
 				if (check_bfr[check_byte] != 0xff) {
-					fprintf(stderr, "flash didn't erase @ 0x%08x\n", check_addr);
+					fprintf(stderr, "flash didn't erase @ 0x%08lx\n", check_addr);
 					return 1;
 				}
 			}
@@ -1015,7 +1015,7 @@ int spiWrite(struct ff_spi *spi, uint32_t addr, const uint8_t *data, unsigned in
 	int total = count;
 	while (count) {
 		if (!quiet) {
-			printf("\rProgramming @ %06x / %06x", addr, total);
+			printf("\rProgramming @ %06lx / %06x", addr, total);
 			fflush(stdout);
 		}
 		spiBegin(spi);
@@ -1041,7 +1041,7 @@ int spiWrite(struct ff_spi *spi, uint32_t addr, const uint8_t *data, unsigned in
 		spi_wait_for_not_busy(spi, 1000);
 	}
 	if (!quiet) {
-		printf("\rProgramming @ %06x / %06x", addr, total);
+		printf("\rProgramming @ %06lx / %06x", addr, total);
 		printf("  Done\n");
 	}
 	return 0;

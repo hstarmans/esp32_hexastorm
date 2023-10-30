@@ -3,7 +3,32 @@
 # Development Notes
 The following is a list of notes of things I figured out so far.
 
-## Getting Micropython
+## Creating a binary
+As described on [esp32](https://github.com/micropython/micropython/tree/master/ports/esp32).
+I start by install espd-idf.
+```bash
+$ cd esp-idf
+$ git checkout v5.0.2
+$ git submodule update --init --recursive
+$ ./install.sh       # (or install.bat on Windows)
+$ source export.sh   # (or export.bat on Windows)
+$ cd.. # back to starting directory
+```
+The `install.sh` step only needs to be done once. You will need to source
+`export.sh` for every new session.
+Hereafter I install Micropython.
+```bash
+$ cd micropython
+$ cd mpy-cross
+$ make
+$ cd ..
+$ cd ports/esp32
+$ make submodules
+$ make USER_C_MODULES=../../../../micropython.cmake
+```
+
+
+
 Follow the instructions outlined [here](https://docs.micropython.org/en/latest/develop/gettingstarted.html). 
 Clone micropython, build the cross-compiler and go to
 the ports/esp32 directory. 

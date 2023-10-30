@@ -1,0 +1,9 @@
+[submodule "micropython-ulab"]
+	path = micropython-ulab
+	url = https://github.com/v923z/micropython-ulab
+[submodule "micropython"]
+	path = micropython
+	url = https://github.com/micropython/micropython
+[submodule "esp-idf"]
+	path = esp-idf
+	url = https://github.com/espressif/esp-idf.git

@@ -94,7 +94,4 @@ const mp_obj_module_t pythonwrap_module = {
 };
 
 // Register the module to make it available in Python.
-// Note: the "1" in the third argument means this module is always enabled.
-// This "1" can be optionally replaced with a macro like MODULE_CEXAMPLE_ENABLED
-// which can then be used to conditionally enable this module.
-MP_REGISTER_MODULE(MP_QSTR_fomuflash, pythonwrap_module, 1);
+MP_REGISTER_MODULE(MP_QSTR_fomuflash, pythonwrap_module);

@@ -1,3 +1,10 @@
+
+// TODO: get errors with oro16 and ora16 being uninitialized
+//       believe it to be compiler problem
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+
+
 #include <assert.h>
 #include <string.h>
 #include <stdlib.h>
@@ -216,7 +223,7 @@ int ice40_patch(struct irw_file *f, struct irw_file *rom,
     while (((b = irw_readb(rom)) != EOF) && input_ptr <= byte_count)
         i8[input_ptr++] = b;
     if (input_ptr > byte_count) {
-        fprintf(stderr, "input file is larger than %d bytes\n", byte_count);
+        fprintf(stderr, "input file is larger than %ld bytes\n", byte_count);
         return -1;
     }
     DEBUG_PRINT("read %d bytes from rom\n", input_ptr);
@@ -477,7 +484,7 @@ int ice40_patch(struct irw_file *f, struct irw_file *rom,
                 break;
 
             default:
-                printf("unrecognized command 0x%02x 0x%02x\n", cmd, payload);
+                printf("unrecognized command 0x%02x 0x%02lx\n", cmd, payload);
                 break;
             }
             break;
@@ -511,7 +518,7 @@ int ice40_patch(struct irw_file *f, struct irw_file *rom,
                 bs.frequency_range = 2;
                 break;
             default:
-                printf("unknown frequency range payload: %02x\n", payload);
+                printf("unknown frequency range payload: %02lx\n", payload);
                 break;
             }
             break;
@@ -552,7 +559,7 @@ int ice40_patch(struct irw_file *f, struct irw_file *rom,
                 bs.nosleep = 1;
                 break;
             default:
-                printf("unrecognized feature flags: %02x\n", payload);
+                printf("unrecognized feature flags: %02lx\n", payload);
                 break;
             }
             break;
@@ -568,3 +575,7 @@ int ice40_patch(struct irw_file *f, struct irw_file *rom,
 
     return errors;
 }
+
+// TODO: add back uninialized check which got removed at
+//       start of this file
+#pragma GCC diagnostic pop     
