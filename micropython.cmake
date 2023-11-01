@@ -6,7 +6,7 @@
 include(${CMAKE_CURRENT_LIST_DIR}/fomuflash/micropython.cmake)
 
 # Ulab
-#include(${CMAKE_CURRENT_LIST_DIR}/micropython-ulab/micropython.cmake)
+include(${CMAKE_CURRENT_LIST_DIR}/micropython-ulab/code/micropython.cmake)
 
 # TMCStepper
 include(${CMAKE_CURRENT_LIST_DIR}/TMCStepper/micropython.cmake)

@@ -1,8 +1,5 @@
 # ESP32
 
-# Development Notes
-The following is a list of notes of things I figured out so far.
-
 ## Creating a binary
 As described on [esp32](https://github.com/micropython/micropython/tree/master/ports/esp32).
 I start by install espd-idf.
@@ -26,7 +23,8 @@ $ cd ports/esp32
 $ make submodules
 $ make USER_C_MODULES=../../../../micropython.cmake
 ```
-
+You have to run ```make erase``` after ```make submodules```,
+if you change the cmake file.
 
 
 Follow the instructions outlined [here](https://docs.micropython.org/en/latest/develop/gettingstarted.html). 
@@ -64,15 +62,11 @@ To fix this I made a frozen module for the TMC stepper drivers.
 
 
 ## Webserver
-I dropped the idea for webserver. For now I want to work via the rpython shell.
-This simplifies development.
-I did get one running but it is not longer updated.
-Originally, my idea was to work with a webserver on the ESP32.
-An example is shown here [MicroWebSrv2](https://github.com/jczic/MicroWebSrv2).
-This idea has been dropped for now.
+Developing a webserver is not a priority. For now, I want to work via the rpython shell.
+Best option for the webserver seems to be [microdot](https://github.com/miguelgrinberg/microdot/tree/main)
+Another interesting opption is [MicroWebSrv2](https://github.com/jczic/MicroWebSrv2).
+This webserver is no longer under active development.
 
-You need to compile MicroPython with [MicroWebSrv2](https://github.com/jczic/MicroWebSrv2). 
-Build the generic version of MicroPython.
 Place MicroWebSrv2, only the MicroWebSrv2 subfolder, into the modules directory. This is known as a frozen [module](https://learn.adafruit.com/micropython-basics-loading-modules/frozen-modules).
 Also place sdcard.py in the modules directory, located in micropython/drivers.
 Recompile, check the module is cross compiled, erase the flash

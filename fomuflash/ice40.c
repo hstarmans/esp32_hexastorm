@@ -1,10 +1,3 @@
-
-// TODO: get errors with oro16 and ora16 being uninitialized
-//       believe it to be compiler problem
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
-
-
 #include <assert.h>
 #include <string.h>
 #include <stdlib.h>
@@ -208,8 +201,10 @@ int ice40_patch(struct irw_file *f, struct irw_file *rom,
     uint32_t output_rand[byte_count / sizeof(uint32_t)];
     uint32_t output_rom[byte_count / sizeof(uint32_t)];
     uint8_t *i8 = (uint8_t *)input_rom;
-    uint16_t *ora16 = (uint16_t *)output_rand;
-    uint16_t *oro16 = (uint16_t *)output_rom;
+    uint16_t ora16[byte_count / sizeof(uint16_t)];
+    uint16_t oro16[byte_count / sizeof(uint16_t)];
+    memcpy(ora16, output_rand, byte_count);
+    memcpy(oro16, output_rom, byte_count);
     unsigned int ora_ptr = 0;
     unsigned int input_ptr;
     int b;
@@ -575,7 +570,3 @@ int ice40_patch(struct irw_file *f, struct irw_file *rom,
 
     return errors;
 }
-
-// TODO: add back uninialized check which got removed at
-//       start of this file
-#pragma GCC diagnostic pop     
