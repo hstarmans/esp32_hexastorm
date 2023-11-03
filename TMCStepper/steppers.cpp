@@ -16,12 +16,12 @@
                       // Watterott TMC5160 uses 0.075
 
 extern "C" {
-#include <examplemodule.h>
+#include <steppersmodule.h>
 
 
 // Here we implement the function using C++ code, but since it's
 // declaration has to be compatible with C everything goes in extern "C" scope.
-mp_obj_t cppfunc() {
+mp_obj_t init() {
 
    // chain_length is defined in TMCStepper class and has been modified
    // by changing original files, note that chain lenght is also changed by passing the one with the largest index

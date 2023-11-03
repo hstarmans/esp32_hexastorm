@@ -4,9 +4,10 @@
 I follow the procedure desribed on [esp32](https://github.com/micropython/micropython/tree/master/ports/esp32).
 I start by installing espd-idf.
 ```bash
+$ git clone https://github.com/hstarmans/esp32_hexastorm
+$ git submodule update --init
 $ cd esp-idf
 $ git checkout v5.0.2
-$ git submodule update --init --recursive
 $ ./install.sh       # (or install.bat on Windows)
 $ source export.sh   # (or export.bat on Windows)
 $ cd.. # back to starting directory
@@ -16,6 +17,9 @@ The `install.sh` step only needs to be done once. You will need to source
 Copy partitions-4MiB.csv over the existing file in micropython/ports/esp32. 
 A slightly larger factory partition is needed to accommodate all the 
 C++ libraries.
+```bash
+$ cp partitions-4MiB.csv micropython/ports/esp32/
+```
 Hereafter I install Micropython and build the binary.
 ```bash
 $ cd micropython
@@ -26,8 +30,9 @@ $ cd ports/esp32
 $ make submodules
 $ make USER_C_MODULES=../../../../micropython.cmake
 ```
-You have to run ```make erase``` after ```make submodules```,
-if you change the cmake file. 
+You have to run ```make clean``` after ```make submodules```,
+if you change the cmake file. You don't need to run ```make submodules```
+each time.
 
 ## Flashing the binary
 The following erases and flashes the binary to the chip.
