@@ -1,12 +1,16 @@
-# Micropython wrapper for the Arduino library
+# Micropython wrapper for the TMStepper library
 
 TMCStepper library for ESP32 and micropython.
-Compile following the instruction on Micropython main [website](https://docs.micropython.org/en/latest/develop/extendingmicropython.html).
+Compiled using the instructions on [Micropython](https://docs.micropython.org/en/latest/develop/extendingmicropython.html).
 ```
 make USER_C_MODULES=enter_correct_path_here/TMCStepper/micropython.cmake
 ```
 Library is not tested but does compile. Only a single function can be called which configures the motors.
-
+This is done using the following commands.  
+```python
+import steppers
+steppers.init()
+```
 
 # Documentation Original
 

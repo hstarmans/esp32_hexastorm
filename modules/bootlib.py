@@ -1,6 +1,7 @@
-import machine, os
+import machine
+import os
 import network
-from time import sleep
+
 
 def mount_sd():
     ''' mounts SDCard and changes working directory '''
@@ -35,4 +36,3 @@ def connect_wifi(wifi_login=None, verbose=False):
             pass
     if verbose:
         print('Network config:', sta_if.ifconfig())
-

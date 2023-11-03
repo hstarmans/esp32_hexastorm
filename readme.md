@@ -1,5 +1,7 @@
 # ESP32
 
+Control a laser scanner build using the [Hexastorm](https://github.com/hstarmans/hexastorm) library with an ESP32.
+
 ## Creating a binary
 I follow the procedure desribed on [esp32](https://github.com/micropython/micropython/tree/master/ports/esp32).
 I start by installing espd-idf.
@@ -19,6 +21,14 @@ A slightly larger factory partition is needed to accommodate all the
 C++ libraries.
 ```bash
 $ cp partitions-4MiB.csv micropython/ports/esp32/
+```
+The code in the folder sdcard must be copied to the microSD card which
+is inserted in the ESP32 board. You have to do this your self.
+Change the wifi password in secrets.py before doing so.
+The code in the modules folder is [frozen](https://learn.adafruit.com/micropython-basics-loading-modules/frozen-modules) 
+into micropython.
+```bash
+$ cp -r modules micropython/ports/esp32/
 ```
 Hereafter I install Micropython and build the binary.
 ```bash
@@ -50,31 +60,15 @@ connect serial /dev/ttyUSB0
 ```
 On Windows it can be ```connect serial com6```.
 The flash memory is available as /flash or /pyboard.
-The sdcard is avaible if it is mounted successfully, see boot.py.
+The sdcard is available if it is mounted successfully, see boot.py.
 
-# Fomuflash
-I made a frozen module for Fomuflash. 
-This is used to flash a memory which programs the FPGA chip. Once the binary is installed
-it can be reached via
-```import fomuflash```
+# Pinout
+Pinout of the ESP32 board I used for this code, can be found [here](https://microcontrollerslab.com/esp32-pinout-use-gpio-pins/).
+Accessing the ports is outlined in the [quickref](https://docs.micropython.org/en/latest/esp32/quickref.html).
 
-# TMCStepper
-I use TMC2130 stepper drivers. These drivers have to be given certain settings before they can
-be used.
-```import tmcstepper```
 
 ## Webserver
 Developing a webserver is not a priority. For now, I want to work via the rpython shell.
 Best option for the webserver seems to be [microdot](https://github.com/miguelgrinberg/microdot/tree/main)
 Another interesting opption is [MicroWebSrv2](https://github.com/jczic/MicroWebSrv2).
 This webserver is no longer under active development.
-
-Place MicroWebSrv2, only the MicroWebSrv2 subfolder, into the modules directory. This is known as a frozen [module](https://learn.adafruit.com/micropython-basics-loading-modules/frozen-modules).
-Also place sdcard.py in the modules directory, located in micropython/drivers.
-Recompile, check the module is cross compiled, erase the flash
-and flash the new binary to the memory.
-
-# Pinout
-Pinout of the ESP32 board I used for this code, can be found [here](https://microcontrollerslab.com/esp32-pinout-use-gpio-pins/).
-Accessing the ports is outlined in the [quickref](https://docs.micropython.org/en/latest/esp32/quickref.html).
-
