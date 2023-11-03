@@ -69,6 +69,6 @@ Accessing the ports is outlined in the [quickref](https://docs.micropython.org/e
 
 ## Webserver
 Developing a webserver is not a priority. For now, I want to work via the rpython shell.
-Best option for the webserver seems to be [microdot](https://github.com/miguelgrinberg/microdot/tree/main)
-Another interesting opption is [MicroWebSrv2](https://github.com/jczic/MicroWebSrv2).
+Best option for the webserver seems to be [microdot](https://github.com/miguelgrinberg/microdot/tree/main).
+Another interesting option is [MicroWebSrv2](https://github.com/jczic/MicroWebSrv2).
 This webserver is no longer under active development.
