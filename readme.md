@@ -3,7 +3,7 @@
 Control a laser scanner build using the [Hexastorm](https://github.com/hstarmans/hexastorm) library with an ESP32.
 
 ## Creating a binary
-I follow the procedure desribed on [esp32](https://github.com/micropython/micropython/tree/master/ports/esp32).
+I follow the procedure described on [esp32](https://github.com/micropython/micropython/tree/master/ports/esp32).
 I start by installing espd-idf.
 ```bash
 $ git clone https://github.com/hstarmans/esp32_hexastorm
@@ -69,6 +69,6 @@ Accessing the ports is outlined in the [quickref](https://docs.micropython.org/e
 
 ## Webserver
 Developing a webserver is not a priority. For now, I want to work via the rpython shell.
-Best option for the webserver seems to be [microdot](https://github.com/miguelgrinberg/microdot/tree/main)
-Another interesting opption is [MicroWebSrv2](https://github.com/jczic/MicroWebSrv2).
+Best option for the webserver seems to be [microdot](https://github.com/miguelgrinberg/microdot/tree/main).
+Another interesting option is [MicroWebSrv2](https://github.com/jczic/MicroWebSrv2).
 This webserver is no longer under active development.
