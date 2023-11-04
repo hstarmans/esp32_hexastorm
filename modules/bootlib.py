@@ -7,11 +7,12 @@ def mount_sd():
     ''' mounts SDCard and changes working directory '''
     try:
         sd = machine.SDCard(slot=2)
+        os.mount(sd, '/sd')
+        os.chdir('/sd')
     except OSError:
-        print("Hard reboot is required, not mounted")
+        print("""Cannot connect to sdcard"""
+              """Hard reboot is required, not mounted""")
         return
-    os.mount(sd, '/sd')
-    os.chdir('/sd')
 
 
 def connect_wifi(wifi_login=None, verbose=False):
