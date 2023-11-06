@@ -2,4 +2,6 @@
 # keep minimal, mistakes can prevent board from booting
 import bootlib
 bootlib.mount_sd()
-bootlib.connect_wifi()
+made_connection = bootlib.connect_wifi()
+if made_connection:
+    bootlib.start_webrepl()
