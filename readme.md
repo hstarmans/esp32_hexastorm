@@ -1,8 +1,10 @@
 # ESP32
 
-Control a laser scanner build using the [Hexastorm](https://github.com/hstarmans/hexastorm) library with an ESP32.
+Control a laser scanner built using the [Hexastorm](https://github.com/hstarmans/hexastorm) library with an ESP32.
 The syntax of some parts of Micropython are not the same across platforms, e.g. WLAN interface.
-On other libraries, small changes are required.
+As such for other platforms, i.e. rp2040 small changes are required.
+You connect to micropython by running http://192.168.1.88:8266 in your browser. 
+The static ip and password are fixed by secrets.py on the sdcard.
 
 ## Creating a binary
 I follow the procedure described on [esp32](https://github.com/micropython/micropython/tree/master/ports/esp32).
@@ -73,6 +75,6 @@ Accessing the ports is outlined in the [quickref](https://docs.micropython.org/e
 A webserver is made available via web_repl. The static ip and password can be configured via the secrets.py
 file in the sdcard folder.
 You connect to it by running http://192.168.1.88:8266 in your browser. Replace the IP and port if desired.
-Best option for the webserver seems to be [microdot](https://github.com/miguelgrinberg/microdot/tree/main).
+Best option for more typical webserver seems to be [microdot](https://github.com/miguelgrinberg/microdot/tree/main).
 Another interesting option is [MicroWebSrv2](https://github.com/jczic/MicroWebSrv2).
 This webserver is no longer under active development.
