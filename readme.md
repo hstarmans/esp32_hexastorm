@@ -4,6 +4,12 @@ Control a laser scanner build using the [Hexastorm](https://github.com/hstarmans
 The syntax of some parts of Micropython are not the same across platforms, e.g. WLAN interface.
 On other libraries, small changes are required.
 
+## Known Issues
+
+Pin 1 and 3 are connected to the FPGA and the UART output of the REPL.
+You therefore need to connect to Web REPL, to flash the FPGA.
+
+
 ## Creating a binary
 I follow the procedure described on [esp32](https://github.com/micropython/micropython/tree/master/ports/esp32).
 I start by installing espd-idf.
