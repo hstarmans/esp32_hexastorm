@@ -78,3 +78,11 @@ You connect to it by running http://192.168.1.88:8266 in your browser. Replace t
 Best option for more typical webserver seems to be [microdot](https://github.com/miguelgrinberg/microdot/tree/main).
 Another interesting option is [MicroWebSrv2](https://github.com/jczic/MicroWebSrv2).
 This webserver is no longer under active development.
+
+
+## Screen + controller
+A library is available [here](https://github.com/peterhinch/micropython-micro-gui)
+It also outlines which screen are supported.
+
+
+
