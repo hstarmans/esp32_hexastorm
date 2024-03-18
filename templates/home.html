@@ -1,0 +1,33 @@
+{% args authorized, selected='Home' %}
+{% include 'base_header.html' %}
+</head>
+<body>
+{% include 'nav_bar.html' %}
+<div class="container justify-content-center">
+    <div class="row justify-content-center">
+        <div class="col-3">
+            {% include 'XYmovement.html' %}
+        </div>
+        <div class="col-1">
+            {% include 'Zmovement.html' %}
+        </div>
+        <div class="col-2">
+            {% include 'laserhead.html' %}
+        </div>
+        <div class="col-2">
+            {% include 'general.html' %}
+        </div>
+    </div>
+    <br>
+    <div class="row align-items-start">
+        <div class="col-2">
+        </div>
+        <div class="col-4">
+            {% include 'steps.html' %}
+        </div>
+    </div>
+</div>
+
+<script src="static/home.js"></script>
+
+{% include 'base_footer.html' %}

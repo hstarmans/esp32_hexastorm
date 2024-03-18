@@ -1,0 +1,48 @@
+{% args authorized, mqtt, wifi, selected='Settings' %}
+{% include 'base_header.html' %}
+</head>
+<body>
+{% include 'nav_bar.html' %}
+<main class="container">
+  <h3>Settings</h3>
+  <ul>
+    <li>Change sensor description if desired.</li>
+    {% if wifi['connected'] %}
+    <li>Wifi is connected to {{wifi['ssid']}}. You are not allowed to make changes.</li>
+    {% else %}
+    <li>No active wifi connection. Please select network from list and enter password.</li>
+    {% endif %}
+  </ul>
+  <div class="bg-body-tertiary p-5 rounded">
+    <form class="row g-3" method="POST">
+      <div class="col-6">
+        <label for="factory" class="form-label">WPPG factory</label>
+        <input name="factory" type="text" class="form-control" id="factory" placeholder="{{mqtt['factory']}}">
+      </div>
+      <div class="col-6">
+        <label for="machine" class="form-label">WPPG machine</label>
+        <input name="machine" type="text" class="form-control" id="machine" placeholder="{{mqtt['machine']}}">
+      </div>
+      {% if not wifi['connected'] %}
+      <div class="col-md-6">
+        <label for="wifilist" class="form-label">Available networks</label>
+        <select name="wifilist" id="wifilist" class="form-select">
+          {% for lan in wifi['wifilist'] %}
+            {% if lan != wifi['ssid'] %}
+              <option value="{{ wifi }}">{{ wifi }}</option>
+            {% else %}
+              <option value="{{ wifi }}" selected>{{ wifi }}</option>
+            {% endif %}
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-6">
+        <label for="wifipassword" class="form-label">Wifi password</label>
+        <input name="wifipassword" type="text" class="form-control" id="wifipassword" placeholder="{{wifi['password']}}">
+      </div>
+      {% endif %}
+      <button class="btn btn-dark w-100 py-2" type="submit" value="Submit">Submit</button>
+    </form>
+  </div>
+</main>
+{% include 'base_footer.html' %}
