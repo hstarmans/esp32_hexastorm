@@ -52,16 +52,30 @@ async def logout(req, session):
     return redirect("/")
 
 
-@app.route("/movement")
+@app.route("/command")
 @with_websocket
-async def echo(request, ws):
-    while True:
+@with_session
+async def movement(request, session, ws):
+    state = constants.MACHINE_STATE
+    print("receiving command")
+    while True and is_authorized(session):
         data = await ws.receive()
         try:
-            move = json.loads(data)
-            steps = float(move["steps"])
-            vector = [int(x) for x in move["vector"]]
-            print(steps, vector)
+            jsondata = json.loads(data)
+            command = jsondata["command"]
+            if command == "toggleprism":
+                state["rotating"] = not state["rotating"]
+                print(f"Change rotation state prism to {state['rotating']}")
+            elif command == "togglelaser":
+                state["laser"] = not state["laser"]
+                print(f"Laser on is {state['laser']}")
+            elif command == "diodetest":
+                state["diodetest"] = True if random.randint(0, 10) > 5 else False
+                print(f"Diode test is {state['diodetest']}")
+            elif command == "move":
+                steps = float(jsondata["steps"])
+                vector = [int(x) for x in jsondata["vector"]]
+                print(f"Moving {steps} along {vector}")
         except Exception:
             print("Failed parsing movement request")
         await ws.send(data)
@@ -87,7 +101,7 @@ async def log_current():
 async def state(request, session, sse):
     authorized = is_authorized(session)
     if authorized:
-        await sse.send({"data": constants.MEASUREMENT}, event="message")
+        await sse.send(constants.MACHINE_STATE, event="message")
     else:
         await sse.send({"notauthorized": 0}, event="message")
 

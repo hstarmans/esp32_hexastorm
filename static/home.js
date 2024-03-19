@@ -2,7 +2,7 @@
 // jquery is not recommended, see https://flaviocopes.com/jquery/
 
 
-const movementSocket = new WebSocket('ws://' + location.host + '/movement');
+const commandSocket = new WebSocket('ws://' + location.host + '/command');
 
 /**
  * When X,Y,Z button is clicked stepsize with
@@ -21,7 +21,7 @@ function movementClick(e){
     return;
     }
     steps = stepsize.querySelector('.active').innerHTML;
-    movementSocket.send(JSON.stringify({"steps": steps, "vector": vector.split(',')}));
+    commandSocket.send(JSON.stringify({"command":'move', "steps": steps, "vector": vector.split(',')}));
 };
 
 xymovement.addEventListener("click", movementClick);
@@ -30,13 +30,30 @@ zmovement.addEventListener("click", movementClick);
 
 // enables one to select stepsize from 0.1 --> 1
 stepsize.addEventListener("click", function (e) {
-    stepsize.querySelector('.active').classList.remove('active')
+    stepsize.querySelector('.active').classList.remove('active');
     e.target.classList.add('active');
 });
 
 
+/**
+ * Proceses click in the laserhead tab
+ * @param {String} command Command that is executed 
+ * @returns function 
+ */
+function laserheadCLick(command){
+    return function(){commandSocket.send(JSON.stringify({"command": String(command)}))};
+}
+laser.addEventListener("click", laserheadCLick('togglelaser'));
+motor.addEventListener("click", laserheadCLick('toggleprism'));
+diode.addEventListener("click", laserheadCLick('diodetest'));
 
-// Fetches state of laserhead
+
+// a state is propagated from backend to the frontend
+// on basis of the state either the printing or non printing
+// options are displayed
+// if printing, the current print state is updated
+// if not printing, the laserhead tab is updated
+ 
 var stateSocket;
 window.addEventListener("load", onLoad);
 
@@ -55,8 +72,39 @@ function initializeSocket() {
     setTimeout(initializeSocket, 2000);
   }
 
-  function onMessage(event) {
-    console.log("State message received:", event);
-    const obj = JSON.parse(event.data);
-    console.log(obj);
-  }
+function onMessage(event) {
+    let jsonData = JSON.parse(event.data);
+    if (jsonData['printing']){
+        printingstate.style.display = '';
+        controlstate.style.display = 'none';
+
+        filename.innerHTML = "Filename is " + String(jsonData['filename']);
+        lines.innerHTML = String(jsonData['currentline']) + " of " + String(jsonData['totallines']);
+        printingtime.innerHTML = String(jsonData['printingtime']) + " seconds elapsed";
+        fraction = parseInt(jsonData['currentline']) / parseInt(jsonData['totallines']) * 100;
+        progressbar.setAttribute('aria-valuenow', String(fraction));
+        progressbar.setAttribute('style', 'width: ' + String(fraction) +'%' + ';');
+        progressbar.innerHTML = String(fraction) + ' %';
+    } else{
+        printingstate.style.display = 'none';
+        controlstate.style.display = '';
+
+        if (jsonData['rotating']){
+            motor.innerHTML = "Turn motor off";
+        } else {
+            motor.innerHTML = "Turn motor on";
+        }
+        if (jsonData['laser']){
+            laser.innerHTML = "Turn laser off";
+        } else {
+            laser.innerHTML = "Turn laser on";
+        }
+        if (jsonData['diodetest']){
+            testresult.innerHTML = "Diode test successfull.";
+        } else if (jsonData['diodetest'] == false) {
+            testresult.innerHTML = "Diode test failed.";
+        } else {
+            testresult.innerHTML = "Diode test not run.";
+        }
+    }
+}
