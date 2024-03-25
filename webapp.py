@@ -3,7 +3,7 @@ import random
 from time import localtime
 import json
 
-from microdot import Microdot, Response, redirect, send_file
+from microdot import Microdot, Response, redirect, send_file, Request
 from microdot.websocket import with_websocket
 from microdot.session import Session, with_session
 from microdot.utemplate import Template
@@ -16,6 +16,8 @@ import constants
 app = Microdot()
 Session(app, secret_key="top-secret")
 Response.default_content_type = "text/html"
+# 10MB requests allowed
+Request.max_content_length = 10 * 1024 * 1024
 
 
 def is_authorized(session):
@@ -39,9 +41,40 @@ async def index(req, session):
         session.save()
         return redirect("/")
     if authorized:
-        return Template("home.html").render(authorized=authorized)
+        files = os.listdir("files")
+        return Template("home.html").render(authorized=authorized, files=files)
     else:
         return Template("login.html").render(authorized=authorized)
+
+
+@app.post("/upload")
+@with_session
+async def upload(request, session):
+    authorized = is_authorized(session)
+    if authorized:
+        if (
+            sum(os.stat("files/" + f)[6] for f in os.listdir("files")) / (1024 * 1024)
+            > 15
+        ):
+            return {"error": "resource not found"}, 413
+        # obtain the filename and size from request headers
+        filename = (
+            request.headers["Content-Disposition"].split("filename=")[1].strip('"')
+        )
+        size = int(request.headers["Content-Length"])
+
+        # sanitize the filename
+        filename = filename.replace("/", "_")
+
+        # write the file to the files directory in 1K chunks
+        with open("files/" + filename, "wb") as f:
+            while size > 0:
+                chunk = await request.stream.read(min(size, 1024))
+                f.write(chunk)
+                size -= len(chunk)
+
+        print("Successfully saved file: " + filename)
+    return ""
 
 
 @app.get("/logout")
@@ -57,7 +90,6 @@ async def logout(req, session):
 @with_session
 async def movement(request, session, ws):
     state = constants.MACHINE_STATE
-    print("receiving command")
     while True and is_authorized(session):
         data = await ws.receive()
         try:
@@ -70,15 +102,22 @@ async def movement(request, session, ws):
                 state["laser"] = not state["laser"]
                 print(f"Laser on is {state['laser']}")
             elif command == "diodetest":
+                state["diodetest"] = None
+                await ws.send(json.dumps(constants.MACHINE_STATE))
+                await asyncio.sleep(3)
                 state["diodetest"] = True if random.randint(0, 10) > 5 else False
                 print(f"Diode test is {state['diodetest']}")
             elif command == "move":
                 steps = float(jsondata["steps"])
                 vector = [int(x) for x in jsondata["vector"]]
                 print(f"Moving {steps} along {vector}")
+            elif command == "deletefile":
+                filename = jsondata["file"].replace("/", "_")
+                os.remove("files/" + filename)
+            print(f"received command {command}")
         except Exception:
             print("Failed parsing movement request")
-        await ws.send(data)
+        await ws.send(json.dumps(constants.MACHINE_STATE))
 
 
 async def log_current():

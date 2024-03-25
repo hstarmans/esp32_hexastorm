@@ -1,5 +1,10 @@
 .vscode*
 
+# ignore uploaded files folder
+files/*
+
+# ignore templates generated fro utemplate
+templates/*.py
 
 # default python gitignore
 # Byte-compiled / optimized / DLL files
