@@ -2,7 +2,21 @@
 // jquery is not recommended, see https://flaviocopes.com/jquery/
 
 
-const commandSocket = new WebSocket('ws://' + location.host + '/command');
+
+var commandSocket;
+
+function initializecommandSocket() {
+    commandSocket = new WebSocket('ws://' + location.host + '/command');
+    commandSocket.onclose = oncommandClose;
+    commandSocket.onmessage = onMessage;
+  }
+
+
+// maintaining a long connection is a challenge
+// microdot does not yet support socket
+function oncommandClose(event) {
+    setTimeout(initializeSocket, 2000);
+}
 
 /**
  * When X,Y,Z button is clicked stepsize with
@@ -48,6 +62,29 @@ motor.addEventListener("click", laserheadCLick('toggleprism'));
 diode.addEventListener("click", laserheadCLick('diodetest'));
 
 
+// delete file button
+deletebutton.addEventListener("click", function (e) {
+  fname = filetodelete[filetodelete.selectedIndex].text;
+  commandSocket.send(JSON.stringify({"command": "deletefile", "file": fname}));
+  window.location.href = '/';
+});
+
+
+// start print button
+// delete file button
+startprintbutton.addEventListener("click", function (e) {
+  commandSocket.send(JSON.stringify({
+  "command": "startprint", 
+  "file": printjobfilename.value,
+  "passes": passesperline.value,
+  "laserpower": laserpower.value}));
+  window.location.href = '/';
+});
+
+stopprintbutton.addEventListener("click", laserheadCLick('stopprint'));
+pauseprintbutton.addEventListener("click", laserheadCLick('pauseprint'));
+
+
 // a state is propagated from backend to the frontend
 // on basis of the state either the printing or non printing
 // options are displayed
@@ -59,6 +96,7 @@ window.addEventListener("load", onLoad);
 
 function onLoad() {
   initializeSocket();
+  initializecommandSocket();
 }
 
 function initializeSocket() {
@@ -67,17 +105,16 @@ function initializeSocket() {
     stateSocket.onmessage = onMessage;
   }
 
-  function onClose(event) {
+function onClose(event) {
     console.log("Closing connection to server..");
     setTimeout(initializeSocket, 2000);
-  }
+}
 
-function onMessage(event) {
-    let jsonData = JSON.parse(event.data);
+
+function updatemain(jsonData){
     if (jsonData['printing']){
         printingstate.style.display = '';
         controlstate.style.display = 'none';
-
         filename.innerHTML = "Filename is " + String(jsonData['filename']);
         lines.innerHTML = String(jsonData['currentline']) + " of " + String(jsonData['totallines']);
         printingtime.innerHTML = String(jsonData['printingtime']) + " seconds elapsed";
@@ -108,3 +145,37 @@ function onMessage(event) {
         }
     }
 }
+
+
+
+function onMessage(event) {
+    let jsonData = JSON.parse(event.data);
+    updatemain(jsonData);
+}
+
+async function upload(ev) {
+    ev.preventDefault();
+    const file = uploadformFile.files[0];
+    if (!file) {
+      window.alert("No file sected");
+      return;
+    }
+    await fetch('/upload', {
+      method: 'POST',
+      body: file,
+      headers: {
+        'Content-Type': 'application/octet-stream',
+        'Content-Disposition': `attachment; filename="${file.name}"`,
+      },
+    }).then(res => {
+      if (res.ok){
+        console.log('Upload accepted');
+        window.location.href = '/';
+      }
+      else{
+        window.alert("Upload failed, disk full");
+        window.location.href = '/';
+      }
+    });
+  }
+  uploadbutton.addEventListener('click', upload);

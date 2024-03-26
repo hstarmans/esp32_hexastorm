@@ -77,11 +77,10 @@ def update_wifi_settings(dct_new):
 
 
 ESP32 = False if sys.platform == "linux" else True
-REBOOT_MQTT = asyncio.Event()
+STOP_PRINT = asyncio.Event()
+PAUSE_PRINT = asyncio.Event()
 MQTT_SETTINGS = get_mqtt_settings()
 WIFI_SETTINGS = get_wifi_settings()
-MEASUREMENT = [0, 0, 0, 0]
-SENSORS = []
 
 MACHINE_STATE = {
     "printing": False,
@@ -90,6 +89,8 @@ MACHINE_STATE = {
     "diodetest": None,
     "filename": "no name",
     "currentline": 0,
+    "passesperline": 1,
     "totallines": 0,
     "printingtime": 10,
+    "laserpower": 70,
 }

@@ -1,7 +1,8 @@
 import asyncio
 import random
-from time import localtime
+from time import time
 import json
+import os
 
 from microdot import Microdot, Response, redirect, send_file, Request
 from microdot.websocket import with_websocket
@@ -72,7 +73,6 @@ async def upload(request, session):
                 chunk = await request.stream.read(min(size, 1024))
                 f.write(chunk)
                 size -= len(chunk)
-
         print("Successfully saved file: " + filename)
     return ""
 
@@ -95,43 +95,79 @@ async def movement(request, session, ws):
         try:
             jsondata = json.loads(data)
             command = jsondata["command"]
-            if command == "toggleprism":
-                state["rotating"] = not state["rotating"]
-                print(f"Change rotation state prism to {state['rotating']}")
-            elif command == "togglelaser":
-                state["laser"] = not state["laser"]
-                print(f"Laser on is {state['laser']}")
-            elif command == "diodetest":
-                state["diodetest"] = None
-                await ws.send(json.dumps(constants.MACHINE_STATE))
-                await asyncio.sleep(3)
-                state["diodetest"] = True if random.randint(0, 10) > 5 else False
-                print(f"Diode test is {state['diodetest']}")
-            elif command == "move":
-                steps = float(jsondata["steps"])
-                vector = [int(x) for x in jsondata["vector"]]
-                print(f"Moving {steps} along {vector}")
-            elif command == "deletefile":
-                filename = jsondata["file"].replace("/", "_")
-                os.remove("files/" + filename)
-            print(f"received command {command}")
+            if state["printing"]:
+                if command == "stopprint":
+                    constants.STOP_PRINT.set()
+                elif command == "pauseprint":
+                    constants.PAUSE_PRINT.set()
+            else:
+                if command == "toggleprism":
+                    state["rotating"] = not state["rotating"]
+                    print(f"Change rotation state prism to {state['rotating']}")
+                elif command == "togglelaser":
+                    state["laser"] = not state["laser"]
+                    print(f"Laser on is {state['laser']}")
+                elif command == "diodetest":
+                    state["diodetest"] = None
+                    await ws.send(json.dumps(state))
+                    await asyncio.sleep(3)
+                    state["diodetest"] = True if random.randint(0, 10) > 5 else False
+                    print(f"Diode test is {state['diodetest']}")
+                elif command == "move":
+                    steps = float(jsondata["steps"])
+                    vector = [int(x) for x in jsondata["vector"]]
+                    print(f"Moving {steps} along {vector}")
+                elif command == "deletefile":
+                    filename = jsondata["file"].replace("/", "_")
+                    os.remove("files/" + filename)
+                elif command == "startprint":
+                    filename = jsondata["file"].replace("/", "_")
+                    passes = jsondata["passes"]
+                    laserpower = jsondata["laserpower"]
+                    state = {
+                        "printing": True,
+                        "rotating": False,
+                        "laser": False,
+                        "diodetest": None,
+                        "filename": filename,
+                        "currentline": 0,
+                        "passesperline": passes,
+                        "laserpower": laserpower,
+                        "totallines": 0,
+                        "printingtime": 0,
+                    }
+                    # fix link with MACHINE_STATE
+                    constants.MACHINE_STATE = state
+                    asyncio.create_task(print_loop())
         except Exception:
             print("Failed parsing movement request")
-        await ws.send(json.dumps(constants.MACHINE_STATE))
+        await ws.send(json.dumps(state))
 
 
-async def log_current():
-    while True:
-        t_loc = localtime()
-        t_stamp = f"{t_loc[0]}-{t_loc[1]}-{t_loc[2]} {t_loc[3]}:{t_loc[4]}:{t_loc[5]}"
-        MEASUREMENT = [
-            t_stamp,
-            random.randint(1, 10),
-            random.randint(1, 10),
-            random.randint(1, 10),
-        ]
-        constants.MEASUREMENT = MEASUREMENT
+async def print_loop():
+    state = constants.MACHINE_STATE
+    stopprint = constants.STOP_PRINT
+    pauseprint = constants.PAUSE_PRINT
+    stopprint.clear()
+    pauseprint.clear()
+    total_lines = 10
+    state["totallines"] = total_lines
+    start_time = time()
+    for line in range(total_lines):
+        if pauseprint.is_set():
+            pauseprint.clear()
+            while True:
+                await asyncio.sleep(2)
+                if stopprint.is_set() or pauseprint.is_set():
+                    pauseprint.clear()
+                    break
+        if constants.STOP_PRINT.is_set():
+            constants.STOP_PRINT.clear()
+            break
+        state["currentline"] = line + 1
+        state["printingtime"] = round(time() - start_time)
         await asyncio.sleep(5)
+    state["printing"] = False
 
 
 @app.route("/state")
@@ -158,18 +194,8 @@ async def static(request, path):
     return send_file("static/" + path, max_age=86400)
 
 
-async def main():
-    logger_task = asyncio.create_task(log_current())
-    server_task = asyncio.create_task(app.start_server(port=5000, debug=True))
-    await asyncio.gather(logger_task, server_task)
-
-
 if __name__ == "__main__":
-    # remove rendered python files
-    import os
-
     python_files = [f for f in os.listdir("templates") if ".py" in f]
     for f in python_files:
         os.remove("templates/" + f)
-    asyncio.run(main())
-    import os
+    asyncio.run(app.start_server(port=5000, debug=True))
