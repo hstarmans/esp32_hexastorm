@@ -1,10 +1,14 @@
-{% args authorized, files, selected='Home' %}
+{% args authorized, state, selected='Home' %}
 {% include 'base_header.html' %}
 </head>
 <body>
 {% include 'nav_bar.html' %}
 {% include 'printingstate.html' %}
+{% if state['printing'] %}
+<div id="controlstate" class="container justify-content-center" style="display :none">
+{% else %}
 <div id="controlstate" class="container justify-content-center">
+{% endif %}
     <div class="row justify-content-center">
         <div class="col-3">
             {% include 'XYmovement.html' %}
@@ -29,6 +33,6 @@
     </div>
 </div>
 
-<script src="static/home.js"></script>
+
 
 {% include 'base_footer.html' %}

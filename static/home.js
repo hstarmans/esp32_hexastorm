@@ -84,6 +84,14 @@ startprintbutton.addEventListener("click", function (e) {
 stopprintbutton.addEventListener("click", laserheadCLick('stopprint'));
 pauseprintbutton.addEventListener("click", laserheadCLick('pauseprint'));
 
+starwebreplbutton.addEventListener("click", laserheadCLick('startwebrepl'));
+startprintbutton.addEventListener("click", function (e) {
+  commandSocket.send(JSON.stringify({
+  "command": "changewifi", 
+  "wifi": selectedwifi.value,
+  "password": wifipassword.value,}));
+  window.location.href = '/';
+});
 
 // a state is propagated from backend to the frontend
 // on basis of the state either the printing or non printing
@@ -118,6 +126,7 @@ function updatemain(jsonData){
         filename.innerHTML = "Filename is " + String(jsonData['filename']);
         lines.innerHTML = String(jsonData['currentline']) + " of " + String(jsonData['totallines']);
         printingtime.innerHTML = String(jsonData['printingtime']) + " seconds elapsed";
+        exposure.innerHTML = "Line is exposed " + String(jsonData['passesperline']) + " times with a laser power of " + String(jsonData['laserpower']) + " [a.u.]" 
         fraction = parseInt(jsonData['currentline']) / parseInt(jsonData['totallines']) * 100;
         progressbar.setAttribute('aria-valuenow', String(fraction));
         progressbar.setAttribute('style', 'width: ' + String(fraction) +'%' + ';');

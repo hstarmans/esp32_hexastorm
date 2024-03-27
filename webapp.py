@@ -3,6 +3,8 @@ import random
 from time import time
 import json
 import os
+import hashlib
+import binascii
 
 from microdot import Microdot, Response, redirect, send_file, Request
 from microdot.websocket import with_websocket
@@ -15,15 +17,24 @@ import constants
 
 
 app = Microdot()
-Session(app, secret_key="top-secret")
+Session(app, secret_key=constants.SECRET_KEY)
 Response.default_content_type = "text/html"
-# 10MB requests allowed
-Request.max_content_length = 10 * 1024 * 1024
+Request.max_content_length = constants.MAX_CONTENT_LENGTH
+
+
+def pass_to_sha(password):
+    """convert pass to sha by adding salt
+    returns a string
+    """
+    h = hashlib.sha256()
+    h.update(constants.SECRET_KEY.encode())
+    h.update(password.encode())
+    return binascii.hexlify(h.digest()).decode()
 
 
 def is_authorized(session):
     password = session.get("password")
-    if password == "wachtwoord":
+    if password == constants.PASSWORD:
         return True
     elif password is None:
         return None
@@ -36,14 +47,16 @@ def is_authorized(session):
 @with_session
 async def index(req, session):
     authorized = is_authorized(session)
+    state = constants.MACHINE_STATE
     if req.method == "POST":
         password = req.form.get("password")
-        session["password"] = password
+        session["password"] = pass_to_sha(password)
         session.save()
         return redirect("/")
     if authorized:
-        files = os.listdir("files")
-        return Template("home.html").render(authorized=authorized, files=files)
+        state["files"] = os.listdir(constants.UPLOAD_FOLDER)
+        state["wifi"]["available"] = bootlib.list_wlans()
+        return Template("home.html").render(authorized=authorized, state=state)
     else:
         return Template("login.html").render(authorized=authorized)
 
@@ -52,10 +65,12 @@ async def index(req, session):
 @with_session
 async def upload(request, session):
     authorized = is_authorized(session)
+    folder = constants.UPLOAD_FOLDER
     if authorized:
         if (
-            sum(os.stat("files/" + f)[6] for f in os.listdir("files")) / (1024 * 1024)
-            > 15
+            sum(os.stat(folder + "/" + f)[6] for f in os.listdir(folder))
+            / (1024 * 1024)
+            > constants.MAX_CONTENT_LENGTH
         ):
             return {"error": "resource not found"}, 413
         # obtain the filename and size from request headers
@@ -68,7 +83,7 @@ async def upload(request, session):
         filename = filename.replace("/", "_")
 
         # write the file to the files directory in 1K chunks
-        with open("files/" + filename, "wb") as f:
+        with open(folder + "/" + filename, "wb") as f:
             while size > 0:
                 chunk = await request.stream.read(min(size, 1024))
                 f.write(chunk)
@@ -101,43 +116,36 @@ async def movement(request, session, ws):
                 elif command == "pauseprint":
                     constants.PAUSE_PRINT.set()
             else:
+                control = state["control"]
                 if command == "toggleprism":
-                    state["rotating"] = not state["rotating"]
-                    print(f"Change rotation state prism to {state['rotating']}")
+                    control["rotating"] = not control["rotating"]
+                    print(f"Change rotation state prism to {control['rotating']}")
                 elif command == "togglelaser":
-                    state["laser"] = not state["laser"]
-                    print(f"Laser on is {state['laser']}")
+                    control["laser"] = not control["laser"]
+                    print(f"Laser on is {control['laser']}")
                 elif command == "diodetest":
-                    state["diodetest"] = None
+                    control["diodetest"] = None
                     await ws.send(json.dumps(state))
                     await asyncio.sleep(3)
-                    state["diodetest"] = True if random.randint(0, 10) > 5 else False
-                    print(f"Diode test is {state['diodetest']}")
+                    control["diodetest"] = True if random.randint(0, 10) > 5 else False
+                    print(f"Diode test is {control['diodetest']}")
                 elif command == "move":
                     steps = float(jsondata["steps"])
                     vector = [int(x) for x in jsondata["vector"]]
                     print(f"Moving {steps} along {vector}")
                 elif command == "deletefile":
                     filename = jsondata["file"].replace("/", "_")
-                    os.remove("files/" + filename)
+                    os.remove(constants.UPLOAD_FOLDER + "/" + filename)
                 elif command == "startprint":
                     filename = jsondata["file"].replace("/", "_")
-                    passes = jsondata["passes"]
-                    laserpower = jsondata["laserpower"]
-                    state = {
-                        "printing": True,
-                        "rotating": False,
-                        "laser": False,
-                        "diodetest": None,
-                        "filename": filename,
-                        "currentline": 0,
-                        "passesperline": passes,
-                        "laserpower": laserpower,
-                        "totallines": 0,
-                        "printingtime": 0,
-                    }
-                    # fix link with MACHINE_STATE
-                    constants.MACHINE_STATE = state
+                    constants.MACHINE_STATE = constants.init_state()
+                    # relink state
+                    state = constants.MACHINE_STATE
+                    state["files"] = os.listdir(constants.UPLOAD_FOLDER)
+                    state["job"]["filename"] = filename
+                    state["job"]["passesperline"] = jsondata["passes"]
+                    state["job"]["laserpower"] = jsondata["laserpower"]
+                    # start the print loop
                     asyncio.create_task(print_loop())
         except Exception:
             print("Failed parsing movement request")
@@ -151,7 +159,7 @@ async def print_loop():
     stopprint.clear()
     pauseprint.clear()
     total_lines = 10
-    state["totallines"] = total_lines
+    state["job"]["totallines"] = total_lines
     start_time = time()
     for line in range(total_lines):
         if pauseprint.is_set():
@@ -164,8 +172,8 @@ async def print_loop():
         if constants.STOP_PRINT.is_set():
             constants.STOP_PRINT.clear()
             break
-        state["currentline"] = line + 1
-        state["printingtime"] = round(time() - start_time)
+        state["job"]["currentline"] = line + 1
+        state["job"]["printingtime"] = round(time() - start_time)
         await asyncio.sleep(5)
     state["printing"] = False
 

@@ -1,9 +1,9 @@
 <div class="d-grid gap-1 col-12 mx-auto">
     <p class="text-center">General</p>
     <hr style="margin-top:-10px"/>
-    <button class="btn btn-primary" type="button" data-bs-toggle="modal" data-bs-target="#printjobmodal">Start printjob</button>
-    <button class="btn btn-primary" type="button" data-bs-toggle="modal" data-bs-target="#uploadfilemodal">Upload file</button>
-    <button class="btn btn-primary" type="button" data-bs-toggle="modal" data-bs-target="#deletefilemodal">Delete file</button>
+    <button class="btn btn-success" type="button" data-bs-toggle="modal" data-bs-target="#printjobmodal">Start printjob</button>
+    <button class="btn btn-success" type="button" data-bs-toggle="modal" data-bs-target="#uploadfilemodal">Upload printjob</button>
+    <button class="btn btn-success" type="button" data-bs-toggle="modal" data-bs-target="#deletefilemodal">Delete printjob</button>
 </div>
 
 
@@ -20,7 +20,7 @@
                     <div class="mb-3">
                         <label for="printjobfilename" class="form-label">Filename</label>
                         <select id="printjobfilename" class="form-select">
-                            {% for file in files %}
+                            {% for file in state['files'] %}
                             <option value="{{file}}">{{file}}</option>
                             {% endfor %}
                         </select>
@@ -37,7 +37,7 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                <button id="startprintbutton" type="button" class="btn btn-primary">Start</button>
+                <button id="startprintbutton" type="button" class="btn btn-success">Start</button>
             </div>
         </div>
     </div>
@@ -62,7 +62,7 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                <button type="button" id="uploadbutton" class="btn btn-primary">Upload file</button>
+                <button type="button" id="uploadbutton" class="btn btn-success">Upload file</button>
             </div>
         </div>
     </div>
@@ -82,7 +82,7 @@
                     <div class="mb-3">
                         <label for="filetodelete" class="form-label">File to delete</label>
                         <select id="filetodelete" class="form-select">
-                            {% for file in files %}
+                            {% for file in state['files'] %}
                             <option value="{{file}}">{{file}}</option>
                             {% endfor %}
                         </select>
@@ -91,7 +91,7 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                <button id="deletebutton" type="button" class="btn btn-primary">Delete file</button>
+                <button id="deletebutton" type="button" class="btn btn-success">Delete file</button>
             </div>
         </div>
     </div>

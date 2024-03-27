@@ -74,7 +74,7 @@ def get_adcs():
     return [init_adc(x) for x in pins]
 
 
-@wrapper_esp32(res=["connected"])
+@wrapper_esp32(res=["connected", "otheroption"])
 def list_wlans():
     """ "retrieves list of available wireless networks"""
     wlan = network.WLAN(network.STA_IF)
