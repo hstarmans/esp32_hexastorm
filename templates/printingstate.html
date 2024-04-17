@@ -1,0 +1,30 @@
+
+{% if state['printing'] %}
+<div id="printingstate" class="container justify-content-center">
+{% else %}
+<div id="printingstate" style="display: none" class="container justify-content-center">
+{% endif %}
+  <div class="row justify-content-center">
+    <div class="col-8">
+      <p class="text-center">Printing progress</p>
+        <hr />
+        <ul class="list-unstyled">
+          <li id="filename">Filename is filename</li>
+          <li id="lines">Line of lines</li>
+          <li id="printingtime">Time elapsed</li>
+          <li id="exposure">Exposures per line at laser power in [a.u]</li>
+        </ul>
+      <div class="progress">
+          <div id="progressbar" class="progress-bar progress-bar-striped progress-bar-animated bg-success" role="progressbar" style="width: 25%;" aria-valuenow="25" aria-valuemin="0" aria-valuemax="100">25%</div>
+      </div>
+      <br>
+      <button id="pauseprintbutton" type="button" class="btn btn-success">
+          <i class="bi bi-pause"></i>
+      </button>
+      <button id="stopprintbutton" type="button" class="btn btn-success">
+          <i class="bi bi-stop"></i>
+      </button>
+    </div>
+  </div>
+</div>
+

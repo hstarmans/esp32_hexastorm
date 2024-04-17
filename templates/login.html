@@ -1,0 +1,23 @@
+{% args authorized %}
+{% include 'base_header.html' %}
+  <!-- Custom styles for this template -->
+  <link href="static/sign-in.css" rel="stylesheet">
+</head>
+<body class="d-flex align-items-center py-4 bg-body-tertiary">
+  <main class="form-signin w-100 m-auto">
+    <h3 class="h3 mb-3 fw-normal">Please sign in</h3>
+    {% if authorized==False %}
+        <p>Not logged in, wrong password.</p>
+    {% elif authorized==True %}
+        <p>Something went wrong please contact admin.</p>
+    {% endif %}
+  <form method="POST">
+    <div class="form-floating">
+      <input name="password" type="password" class="form-control" id="floatingPassword" placeholder="Password">
+      <label for="floatingPassword">Password</label>
+    </div>
+    <button class="btn btn-success w-100 py-2" type="submit">Sign in</button>
+    <p class="mt-5 mb-3 text-body-secondary">&copy; Hexastorm 2024</p>
+  </form>
+</main>
+{% include 'base_footer.html' %}

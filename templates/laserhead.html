@@ -1,0 +1,26 @@
+<div class="d-grid gap-1 col-12 mx-auto">
+    <p class="text-center">Laserhead</p>
+    <hr style="margin-top:-10px"/>
+    <button id="laser" class="btn btn-success" type="button" id="laser">Turn laser on</button>
+    <button id="motor" class="btn btn-success" type="button" id="motor">Turn motor on</button>
+    <button id="diode" class="btn btn-success" type="button" data-bs-toggle="modal" data-bs-target="#diodemodal">Test diode</button>
+</div>
+
+
+<!-- Diode test modal -->
+<div class="modal fade" id="diodemodal" tabindex="-1" aria-labelledby="diodeModal" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h1 class="modal-title fs-5" id="exampleModalLabel">Result diode test</h1>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p id="testresult">Diode test not run.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
