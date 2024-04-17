@@ -34,9 +34,9 @@ Proposal
      # check release date en of deze nieuwer is
      # cleanup deze repo
      # kijk of bestanden persistent zin
-     --> sla bestand op via github LFS
-     --> creeer een github access token
-     --> download via github access token
+     --> sla bestand op via github LFS  (check)
+     --> creeer een github access token  (check)
+     --> download via github access token  (check)
      --> voer update uit en kijk welke bestanden blijven
 
 

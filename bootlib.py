@@ -11,6 +11,7 @@ if constants.ESP32:
     import network
     import esp
     import webrepl
+    from ota.update import OTA
 
 
 def wrapper_esp32(res=None):
@@ -76,12 +77,12 @@ def list_wlans():
 
 @wrapper_esp32()
 def update_firmware():
+    # TODO: make it an async method
     # more information see https://realpython.com/python-download-file-from-url/
     user = "hstarmans"
     repo = "esp32_hexastorm"
     branch = "main"
     release_folder = "releases"
-    bin_name = "micropython.bin"
     # token should be of form "github_pat"
     token = None
     if token:
@@ -90,24 +91,35 @@ def update_firmware():
         head = None
 
     version_url = (
-        f"https://github.com/{user}/{repo}/blob/{branch}/{release_folder}/version.json"
+        f"https://github.com/{user}/{repo}/raw/{branch}/{release_folder}/version.json"
     )
     r = requests.get(version_url, headers=head)
-    version_dct = json.loads(r.text)
+    release_dct = json.loads(r.text)
 
-    print(r.text.split(" ")[1])
+    if release_dct["release"] <= constants.get_key_json("version"):
+        print("No new release")
+        return False
 
-    release_url = (
-        f"https://raw.githubusercontent.com/{user}/{repo}/{branch}/releases/{bin_name}"
-    )
+    bin_name = release_dct["firmware"]
+
+    release_url = f"https://raw.githubusercontent.com/{user}/{repo}/{branch}/{release_folder}/{bin_name}"
     with requests.get(release_url, headers=head, stream=True) as response:
         if not response.ok:
-            print("Cannot fetch update")
+            print("New version, cannot download firmware")
             return False
         else:
             with open(bin_name, mode="wb") as file:
                 for chunk in response.iter_content(chunk_size=1024):
                     file.write(chunk)
+
+    # Write firmware from a url or filename
+    # reboot if successful and verified
+    with OTA(reboot=True) as ota:
+        ota.from_firmware_file(
+            bin_name,
+            sha=release_dct["sha"],
+            length=release_dct["length"],
+        )
 
 
 @wrapper_esp32(res=True)
