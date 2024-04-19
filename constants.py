@@ -65,6 +65,7 @@ SECRET_KEY = "76081385-7eb7-411d-966f-712f1a15500"
 # key is "wachtwoord"
 PASSWORD = "6bcad2870a09b584d9045736c372085c58a871bf4ec1333f128e2f7c37d2806e"
 UPLOAD_FOLDER = "sd/files"
+FPGA_FOLDER = "sd/fpga"
 
 
 MACHINE_STATE = init_state()

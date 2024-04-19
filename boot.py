@@ -26,6 +26,10 @@ async def boot_procedure(timeout=10):
     except Exception:
         print("Boot failed, rebooting in 1 minutes")
         asyncio.sleep(60)
+    # errors created by mount_sd cannot be captured
+    # don't use on devices without sd
+    asyncio.sleep(10)
+    bootlib.mount_sd()
 
 
 async def main_task():

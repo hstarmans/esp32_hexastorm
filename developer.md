@@ -5,59 +5,64 @@ I use mpremote to flash the board.
 
 ## Creating a binary
 I follow the procedure described on [esp32](https://github.com/micropython/micropython/tree/master/ports/esp32).
-I start by installing espd-idf.
+First install esp-idf and activate it. Git cannot be able to download it.
 ```bash
-$ git clone https://github.com/hstarmans/esp32_hexastorm
-$ git submodule update --init
+$ git clone -b v5.0.4 --recursive https://github.com/espressif/esp-idf.git$ 
 $ cd esp-idf
-$ git checkout v5.0.2
 $ ./install.sh       # (or install.bat on Windows)
 $ source export.sh   # (or export.bat on Windows)
-$ cd.. # back to starting directory
 ```
 The `install.sh` step only needs to be done once. You will need to source
 `export.sh` for every new session.
-The next step depend on the exact chip family you use for the ESP32. It might require a manual operation or not.
-Overall, the ESP32 needs to enter boot mode. Set the boot pin to low and toggle the reset pin.
-Boards with a serial controller can be put in programmer mode without toggling the pins and do this automatically. They can require a different baud rate.
-Boards without pins require a manual operation, release the boot pin. The board should enter boot mode. This typically causes the device to connect to a different com port. COM9 implies /dev/ttyS9 in the linux WSL layer. 
-Especially older boards might run out of memory if you do not freeze in Python. If there is a modules folder, these files are frozen in.
-The following is probably needed for the frozen modules (not sure).
+Hereafter, clone ulab, my stepper library, switch to the ESP32 branch.
 ```bash
-$ cp -r modules micropython/ports/esp32/
+$ git clone https://github.com/v923z/micropython-ulab
+$ git clone https://github.com/hstarmans/TMCStepper
+$ cd TMCStepper
+$ git fetch
+$ git switch esp32
+$ cd ..
 ```
-Install Micropython normally, link with TMCStepper for stepper support.
+Install Micropython normally, please note that micropython-ulab, TMCStepper and micropython should
+be in the same root folder.
 ```bash
+$ git clone https://github.com/micropython/micropython.git
 $ cd micropython
 $ cd mpy-cross
 $ make
 $ cd ..
 $ cd ports/esp32
 $ make submodules
-$ make USER_C_MODULES=../../../../micropython.cmake
 ```
-For the final make make the following changes.
-Set in MakeFile ```PORT ?= /dev/ttyS9```  
+Copy microdot and utemplate to ```ports/esp32/modules```, these modules are frozen in 
+which reduces their memory footprint.
+The next step depends on the exact chip family you use for the ESP32. It might require a manual operation or not.
+Overall, the ESP32 needs to enter boot mode. Set the boot pin to low and toggle the reset pin.
+This typically causes the device to connect to a different com port. COM9 implies /dev/ttyS9 in the linux WSL layer.
+Boards with a serial controller can be placed in programmer mode without toggling the pins and do this automatically. Boards can require a different baud rate, e.g. 115200 for ESP32 devkit 1.  
+For the ESP32S3, we use the 32 megabyte version and I use the partition which supports over the air updates.  
 Set in ESP32_GENERIC_S3/sdkconfig.board.  
 ```CONFIG_ESPTOOLPY_FLASHSIZE_32MB=y```  
 ```CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions-32MiB-ota.csv"```  
 ```CONFIG_ESPTOOLPY_OCT_FLASH=y```  
-Build the board as follows;  
-```make BOARD=ESP32_GENERIC_S3 BOARD_VARIANT=SPIRAM_OCT erase```  
+Copy micropython.cmake from this repo to the root folder of micropython-ulab, TMCStepper and micropython.
+Build the board as follows.
+Add erase and deploy the board at the end of this command.
+```erase``` and ```deploy```  
+```make BOARD=ESP32_GENERIC_S3 BOARD_VARIANT=SPIRAM_OCT PORT=/dev/ttyS16 USER_C_MODULES=../../../../micropython.cmake```
+Once finished, install remaining dependencies
+```./install.sh /dev/ttyS8```
 
 ## Tips
 You have to run ```make clean``` after ```make submodules```,
 if you change the cmake file. You don't need to run ```make submodules```
 each time.
 
-
 ## Screen + controller
 A library is available [here](https://github.com/peterhinch/micropython-micro-gui)
 It also outlines which screen are supported.
 
-
 ## Known Issues current developer board
-
 - Pin 1 and 3 are connected to the FPGA and the UART output of the REPL.
 You therefore need to connect to Web REPL, to flash the FPGA.
 - Copy partitions-4MiB.csv over the existing file in micropython/ports/esp32. 

@@ -17,19 +17,6 @@ Proposal
 
 ## TODO:
 
-- maak een install script  (check)
-- connectie internet        (check)
-- installeer webserver, check of die draait  (check)
-- check of je bestand kan uploaden  (werkt op esp32s3)
-- Reduceer geheugen via async call (check)
-- verander license  (check)
-- login via een REST methode (check)
-- stuur commando naar websocket (check)
-- upload file (check)
-- fixture in fixture (check)
-- remove file (check)
-- sla dit op als test code (check)
-- bouw een binary met ota (check)
 - voer een ota update uit
      # check release date en of deze nieuwer is
      # cleanup deze repo
@@ -38,9 +25,23 @@ Proposal
      --> creeer een github access token  (check)
      --> download via github access token  (check)
      --> voer update uit en kijk welke bestanden blijven
+- bouw binary met unumpy en de stepper library (check)
+- maak een binary met icestorm (check)
+- maak install script (check)
+- maak blinkly binary (check)
+- ontvang de status via sse methode
+- voeg mogelijkheid toe fpga binary te uploaden
+- voeg commando toe om fpga te flashen
+- voeg commandos toe aan hexastorm flow
+- flash met hexastorm
+- copy binary to board
+  ** stap 1 maak hello world binary
+  ** stap 2 kunnen we keyword naar build sturen
+  ** stap 3 copy binary to fpga
 
 
-- bouw een binary met unumpy en de stepper library
+
+
 - flash fpga
 - bewegen stepper motoren
 - commando's laser kop
