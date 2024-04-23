@@ -1,1 +1,0 @@
-export IP="localhost" PORT="5000" WEBAPP="/home/hstarmans/python/esp32_hexastorm/"

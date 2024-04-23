@@ -1,6 +1,10 @@
 .vscode*
 config.json
 
+# ignore hexastorm package for now
+hexastorm/*
+
+
 # ignore uploaded files folder
 files/*
 sd/files/*

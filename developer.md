@@ -2,6 +2,7 @@
 
 # Tools
 I use mpremote to flash the board.
+[Mpfshell](https://github.com/wendlers/mpfshell) gives more options and allows you to connect via webrepl.
 
 ## Creating a binary
 I follow the procedure described on [esp32](https://github.com/micropython/micropython/tree/master/ports/esp32).
@@ -53,10 +54,34 @@ Add erase and deploy the board at the end of this command.
 Once finished, install remaining dependencies
 ```./install.sh /dev/ttyS8```
 
-## Tips
+### Tips
 You have to run ```make clean``` after ```make submodules```,
 if you change the cmake file. You don't need to run ```make submodules```
 each time.
+
+## Webserver via REST api
+Install python and poetry.
+```bash
+sudo apt install python3 python3-pip
+curl -sSL https://install.python-poetry.org | python3 -
+```
+Use poetry to install the dependencies in pyproject.toml.
+The virtual environment needs to be installed in project for VSCode to detect it.
+```bash
+poetry config virtualenvs.in-project true
+poetry install
+```
+You can run tests via the command below. The s-flag ensures print statements are directed to the shell.
+```bash
+poetry run pytest -s --pyargs esp32_hexastorm.tests.test_webserver::test_websocket
+```
+
+## Micropython Test
+
+Install micropython on linux with [ulab](https://github.com/v923z/micropython-ulab). Run tests via
+```bash
+micropython -m test.test_hardware
+```
 
 ## Screen + controller
 A library is available [here](https://github.com/peterhinch/micropython-micro-gui)

@@ -5,6 +5,7 @@ import time
 
 import requests
 from websocket import create_connection, enableTrace
+from sseclient import SSEClient
 
 
 class WebApp:
@@ -15,6 +16,13 @@ class WebApp:
         # PORT=5000,
         # WEBAPP="~/python/esp32_hexastorm"
         ip = os.environ.get("IP")
+        if ip is None:
+            raise Exception(
+                """Environmental variables not set
+                   export IP="localhost"
+                          PORT=5000
+                         WEBAPP="~/python/esp32_hexastorm" """
+            )
         port = os.environ.get("PORT")
         self.webappdir = os.environ.get("WEBAPP")
         if ip == "localhost":
@@ -40,10 +48,21 @@ class WebApp:
 
     def login(self, password="wachtwoord"):
         session = requests.Session()
-        response = session.post(self.base_url, data={"password": password})
+        response = session.post(self.base_url, data={"password": password}, timeout=3)
         if not response.ok:
             raise Exception("Cannot login invalid password")
         return session
+
+    def get_state(self):
+        def with_requests(url, headers):
+            """Get a streaming response for the given event feed using request."""
+            return requests.get(url, stream=True, headers=headers)
+
+        headers = {"Accept": "text/event-stream", "Cookie": self.str_cookie}
+        response = with_requests(self.base_url + "state", headers)
+        client = SSEClient(response)
+        for event in client.events():
+            return json.loads(event.data)
 
     def send_command(self, command):
         #   debug via webtrace

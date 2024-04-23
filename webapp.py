@@ -11,7 +11,6 @@ from microdot.websocket import with_websocket
 from microdot.session import Session, with_session
 from microdot.utemplate import Template
 from microdot.sse import with_sse
-import micropython
 
 
 import bootlib

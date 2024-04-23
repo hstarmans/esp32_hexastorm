@@ -3,18 +3,6 @@
 Provides a Microdot webserver to control a laser scanner built using the [Hexastorm](https://github.com/hstarmans/hexastorm)
 library with an ESP32.
 
-
-## Render template consumes a lot of memory
-
-Proposal
- - je moet html uit meerdere documenten kunnen maken
-   https://stackoverflow.com/questions/34238131/how-to-separate-html-text-file-into-multiple-files
- - de sub elementen laat je renderen
-   via render a small template
- 
-
-
-
 ## TODO:
 
 - voer een ota update uit
@@ -24,15 +12,19 @@ Proposal
      --> sla bestand op via github LFS  (check)
      --> creeer een github access token  (check)
      --> download via github access token  (check)
-     --> voer update uit en kijk welke bestanden blijven
+     --> voer update uit en kijk welke bestanden blijven  (task is moved back)
 - bouw binary met unumpy en de stepper library (check)
 - maak een binary met icestorm (check)
 - maak install script (check)
 - maak blinkly binary (check)
-- ontvang de status via sse methode
-- voeg mogelijkheid toe fpga binary te uploaden
+- ontvang de status via sse methode  (check)
+- voeg mogelijkheid toe om unit testen uit te voeren op de esp32 (check)
+- huidige idee is om hexastorm esp32 compatable te maken en de testen te draaien op de ESP32
+- development cycle is micropython linux --> micropython esp 32 (check)
+- voeg mogelijkheid toe fpga binary te uploaden (dat deze folder selecteert)
 - voeg commando toe om fpga te flashen
-- voeg commandos toe aan hexastorm flow
+- herimplementeer de testen
+
 - flash met hexastorm
 - copy binary to board
   ** stap 1 maak hello world binary
