@@ -1,11 +1,13 @@
-import constants
 import os
+from time import sleep, localtime
 import requests
 import json
 
-from time import sleep, localtime
+
 import machine
 import ntptime
+
+import constants
 
 if constants.ESP32:
     import network

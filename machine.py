@@ -3,13 +3,18 @@
 
 
 class I2C:
-    def __init__(self, device):
-        self.device = device
-        self.CONTROLLER = "Something"
+    def __init__(self, id=0, scl=1, sda=2, freq=400000, timeout=50000):
+        self.id = id
 
     def init(self, controller, address):
         self.address = address
         self.CONTROLLER = controller
+
+    def writeto(self, address, bytes):
+        pass
+
+    def readfrom(self, address, number_bytes):
+        return bytearray([1])
 
 
 class Pin:
@@ -73,3 +78,9 @@ class SPI:
         self.baudrate = baudrate
         self.phase = phase
         self.polarity = polarity
+
+    def write_readinto(self, txdata, rxdata):
+        # very specific for test_stepper_nolib
+        # TMC stepper alters 5 th byte
+        for i, _ in enumerate(txdata):
+            rxdata[i] = txdata[i]

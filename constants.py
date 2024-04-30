@@ -50,7 +50,7 @@ def init_state():
     return state
 
 
-ESP32 = False if sys.platform == "linux" else True
+ESP32 = False if sys.platform in ["linux", "win32"] else True
 STOP_PRINT = asyncio.Event()
 PAUSE_PRINT = asyncio.Event()
 WIFI_SETTINGS = get_key_json("wifi_login")
