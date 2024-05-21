@@ -1,0 +1,271 @@
+import asyncio
+from time import sleep, localtime
+
+try:
+    from mrequests import urequests as requests
+except ImportError:
+    import requests
+import json
+import os
+import logging
+
+from . import constants
+import machine
+
+if constants.ESP32:
+    import ntptime
+    import network
+    import esp
+    import webrepl
+    from ota.update import OTA
+
+
+def wrapper_esp32(res=None):
+    def decorator(func):
+        if not constants.ESP32:
+
+            def wrapper(*args, **kwargs):
+                print(f"{func.__name__} not supported")
+                return res
+
+        else:
+
+            def wrapper(*args, **kwargs):
+                return func(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
+
+
+@wrapper_esp32()
+def start_webrepl():
+    """start webrepl"""
+    # disable debug output
+    # recommended when using webrepl
+    esp.osdebug(None)
+    # TODO:
+    # ideal procedure is first running webrepl_setup
+    # password is stored not hashed, this is not ideal
+    # webrepl.start()
+    wifi_login = constants.CONFIG["wifi_login"]
+    webrepl.start(password=wifi_login["webrepl_password"])
+
+
+@wrapper_esp32()
+def set_time(tries=3):
+    """updates local time"""
+    logging.info(f"Local time before synchronization {localtime()}")
+    if not is_connected():
+        logging.info("Tyring to connect to wifi connection")
+        if not connect_wifi():
+            return
+    for trial in range(tries):
+        try:
+            # make sure to have internet connection
+            ntptime.settime()
+            break
+        except OSError:
+            logging.info(f"Trial {trial + 1} out of {tries}")
+            logging.info("Error syncing time, probably not connected")
+            await asyncio.sleep(5)
+    if localtime()[0] < 2024:
+        logging.error("Failed updating time")
+    logging.info(f"Local time after synchronization {localtime()}")
+
+
+def set_log_level(level):
+    """sets to log level e.g. logging.DEBUG, INFO, WARNING"""
+    for handler in logging.getLogger().handlers:
+        handler.setLevel(level)
+
+
+@wrapper_esp32(res=["connected", "otheroption"])
+def list_wlans():
+    """retrieves list of available wireless networks"""
+    wlan = network.WLAN(network.STA_IF)
+    wlan.active(True)
+    results = []
+    for ssid in wlan.scan():
+        name = ssid[0].decode()
+        if len(name) > 0:
+            results.append(name)
+    return results
+
+
+@wrapper_esp32(res=True)
+def is_connected():
+    """True is connected to a wireless network"""
+    wlan = network.WLAN(network.STA_IF)
+    return wlan.isconnected()
+
+
+def get_firmware_dct(require_new=True):
+    gh = constants.CONFIG["github"]
+    head = {
+        "User-Agent": f"sensor {constants.CONFIG['serial']}",
+        "Authorization": f"token {gh['token']}",
+    }
+    url = f"https://api.github.com/repos/{gh['user']}/{gh['repo']}/releases/latest"
+    try:
+        r = requests.get(url, headers=head)
+    except OSError:
+        logging.error("Cannot retrieve firmware url, probably wifi connection")
+        return {}
+
+    if r.status_code == 200:
+        release_dct = json.loads(r.text)
+    else:
+        logging.error("Response for firmware url is invalid")
+        return {}
+
+    def clean(code):
+        return int(code.replace(".", "").replace("v", ""))
+
+    if (not require_new) or (clean(release_dct["tag_name"]) > clean(gh["version"])):
+        return release_dct
+    else:
+        logging.info("No new firmware")
+        return {}
+
+
+def update_firmware(force=False, download=True):
+    gh = constants.CONFIG["github"]
+    if download:
+        release_dct = get_firmware_dct(require_new=(not force))
+        if not release_dct:
+            return False
+        head = {
+            "User-Agent": f"sensor {constants.CONFIG['serial']}",
+            "Authorization": f"token {gh['token']}",
+            "Accept": "application/octet-stream",
+        }
+
+        with requests.get(release_dct["assets"][0]["url"], headers=head) as resp:
+            if resp.status_code != 200:
+                logging.error("Download firmware binary failed")
+                return False
+            else:
+                with open(f"{gh['storagefolder']}/{gh['bin_name']}", mode="wb") as file:
+                    for chunk in resp.iter_content(chunk_size=1024):
+                        file.write(chunk)
+        logging.info(f"Downloaded file {gh['bin_name']}")
+
+    if constants.ESP32:
+        # purge templates and static folder
+        flds = ["templates", "static"]
+        for fld in flds:
+            for f in os.listdir(fld):
+                os.remove(fld + "/" + f)
+        try:
+            os.rename("config.json", "config_old.json")
+        except OSError:
+            pass
+        # Write firmware from a url or filename
+        # reboot if successful and verified
+        with OTA(reboot=True) as ota:
+            ota.from_firmware_file(
+                f"{gh['storagefolder']}/{gh['bin_name']}",
+                sha="",
+                length=release_dct["assets"][0]["size"],
+            )
+
+
+@wrapper_esp32()
+def show_state(color):
+    """flips to desired color
+
+    color: blue, green or red, otherwise off
+    """
+    pass  # not connected
+    # for key, value in {"blue": 39, "green": 40, "red": 41}.items():
+    #     p = machine.Pin(value, machine.Pin.OUT)
+    #     p.on()
+    #     if color is key:
+    #         p.off()
+
+
+async def connection_status_and_time():
+    """display connection status via onboard led"""
+    while True:
+        show_state(None)
+        await asyncio.sleep(15)
+        if is_connected():
+            show_state("green")
+        else:
+            show_state("red")
+            connect_wifi()
+        if localtime()[0] < 2024:
+            await set_time(1)
+        await asyncio.sleep(5)
+
+
+@wrapper_esp32(res=True)
+def connect_wifi(force=False):
+    """tries to connect to wifi
+
+    If connection fails access point is created
+    If connection succeeds active access points are deactivated
+
+    returns boolean: True if connected
+    """
+    made_connection = False
+    wlan = network.WLAN(network.STA_IF)
+    ap = network.WLAN(network.AP_IF)
+    wlan.active(True)
+    wifi_login = constants.CONFIG["wifi_login"]
+    if not wlan.isconnected() or force:
+        # if machine.reset_cause() != machine.SOFT_RESET:
+        if wifi_login["static_enabled"]:
+            wlan.ifconfig(
+                (
+                    wifi_login["static_ip"],
+                    wifi_login["dnsmask"],
+                    wifi_login["gateway_ip"],
+                    wifi_login["primary_dns"],
+                )
+            )
+        # method can fail due to power supply issues
+        wlan.connect(wifi_login["ssid"], wifi_login["password"])
+        max_wait = 10
+        while max_wait > 0:
+            if wlan.isconnected():
+                made_connection = True
+                break
+            else:
+                max_wait -= 1
+                sleep(1)
+        ap.active(False)
+    else:
+        made_connection = True
+        ap.active(False)
+    if made_connection:
+        logging.info("Network config:", wlan.ifconfig())
+    else:
+        wlan.active(False)
+        logging.error("Cannot connect to wifi, creating access point!")
+        ap.active(True)
+        ap.config(
+            essid=f"sensor_serial{constants['serial']}",
+            authmode=network.AUTH_WPA_WPA2_PSK,
+            max_clients=10,
+            password=wifi_login["webrepl_password"],
+        )
+    return made_connection
+
+
+@wrapper_esp32()
+def mount_sd():
+    """mounts SDCard and changes working directory"""
+    try:
+        os.listdir("sd")
+    except OSError:
+        # directory does not exist try mounting
+        try:
+            sd = machine.SDCard(slot=2)
+            os.mount(sd, "/sd")
+        except OSError:
+            print(
+                """Cannot connect to sdcard.\n"""
+                """Hard reboot is required, not mounted"""
+            )

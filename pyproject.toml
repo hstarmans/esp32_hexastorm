@@ -1,7 +1,7 @@
 [tool.poetry]
-name = "esp32-hexastorm"
+name = "control"
 version = "0.1.0"
-description = "Tools to interact with ESP32 via python"
+description = "ESP32 wrapper for Hexastorm python library"
 authors = ["Rik Starmans <hstarmans@hexastorm.com>"]
 license = "CC BY-NC-SA"
 readme = "README.md"
@@ -12,6 +12,10 @@ pytest = "^8.1.1"
 sseclient-py = "^1.8.0"
 requests = "^2.31.0"
 websocket-client = "^1.7.0"
+numpy = "^1.26.4"
+freezefs = "^2.4"
+pyjwt = "^2.8.0"
+pyclean = "^3.0.0"
 
 
 [build-system]

@@ -82,6 +82,10 @@ Install micropython on linux with [ulab](https://github.com/v923z/micropython-ul
 ```bash
 micropython -m test.test_hardware
 ```
+The hexastorm library is imported using a symlink. This is seen as easier than using git submodules.
+```bash
+ln -s ~/python/hexastorm/src/hexastorm/ hexastorm
+```
 
 ## Screen + controller
 A library is available [here](https://github.com/peterhinch/micropython-micro-gui)

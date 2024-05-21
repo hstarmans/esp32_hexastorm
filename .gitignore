@@ -1,5 +1,7 @@
 .vscode*
-config.json
+secrets.json
+todo.md
+
 
 # ignore hexastorm package for now
 hexastorm/*

@@ -17,14 +17,12 @@ class WebApp:
         # WEBAPP="~/python/esp32_hexastorm"
         ip = os.environ.get("IP")
         if ip is None:
-            raise Exception(
-                """Environmental variables not set
-                   export IP="localhost"
-                          PORT=5000
-                         WEBAPP="~/python/esp32_hexastorm" """
-            )
-        port = os.environ.get("PORT")
-        self.webappdir = os.environ.get("WEBAPP")
+            ip = "localhost"
+            port = 5000
+            self.webappdir = "/home/hstarmans/python/esp32_hexastorm"
+        else:
+            port = os.environ.get("PORT")
+            self.webappdir = os.environ.get("WEBAPP")
         if ip == "localhost":
             self.process = subprocess.Popen(
                 ["micropython", "webapp.py"],

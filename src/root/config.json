@@ -1,0 +1,64 @@
+{
+    "serial": -1,
+    "defaultprint": {
+        "passesperline": 0,
+        "laserpower": 70
+    },
+    "github": {
+        "version": "0.1",
+        "user": "hstarmans",
+        "repo": "esp32_hexastorm",
+        "branch": "master",
+        "storagefolder": "sd/micropython",
+        "bin_name": "micropython.bin",
+        "token": ""
+    },
+    "webserver": {
+        "password": "76081385-7eb7-411d-966f-712f1a15500",
+        "salt": "6bcad2870a09b584d9045736c372085c58a871bf4ec1333f128e2f7c37d2806e",
+        "max_content_length": 10,
+        "static" : "static",
+        "job_folder": "sd/jobs",
+        "fpga_folder": "sd/fpga"
+    },
+    "wifi_login": {
+        "ssid": "",
+        "password": "",
+        "webrepl_password": "hex",
+        "essid": "hexastorm",
+        "static_enabled": false,
+        "static_ip": "192.168.1.249",
+        "dnsmask": "255.255.255.0",
+        "gateway_ip": "192.168.1.1",
+        "primary_dns": "192.168.1.1"
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+{
+"devicecode": 1,
+"version" : 1,
+"wifi_login": {
+    "ssid": "TMNL-AD2831",
+    "password": "MLXYWHBQ7RHMUG68",
+    "webrepl_password": "hex",
+    "essid": "hexastorm",
+    "static_enabled": false,
+    "static_ip": "192.168.1.249",
+    "dnsmask": "255.255.255.0",
+    "gateway_ip": "192.168.1.1",
+    "primary_dns": "1.1.1.1"
+}
+}
