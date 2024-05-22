@@ -1,7 +1,7 @@
 # (c) 2014-2020 Paul Sokolovsky. MIT license.
 try:
     from uos import stat, remove
-except:
+except Exception:
     from os import stat, remove
 from . import source
 

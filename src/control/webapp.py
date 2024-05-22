@@ -1,22 +1,19 @@
 import asyncio
+import binascii
+import hashlib
+import json
+import logging
+import os
 import random
 from time import time
-import json
-import os
-import hashlib
-import binascii
-import logging
 
-from microdot import Microdot, Response, redirect, send_file, Request
-from microdot.websocket import with_websocket
+from microdot import Microdot, Request, Response, redirect, send_file
 from microdot.session import Session, with_session
-from microdot.utemplate import Template
 from microdot.sse import with_sse
+from microdot.utemplate import Template
+from microdot.websocket import with_websocket
 
-
-from . import bootlib
-from . import constants
-
+from . import bootlib, constants
 
 if not constants.ESP32:
     static_dir = "src/root/static"
@@ -37,8 +34,6 @@ logger = logging.getLogger(__name__)
 
 def is_authorized(session):
     pwd = session.get("password")
-    # Generated via import uuid // uiid.uuid4()
-    # default key is "wachtwoord"
     if pass_to_sha(pwd) == constants.CONFIG["webserver"]["password"]:
         return True
     else:
@@ -68,12 +63,27 @@ async def index(req, session):
         return redirect("/")
     if authorized:
         logger.info("User logged in")
-        state["files"] = os.listdir(constants.CONFIG["webserver"]["job_folder"])
+        state["files"] = os.listdir(
+            constants.CONFIG["webserver"]["job_folder"]
+        )
         state["wifi"]["connected"] = bootlib.is_connected()
         state["wifi"]["available"] = bootlib.list_wlans()
-        return Template("home.html").generate_async(authorized=authorized, state=state)
+        state["wifi"]["ssid"] = constants.CONFIG["wifi_login"]["ssid"]
+        state["wifi"]["password"] = constants.CONFIG["wifi_login"]["password"]
+        state["job"]["passesperline"] = constants.CONFIG["defaultprint"][
+            "passesperline"
+        ]
+        state["job"]["laserpower"] = constants.CONFIG["defaultprint"][
+            "laserpower"
+        ]
+        return Template("home.html").generate_async(
+            authorized=authorized, state=state
+        )
     else:
-        return Template("login.html").generate_async(authorized=authorized), 401
+        return (
+            Template("login.html").generate_async(authorized=authorized),
+            401,
+        )
 
 
 @app.post("/upload")
@@ -91,7 +101,9 @@ async def upload(request, session):
 
         # obtain the filename and size from request headers
         filename = (
-            request.headers["Content-Disposition"].split("filename=")[1].strip('"')
+            request.headers["Content-Disposition"]
+            .split("filename=")[1]
+            .strip('"')
         )
         size = int(request.headers["Content-Length"])
 
@@ -136,11 +148,11 @@ async def command(request, session, ws):
     authorized = is_authorized(session)
     if not authorized:
         return redirect("/")
-
     while authorized:
         data = await ws.receive()
         try:
             jsondata = json.loads(data)
+            logger.debug(jsondata)
             command = jsondata["command"]
             if state["printing"]:
                 if command == "stopprint":
@@ -148,40 +160,47 @@ async def command(request, session, ws):
                 elif command == "pauseprint":
                     constants.PAUSE_PRINT.set()
             else:
-                control = state["control"]
+                comp = state["components"]
                 if command == "toggleprism":
-                    control["rotating"] = not control["rotating"]
-                    logging.info(
-                        f"Change rotation state prism to {control['rotating']}"
+                    comp["rotating"] = not comp["rotating"]
+                    logger.info(
+                        f"Change rotation state prism to {comp['rotating']}"
                     )
                 elif command == "togglelaser":
-                    control["laser"] = not control["laser"]
-                    logging.info(f"Laser on is {control['laser']}")
+                    comp["laser"] = not comp["laser"]
+                    logger.info(f"Laser on is {comp['laser']}")
                 elif command == "diodetest":
-                    control["diodetest"] = None
+                    comp["diodetest"] = None
                     await ws.send(json.dumps(state))
                     await asyncio.sleep(3)
-                    control["diodetest"] = True if random.randint(0, 10) > 5 else False
-                    logging.info(f"Diode test is {control['diodetest']}")
+                    comp["diodetest"] = (
+                        True if random.randint(0, 10) > 5 else False
+                    )
+                    logger.info(f"Diode test is {comp['diodetest']}")
                 elif command == "move":
                     steps = float(jsondata["steps"])
                     vector = [int(x) for x in jsondata["vector"]]
-                    logging.info(f"Moving {steps} along {vector}")
+                    logger.info(f"Moving {steps} along {vector}")
                 elif command == "deletefile":
                     filename = jsondata["file"].replace("/", "_")
-                    logging.info(f"Deleting {filename}")
+                    logger.info(f"Deleting {filename}")
                     os.remove(
-                        constants.CONFIG["webserver"]["job_folder"] + "/" + filename
+                        constants.CONFIG["webserver"]["job_folder"]
+                        + "/"
+                        + filename
                     )
                     state["files"] = os.listdir(
                         constants.CONFIG["webserver"]["job_folder"]
                     )
                 elif command == "changewifi":
-                    logging.info(
-                        f"connecting to {jsondata['wifi']} with {jsondata['password']}"
+                    logger.info(
+                        f"connecting to {jsondata['wifi']} "
+                        + f"with {jsondata['password']}"
                     )
                     constants.CONFIG["wifi_login"]["ssid"] = jsondata["wifi"]
-                    constants.CONFIG["wifi_login"]["password"] = jsondata["password"]
+                    constants.CONFIG["wifi_login"]["password"] = jsondata[
+                        "password"
+                    ]
                     constants.update_config()
                     bootlib.connect_wifi(force=True)
                 elif command == "startwebrepl":
@@ -189,7 +208,7 @@ async def command(request, session, ws):
                     request.app.shutdown()
                 elif command == "startprint":
                     filename = jsondata["file"].replace("/", "_")
-                    constants.STATE = constants.init_state()
+                    constants.STATE = constants.state()
                     # relink state
                     state = constants.STATE
                     state["printing"] = True
@@ -197,17 +216,23 @@ async def command(request, session, ws):
                         constants.CONFIG["webserver"]["job_folder"]
                     )
                     state["job"]["filename"] = filename
-                    constants.CONFIG["defaultprint"]["passesperline"] = jsondata[
-                        "passes"
-                    ]
+                    constants.CONFIG["defaultprint"]["passesperline"] = (
+                        jsondata["passes"]
+                    )
                     constants.CONFIG["defaultprint"]["laserpower"] = jsondata[
                         "laserpower"
                     ]
                     constants.update_config()
+                    state["job"]["passesperline"] = constants.CONFIG[
+                        "defaultprint"
+                    ]["passesperline"]
+                    state["job"]["laserpower"] = constants.CONFIG[
+                        "defaultprint"
+                    ]["laserpower"]
                     # start the print loop
                     asyncio.create_task(print_loop())
-        except Exception:
-            logging.info("Failed parsing movement request")
+        except Exception as e:
+            logger.error(f"Error in command {e}")
         await ws.send(json.dumps(state))
 
 
@@ -244,14 +269,14 @@ async def print_loop():
 async def state(request, session, sse):
     authorized = is_authorized(session)
     if authorized:
-        await sse.send(constants.MACHINE_STATE, event="message")
+        await sse.send(constants.STATE, event="message")
     else:
         await sse.send({"notauthorized": 0}, event="message")
 
 
 @app.route("/favicon.ico")
 async def favicon(request):
-    return send_file(f"{static_dir}/favicon.ico", max_age=86400)
+    return send_file(f"{static_dir}/favicon.webp", max_age=86400)
 
 
 @app.route("/static/<path:path>")
@@ -259,10 +284,13 @@ async def static(request, path):
     if ".." in path:
         # directory traversal is not allowed
         return "Not found", 404
-    return send_file("static/" + path, max_age=86400)
+    return send_file(f"{static_dir}/" + path, max_age=86400)
 
 
 if __name__ == "__main__":
+    logging.basicConfig()
+    logger.setLevel(logging.DEBUG)
+    logger.info("Started logging")
     python_files = [f for f in os.listdir(temp_dir) if ".py" in f]
     for f in python_files:
         os.remove(temp_dir + "/" + f)

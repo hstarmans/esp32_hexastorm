@@ -58,7 +58,8 @@ class Response:
             raise RuntimeError("response already consumed")
         elif chunk_size is not None and not isinstance(chunk_size, int):
             raise TypeError(
-                "chunk_size must be an int, it is instead a %s." % type(chunk_size)
+                "chunk_size must be an int, it is instead a %s."
+                % type(chunk_size)
             )
 
         return generate()
@@ -140,7 +141,7 @@ def request(
             context.verify_mode = tls.CERT_NONE
             s = context.wrap_socket(s, server_hostname=host)
         s.write(b"%s /%s HTTP/1.0\r\n" % (method, path))
-        if not "Host" in headers:
+        if "Host" not in headers:
             s.write(b"Host: %s\r\n" % host)
         # Iterate over keys to avoid tuple alloc
         for k in headers:
@@ -160,26 +161,28 @@ def request(
         if data:
             s.write(data)
 
-        l = s.readline()
+        line = s.readline()
         # print(l)
-        l = l.split(None, 2)
-        status = int(l[1])
+        line = line.split(None, 2)
+        status = int(line[1])
         reason = ""
-        if len(l) > 2:
-            reason = l[2].rstrip()
+        if len(line) > 2:
+            reason = line[2].rstrip()
         while True:
-            l = s.readline()
-            if not l or l == b"\r\n":
+            line = s.readline()
+            if not line or line == b"\r\n":
                 break
             # print(l)
-            if l.startswith(b"Transfer-Encoding:"):
-                if b"chunked" in l:
-                    raise ValueError("Unsupported " + str(l, "utf-8"))
-            elif l.startswith(b"Location:") and not 200 <= status <= 299:
+            if line.startswith(b"Transfer-Encoding:"):
+                if b"chunked" in line:
+                    raise ValueError("Unsupported " + str(line, "utf-8"))
+            elif line.startswith(b"Location:") and not 200 <= status <= 299:
                 if status in [301, 302, 303, 307, 308]:
-                    redirect = str(l[10:-2], "utf-8")
+                    redirect = str(line[10:-2], "utf-8")
                 else:
-                    raise NotImplementedError("Redirect %d not yet supported" % status)
+                    raise NotImplementedError(
+                        "Redirect %d not yet supported" % status
+                    )
     except OSError:
         s.close()
         raise

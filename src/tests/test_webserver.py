@@ -2,7 +2,7 @@ import io
 
 import pytest
 
-from esp32_hexastorm.rest import WebApp
+from rest import WebApp
 
 
 @pytest.fixture

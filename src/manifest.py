@@ -26,7 +26,15 @@ os.chdir(base_dir)
 
 # remove build left overs from templates
 subprocess.run(
-    ["poetry", "run", "pyclean", ".", "--erase", "root/templates/*.py", "--yes"]
+    [
+        "poetry",
+        "run",
+        "pyclean",
+        ".",
+        "--erase",
+        "root/templates/*.py",
+        "--yes",
+    ]
 )
 # pack templates
 subprocess.run(

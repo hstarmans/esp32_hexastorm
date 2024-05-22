@@ -1,7 +1,7 @@
 .vscode*
 secrets.json
 todo.md
-
+*templates/*.py
 
 # ignore hexastorm package for now
 hexastorm/*

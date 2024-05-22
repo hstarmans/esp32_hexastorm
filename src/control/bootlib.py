@@ -53,8 +53,8 @@ def start_webrepl():
 
 
 @wrapper_esp32()
-def set_time(tries=3):
-    """updates local time"""
+async def set_time(tries=3):
+    """Update local time."""
     logging.info(f"Local time before synchronization {localtime()}")
     if not is_connected():
         logging.info("Tyring to connect to wifi connection")
@@ -76,13 +76,16 @@ def set_time(tries=3):
 
 def set_log_level(level):
     """sets to log level e.g. logging.DEBUG, INFO, WARNING"""
-    for handler in logging.getLogger().handlers:
-        handler.setLevel(level)
+    logging.basicConfig()
+    temp_logger = logging.getLogger()
+    temp_logger.setLevel(level)
+    # for handler in temp_logger.handlers:
+    #     handler.setLevel(level)
 
 
 @wrapper_esp32(res=["connected", "otheroption"])
 def list_wlans():
-    """retrieves list of available wireless networks"""
+    """Retrieves list of available wireless networks."""
     wlan = network.WLAN(network.STA_IF)
     wlan.active(True)
     results = []
@@ -122,7 +125,9 @@ def get_firmware_dct(require_new=True):
     def clean(code):
         return int(code.replace(".", "").replace("v", ""))
 
-    if (not require_new) or (clean(release_dct["tag_name"]) > clean(gh["version"])):
+    if (not require_new) or (
+        clean(release_dct["tag_name"]) > clean(gh["version"])
+    ):
         return release_dct
     else:
         logging.info("No new firmware")
@@ -141,12 +146,16 @@ def update_firmware(force=False, download=True):
             "Accept": "application/octet-stream",
         }
 
-        with requests.get(release_dct["assets"][0]["url"], headers=head) as resp:
+        with requests.get(
+            release_dct["assets"][0]["url"], headers=head
+        ) as resp:
             if resp.status_code != 200:
                 logging.error("Download firmware binary failed")
                 return False
             else:
-                with open(f"{gh['storagefolder']}/{gh['bin_name']}", mode="wb") as file:
+                with open(
+                    f"{gh['storagefolder']}/{gh['bin_name']}", mode="wb"
+                ) as file:
                     for chunk in resp.iter_content(chunk_size=1024):
                         file.write(chunk)
         logging.info(f"Downloaded file {gh['bin_name']}")
@@ -256,7 +265,7 @@ def connect_wifi(force=False):
 
 @wrapper_esp32()
 def mount_sd():
-    """mounts SDCard and changes working directory"""
+    """Mounts SDCard and change working directory."""
     try:
         os.listdir("sd")
     except OSError:
@@ -265,7 +274,7 @@ def mount_sd():
             sd = machine.SDCard(slot=2)
             os.mount(sd, "/sd")
         except OSError:
-            print(
+            logging.error(
                 """Cannot connect to sdcard.\n"""
                 """Hard reboot is required, not mounted"""
             )

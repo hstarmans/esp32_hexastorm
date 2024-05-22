@@ -150,19 +150,19 @@ function updatemain(jsonData){
         printingstate.style.display = 'none';
         controlstate.style.display = '';
 
-        if (jsonData['control']['rotating']){
+        if (jsonData['components']['rotating']){
             motor.innerHTML = "Turn motor off";
         } else {
             motor.innerHTML = "Turn motor on";
         }
-        if (jsonData['control']['laser']){
+        if (jsonData['components']['laser']){
             laser.innerHTML = "Turn laser off";
         } else {
             laser.innerHTML = "Turn laser on";
         }
-        if (jsonData['control']['diodetest']){
+        if (jsonData['components']['diodetest']){
             testresult.innerHTML = "Diode test successfull.";
-        } else if (jsonData['control']['diodetest'] == false) {
+        } else if (jsonData['components']['diodetest'] == false) {
             testresult.innerHTML = "Diode test failed.";
         } else {
             testresult.innerHTML = "Diode test not run.";

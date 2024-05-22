@@ -27,11 +27,11 @@
                     </div>
                     <div class="mb-3">
                         <label for="passesperline" class="form-label">Exposures per line</label>
-                        <input id="passesperline" class="form-control" type="number" value="1" min="1" max="10"/>
+                        <input id="passesperline" class="form-control" type="number" value="{{state['job']['passesperline']}}" min="1" max="10"/>
                     </div>
                     <div class="mb-3">
                         <label for="laserpower" class="form-label">Laser power [a.u]</label>
-                        <input id="laserpower" class="form-control" type="number" value="70" min="50" max="150"/>
+                        <input id="laserpower" class="form-control" type="number" value="{{state['job']['laserpower']}}" min="50" max="150"/>
                     </div>
                 </form>
             </div>

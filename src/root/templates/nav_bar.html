@@ -35,7 +35,7 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                <p id="wificonnectedtext"> Connected to wifi not defined.</p>
+                <p id="wificonnectedtext"> Wifi connected is {{state['wifi']['connected']}}. Current network set is {{state['wifi']['ssid']}} </p>
                 <form>
                     <div class="mb-3">
                         <label for="selectedwifi" class="form-label">Available wifis</label>

@@ -37,10 +37,14 @@ class Pin:
 
 
 class SoftSPI:
-    def __init__(self, sck=1, mosi=2, miso=2, baudrate=100000, polarity=1, phase=0):
+    def __init__(
+        self, sck=1, mosi=2, miso=2, baudrate=100000, polarity=1, phase=0
+    ):
         self.init(sck, mosi, miso, baudrate, polarity, phase)
 
-    def init(self, sck=2, mosi=-1, miso=1, baudrate=100_000, polarity=1, phase=0):
+    def init(
+        self, sck=2, mosi=-1, miso=1, baudrate=100_000, polarity=1, phase=0
+    ):
         self.sck = sck
         self.mosi = mosi
         self.miso = miso

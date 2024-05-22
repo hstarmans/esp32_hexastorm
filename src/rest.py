@@ -2,6 +2,7 @@ import os
 import subprocess
 import json
 import time
+from pathlib import Path
 
 import requests
 from websocket import create_connection, enableTrace
@@ -19,13 +20,13 @@ class WebApp:
         if ip is None:
             ip = "localhost"
             port = 5000
-            self.webappdir = "/home/hstarmans/python/esp32_hexastorm"
+            self.webappdir = Path(__file__).resolve().parents[1]
         else:
             port = os.environ.get("PORT")
             self.webappdir = os.environ.get("WEBAPP")
         if ip == "localhost":
             self.process = subprocess.Popen(
-                ["micropython", "webapp.py"],
+                ["poetry", "run", "python", "-m", "src.control.webapp"],
                 cwd=self.webappdir,
             )
             time.sleep(1)
@@ -42,11 +43,15 @@ class WebApp:
             self.process.kill()
 
     def str_cookie(self):
-        return "".join([f"{k}={v}" for k, v in self.session.cookies.get_dict().items()])
+        return "".join(
+            [f"{k}={v}" for k, v in self.session.cookies.get_dict().items()]
+        )
 
     def login(self, password="wachtwoord"):
         session = requests.Session()
-        response = session.post(self.base_url, data={"password": password}, timeout=3)
+        response = session.post(
+            self.base_url, data={"password": password}, timeout=3
+        )
         if not response.ok:
             raise Exception("Cannot login invalid password")
         return session
@@ -67,7 +72,9 @@ class WebApp:
         #   look at request headers webapp (webapp.request.header)
         #   socketio is not yet supported by microdot
         enableTrace(False)
-        ws = create_connection(f"ws://{self.base}/command", cookie=self.str_cookie)
+        ws = create_connection(
+            f"ws://{self.base}/command", cookie=self.str_cookie
+        )
         ws.send(json.dumps(command))
         return json.loads(ws.recv())
 
@@ -78,6 +85,8 @@ class WebApp:
         }
         print(self.base_url + "upload")
         self.session.post(
-            self.base_url + "upload", files={"file": (fname, file)}, headers=headers
+            self.base_url + "upload",
+            files={"file": (fname, file)},
+            headers=headers,
         )
         time.sleep(2)

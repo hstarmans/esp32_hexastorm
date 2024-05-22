@@ -2,8 +2,7 @@ import unittest
 
 
 def run_test(class_name, function, variable=None):
-    print(class_name)
-
+    print(f"executing class {class_name} in test_electrical")
     exec(f"from hexastorm.tests.test_electrical import {class_name}")
     exec(f"tst = {class_name}()")
     exec("tst.setUpClass()")
