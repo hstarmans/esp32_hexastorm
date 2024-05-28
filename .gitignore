@@ -1,18 +1,21 @@
 .vscode*
 secrets.json
 todo.md
-*templates/*.py
+
+# don't track files in jobs or fpga
+src/root/sd/jobs/*
+src/root/sd/fpga/*
 
 # ignore hexastorm package for now
-hexastorm/*
-
+src/hexastorm/*
+src/hexastorm
 
 # ignore uploaded files folder
 files/*
 sd/files/*
 
 # ignore templates generated fro utemplate
-templates/*.py
+src/root/templates/*.py
 
 # default python gitignore
 # Byte-compiled / optimized / DLL files

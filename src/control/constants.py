@@ -1,4 +1,3 @@
-import asyncio
 import json
 import logging
 import sys
@@ -41,34 +40,4 @@ def update_config():
             recurse_dct(CONFIG, "sd/", "src/root/sd/")
 
 
-def state():
-    """Return default machine state."""
-    job = {
-        "currentline": 0,
-        "totallines": 0,
-        "printingtime": 0,
-        "filename": "no file name",
-    }
-    components = {
-        "laser": False,
-        "diodetest": None,
-        "rotating": False,
-    }
-    wifi = {
-        "available": [],
-        "connected": False,
-    }
-    state = {
-        "files": [],
-        "printing": False,
-        "job": job,
-        "components": components,
-        "wifi": wifi,
-    }
-    return state
-
-
-STOP_PRINT = asyncio.Event()
-PAUSE_PRINT = asyncio.Event()
 CONFIG = load_config()
-STATE = state()
