@@ -2,6 +2,9 @@
 secrets.json
 todo.md
 
+# frozen root
+src/control/frozen_root.py
+
 # don't track files in jobs or fpga
 src/root/sd/jobs/*
 src/root/sd/fpga/*

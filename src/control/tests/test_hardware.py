@@ -3,7 +3,6 @@ from time import sleep
 
 import unittest
 
-# you caused a bug upstream, fetch the patch
 from winbond import W25QFlash
 import constants
 
@@ -20,7 +19,9 @@ class Hardware(unittest.TestCase):
         steppers.init()
         enable = Pin(3, Pin.OUT)
         enable(0)
-        res = input("Test wether axis are fixed, input y and enter for succes\n")
+        res = input(
+            "Test wether axis are fixed, input y and enter for succes\n"
+        )
         enable(1)
         assert res == "y"
 
@@ -44,7 +45,9 @@ class Hardware(unittest.TestCase):
         # ce = Pin(3, Pin.OUT, Pin.PULL_UP)
         cs = Pin(2, Pin.OUT, Pin.PULL_UP)
 
-        spi = SoftSPI(baudrate=int(baudrate), sck=Pin(4), mosi=Pin(16), miso=Pin(17))
+        spi = SoftSPI(
+            baudrate=int(baudrate), sck=Pin(4), mosi=Pin(16), miso=Pin(17)
+        )
 
         txdata = bytearray([0xEC, 1, 2, 3, 4] * 3)
         rxdata = bytearray(len(txdata))

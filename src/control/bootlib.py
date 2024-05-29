@@ -106,7 +106,7 @@ def is_connected():
 def get_firmware_dct(require_new=True):
     gh = constants.CONFIG["github"]
     head = {
-        "User-Agent": f"sensor {constants.CONFIG['serial']}",
+        "User-Agent": f"laserhead {constants.CONFIG['serial']}",
         "Authorization": f"token {gh['token']}",
     }
     url = f"https://api.github.com/repos/{gh['user']}/{gh['repo']}/releases/latest"
@@ -141,7 +141,7 @@ def update_firmware(force=False, download=True):
         if not release_dct:
             return False
         head = {
-            "User-Agent": f"sensor {constants.CONFIG['serial']}",
+            "User-Agent": f"laserhead {constants.CONFIG['serial']}",
             "Authorization": f"token {gh['token']}",
             "Accept": "application/octet-stream",
         }
