@@ -14,15 +14,18 @@ from machine import SPI, Pin
 
 class W25QFlash(object):
     """W25QFlash implementation"""
+
     SECTOR_SIZE = const(4096)
     BLOCK_SIZE = const(512)
     PAGE_SIZE = const(256)
 
-    def __init__(self,
-                 spi: SPI,
-                 cs: Pin,
-                 baud: int = 40000000,
-                 software_reset: bool = True) -> None:
+    def __init__(
+        self,
+        spi: SPI,
+        cs: Pin,
+        baud: int = 40000000,
+        software_reset: bool = True,
+    ) -> None:
         """
         Constructs a new instance.
 
@@ -65,7 +68,7 @@ class W25QFlash(object):
             if not self._read_status_reg(nr=16):  # not in 4-byte mode
                 self._await()
                 self.cs(0)
-                self.spi.write(b'\xB7')  # 'Enter 4-Byte Address Mode'
+                self.spi.write(b"\xB7")  # 'Enter 4-Byte Address Mode'
                 self.cs(1)
 
     @property
@@ -140,10 +143,10 @@ class W25QFlash(object):
             self._await()
         self._busy = True
         self.cs(0)
-        self.spi.write(b'\x66')  # 'Enable Reset' command
+        self.spi.write(b"\x66")  # 'Enable Reset' command
         self.cs(1)
         self.cs(0)
-        self.spi.write(b'\x99')  # 'Reset' command
+        self.spi.write(b"\x99")  # 'Reset' command
         self.cs(1)
         time.sleep_us(30)
         self._busy = False
@@ -159,7 +162,7 @@ class W25QFlash(object):
         """
         self._await()
         self.cs(0)
-        self.spi.write(b'\x9F')  # 'Read JEDEC ID' command
+        self.spi.write(b"\x9F")  # 'Read JEDEC ID' command
 
         # manufacturer id, memory type id, capacity id
         mf, mem_type, cap = self.spi.read(3, 0x00)
@@ -168,12 +171,17 @@ class W25QFlash(object):
         self._capacity = int(2**cap)
 
         if not (mf and mem_type and cap):  # something is 0x00
-            raise OSError("device not responding, check wiring. ({}, {}, {})".
-                          format(hex(mf), hex(mem_type), hex(cap)))
+            raise OSError(
+                "device not responding, check wiring. ({}, {}, {})".format(
+                    hex(mf), hex(mem_type), hex(cap)
+                )
+            )
         if mf != 0xEF or mem_type not in [0x40, 0x60, 0x70]:
             # Winbond manufacturer, Q25 series memory (tested 0x40 only)
-            print(f"""Warning manufacturer ({hex(mf)}) or memory type
-                      ({hex(mem_type)}) not tested.""")
+            print(
+                f"""Warning manufacturer ({hex(mf)}) or memory type
+                      ({hex(mem_type)}) not tested."""
+            )
 
         self._manufacturer = mf
         self._mem_type = mem_type
@@ -199,7 +207,7 @@ class W25QFlash(object):
         self._wren()
         self._await()
         self.cs(0)
-        self.spi.write(b'\xC7')  # 'Chip Erase' command
+        self.spi.write(b"\xC7")  # 'Chip Erase' command
         self.cs(1)
         self._await()  # wait for the chip to finish formatting
 
@@ -216,7 +224,7 @@ class W25QFlash(object):
         reg, bit = divmod(nr, 8)
         self.cs(0)
         # 'Read Status Register-...' (1, 2, 3) command
-        self.spi.write((b'\x05', b'\x35', b'\x15')[reg])
+        self.spi.write((b"\x05", b"\x35", b"\x15")[reg])
         stat = 2**bit & self.spi.read(1, 0xFF)[0]
         self.cs(1)
 
@@ -228,14 +236,14 @@ class W25QFlash(object):
         """
         self._busy = True
         self.cs(0)
-        self.spi.write(b'\x05')  # 'Read Status Register-1' command
+        self.spi.write(b"\x05")  # 'Read Status Register-1' command
 
         # last bit (1) is BUSY bit in stat. reg. byte (0 = not busy, 1 = busy)
         trials = 0
         while 0x1 & self.spi.read(1, 0xFF)[0]:
-            if trials > 20:
+            if trials > 5e6:
                 raise Exception("Device keeps busy, aborting.")
-            time.sleep(0.1)
+            time.sleep_us(1)
             trials += 1
         self.cs(1)
         self._busy = False
@@ -250,8 +258,8 @@ class W25QFlash(object):
         self._wren()
         self._await()
         self.cs(0)
-        self.spi.write(b'\x20')  # 'Sector Erase' command
-        self.spi.write(addr.to_bytes(self._ADR_LEN, 'big'))
+        self.spi.write(b"\x20")  # 'Sector Erase' command
+        self.spi.write(addr.to_bytes(self._ADR_LEN, "big"))
         self.cs(1)
 
     def _read(self, buf: list, addr: int) -> None:
@@ -265,16 +273,20 @@ class W25QFlash(object):
         :param      addr:  The start address
         :type       addr:  int
         """
-        assert addr + len(buf) <= self._capacity, \
-            "memory not addressable at %s with range %d (max.: %s)" % \
-            (hex(addr), len(buf), hex(self._capacity - 1))
+        assert (
+            addr + len(buf) <= self._capacity
+        ), "memory not addressable at %s with range %d (max.: %s)" % (
+            hex(addr),
+            len(buf),
+            hex(self._capacity - 1),
+        )
 
         self._await()
         self.cs(0)
         # 'Fast Read' (0x03 = default), 0x0C for 4-byte mode command
-        self.spi.write(b'\x0C' if self._ADR_LEN == 4 else b'\x0B')
-        self.spi.write(addr.to_bytes(self._ADR_LEN, 'big'))
-        self.spi.write(b'\xFF')  # dummy byte
+        self.spi.write(b"\x0C" if self._ADR_LEN == 4 else b"\x0B")
+        self.spi.write(addr.to_bytes(self._ADR_LEN, "big"))
+        self.spi.write(b"\xFF")  # dummy byte
         self.spi.readinto(buf, 0xFF)
         self.cs(1)
 
@@ -284,7 +296,7 @@ class W25QFlash(object):
         """
         self._await()
         self.cs(0)
-        self.spi.write(b'\x06')  # 'Write Enable' command
+        self.spi.write(b"\x06")  # 'Write Enable' command
         self.cs(1)
 
     def _write(self, buf: list, addr: int) -> None:
@@ -304,21 +316,23 @@ class W25QFlash(object):
         :param      addr:  The starting address
         :type       addr:  int
         """
-        assert len(buf) % self.PAGE_SIZE == 0, \
-            "invalid buffer length: {}".format(len(buf))
-        assert not addr & 0xf, \
-            "address ({}) not at page start".format(addr)
-        assert addr + len(buf) <= self._capacity, \
-            ("memory not addressable at {} with range {} (max.: {})".
-                format(hex(addr), len(buf), hex(self._capacity - 1)))
+        assert (
+            len(buf) % self.PAGE_SIZE == 0
+        ), "invalid buffer length: {}".format(len(buf))
+        assert not addr & 0xF, "address ({}) not at page start".format(addr)
+        assert (
+            addr + len(buf) <= self._capacity
+        ), "memory not addressable at {} with range {} (max.: {})".format(
+            hex(addr), len(buf), hex(self._capacity - 1)
+        )
 
         for i in range(0, len(buf), self.PAGE_SIZE):
             self._wren()
             self._await()
             self.cs(0)
-            self.spi.write(b'\x02')  # 'Page Program' command
-            self.spi.write(addr.to_bytes(self._ADR_LEN, 'big'))
-            self.spi.write(buf[i:i + self.PAGE_SIZE])
+            self.spi.write(b"\x02")  # 'Page Program' command
+            self.spi.write(addr.to_bytes(self._ADR_LEN, "big"))
+            self.spi.write(buf[i : i + self.PAGE_SIZE])
             addr += self.PAGE_SIZE
             self.cs(1)
 
@@ -336,16 +350,17 @@ class W25QFlash(object):
         :param      buf:       The data buffer
         :type       buf:       list
         """
-        assert len(buf) == self.BLOCK_SIZE, \
-            "invalid block length: {}".format(len(buf))
+        assert len(buf) == self.BLOCK_SIZE, "invalid block length: {}".format(
+            len(buf)
+        )
 
         sector_nr = blocknum // 8
         sector_addr = sector_nr * self.SECTOR_SIZE
         # index of first byte of page in sector (multiple of self.PAGE_SIZE)
-        index = (blocknum << 9) & 0xfff
+        index = (blocknum << 9) & 0xFFF
 
         self._read(buf=self._cache, addr=sector_addr)
-        self._cache[index:index + self.BLOCK_SIZE] = buf  # apply changes
+        self._cache[index : index + self.BLOCK_SIZE] = buf  # apply changes
         self._sector_erase(addr=sector_addr)
         # addr is multiple of self.SECTOR_SIZE, so last byte is zero
         self._write(buf=self._cache, addr=sector_addr)
@@ -359,8 +374,9 @@ class W25QFlash(object):
         :param      buf:       The data buffer
         :type       buf:       list
         """
-        assert len(buf) % self.BLOCK_SIZE == 0, \
-            'invalid buffer length: {}'.format(len(buf))
+        assert (
+            len(buf) % self.BLOCK_SIZE == 0
+        ), "invalid buffer length: {}".format(len(buf))
 
         buf_len = len(buf)
         if buf_len == self.BLOCK_SIZE:
@@ -369,8 +385,10 @@ class W25QFlash(object):
             offset = 0
             buf_mv = memoryview(buf)
             while offset < buf_len:
-                self._read(buf=buf_mv[offset:offset + self.BLOCK_SIZE],
-                           addr=blocknum << 9)
+                self._read(
+                    buf=buf_mv[offset : offset + self.BLOCK_SIZE],
+                    addr=blocknum << 9,
+                )
                 offset += self.BLOCK_SIZE
                 blocknum += 1
 
@@ -394,8 +412,10 @@ class W25QFlash(object):
             offset = 0
             buf_mv = memoryview(buf)
             while offset < buf_len:
-                self._writeblock(blocknum=blocknum,
-                                 buf=buf_mv[offset:offset + self.BLOCK_SIZE])
+                self._writeblock(
+                    blocknum=blocknum,
+                    buf=buf_mv[offset : offset + self.BLOCK_SIZE],
+                )
                 offset += self.BLOCK_SIZE
                 blocknum += 1
         # remove appended bytes

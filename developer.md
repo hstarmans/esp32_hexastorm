@@ -1,8 +1,8 @@
 # ESP32 
 
 # Tools
-I use mpremote to flash the board.
-[Mpfshell](https://github.com/wendlers/mpfshell) gives more options and allows you to connect via webrepl.
+Mpremote is supported by Micropython. I tried [Mpfshell](https://github.com/wendlers/mpfshell) 
+and [rshell](https://github.com/dhylands/rshell). [Thonny](https://thonny.org/) offers best webrepl support.
 
 ## Python dependencies
 Install poetry in the directory in which you installed this library.

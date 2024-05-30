@@ -2,7 +2,7 @@ import json
 import logging
 import sys
 
-ESP32 = False if sys.platform in ["linux", "win32"] else False
+ESP32 = False if sys.platform in ["linux", "win32"] else True
 logger = logging.getLogger(__name__)
 
 if ESP32:

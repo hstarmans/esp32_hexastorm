@@ -1,15 +1,15 @@
 import asyncio
 import os
-import machine
 import json
 
 import logging
-import ota
+import ota.rollback
 
 from control import bootlib, constants
 from control.webapp import app
 
-if constants.ESP32:
+# not supported on current module
+if constants.ESP32 and False:
     # bootloader needs to keep booting
     # from this partition
     ota.rollback.cancel()
@@ -38,15 +38,15 @@ async def boot_procedure():
         await bootlib.set_time()
     # errors created by mount_sd cannot be captured
     # don't use on devices without sd
-    logging.info("sleeping 10 seconds")
-    asyncio.sleep(10)
+    logging.info("sleeping 1 seconds")
+    await asyncio.sleep(1)
     bootlib.mount_sd()
 
 
 async def main_task():
     """runs web server"""
-    logging.info("sleeping 8 seconds")
-    await asyncio.sleep(8)
+    logging.info("sleeping 5 seconds")
+    await asyncio.sleep(5)
     server_task = asyncio.create_task(app.start_server(port=5000, debug=True))
     await asyncio.gather(server_task)
 

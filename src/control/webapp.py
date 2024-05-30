@@ -210,8 +210,8 @@ async def command(request, session, ws):
                     request.app.shutdown()
                 elif command == "startprint":
                     filename = jsondata["file"].replace("/", "_")
-                    laserpower = jsondata["laserpower"]
-                    passes = jsondata["passes"]
+                    laserpower = int(jsondata["laserpower"])
+                    passes = int(jsondata["passes"])
                     constants.CONFIG["defaultprint"]["passesperline"] = passes
                     constants.CONFIG["defaultprint"]["laserpower"] = laserpower
                     constants.update_config()

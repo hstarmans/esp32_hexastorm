@@ -1,8 +1,17 @@
 {
     "serial": -1,
     "defaultprint": {
-        "passesperline": "1",
-        "laserpower": "70"
+        "passesperline": 1,
+        "laserpower": 70
+    },
+    "fpga": {
+        "version": "0.1",
+        "user": "hstarmans",
+        "repo": "hexastorm",
+        "branch": "master",
+        "storagefolder": "sd/fpga",
+        "bin_name": "fpga.bit",
+        "token": ""
     },
     "github": {
         "version": "0.1",

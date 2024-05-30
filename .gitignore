@@ -1,5 +1,5 @@
 .vscode*
-secrets.json
+secret.json
 todo.md
 
 # frozen root

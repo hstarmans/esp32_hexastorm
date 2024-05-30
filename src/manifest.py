@@ -88,4 +88,5 @@ if called_by_make:
     module("hexastorm/tests/test_electrical.py")
     require("pyjwt")
     require("logging")
+    require("unittest")
     # module("boot.py")

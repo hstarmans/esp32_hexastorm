@@ -4,7 +4,7 @@ from time import sleep
 import unittest
 
 from winbond import W25QFlash
-import constants
+from .. import constants
 
 import steppers
 
@@ -68,8 +68,6 @@ class Hardware(unittest.TestCase):
         FPGA is placed in reset
         File is written to flash ram
         FPGA reset is released and should program itself
-
-        url:  path to file
         """
         fpga_reset = Pin(1, Pin.OUT)
 
@@ -92,7 +90,9 @@ class Hardware(unittest.TestCase):
         # if dest.endswith("/"):  # minimal way to allow
         #    dest = "".join((dest, source.split("/")[-1]))  # cp /sd/file /fl_ext/
 
-        with open(constants.FPGA_FOLDER + "/blink.bit", "rb") as infile:
+        with open(
+            constants.CONFIG["fpga"]["storagefolder"] + "/blink.bit", "rb"
+        ) as infile:
             blocknum = 0
             while True:
                 buf = infile.read(buffsize)

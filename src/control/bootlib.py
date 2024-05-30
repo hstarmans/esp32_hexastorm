@@ -107,9 +107,12 @@ def get_firmware_dct(require_new=True):
     gh = constants.CONFIG["github"]
     head = {
         "User-Agent": f"laserhead {constants.CONFIG['serial']}",
-        "Authorization": f"token {gh['token']}",
     }
+    if len(gh["token"]) > 0:
+        head["Authorization"] = f"token {gh['token']}"
+
     url = f"https://api.github.com/repos/{gh['user']}/{gh['repo']}/releases/latest"
+
     try:
         r = requests.get(url, headers=head)
     except OSError:
@@ -142,9 +145,11 @@ def update_firmware(force=False, download=True):
             return False
         head = {
             "User-Agent": f"laserhead {constants.CONFIG['serial']}",
-            "Authorization": f"token {gh['token']}",
             "Accept": "application/octet-stream",
         }
+
+        if len(gh["token"]) > 0:
+            head["Authorization"] = f"token {gh['token']}"
 
         with requests.get(
             release_dct["assets"][0]["url"], headers=head
@@ -266,15 +271,19 @@ def connect_wifi(force=False):
 @wrapper_esp32()
 def mount_sd():
     """Mounts SDCard and change working directory."""
+    # removed as I use old esp32 for testing
+    # try:
+    #     os.listdir("sd")
+    # except OSError:
+    #     # directory does not exist try mounting
     try:
-        os.listdir("sd")
+        sd = machine.SDCard(slot=2)
+        os.mount(sd, "/sd")
+        from . import frozen_root
+
+        logging.info(f"executing {frozen_root}")
     except OSError:
-        # directory does not exist try mounting
-        try:
-            sd = machine.SDCard(slot=2)
-            os.mount(sd, "/sd")
-        except OSError:
-            logging.error(
-                """Cannot connect to sdcard.\n"""
-                """Hard reboot is required, not mounted"""
-            )
+        logging.error(
+            """Cannot connect to sdcard.\n"""
+            """Hard reboot is required, not mounted"""
+        )
