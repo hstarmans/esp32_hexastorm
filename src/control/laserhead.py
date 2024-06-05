@@ -19,6 +19,13 @@ class Laserhead:
         self._start = asyncio.Event()
         self.reset_state()
 
+    def reset_fpga(self):
+        self.host.reset()
+
+    def flash(self, filename):
+        fname = CONFIG["fpga"]["storagefolder"] + f"/{filename}"
+        self.host.flash_fpga(fname)
+
     def reset_state(self):
         job = {
             "currentline": 0,

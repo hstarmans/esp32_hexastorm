@@ -6,7 +6,6 @@ import logging
 import ota.rollback
 
 from control import bootlib, constants
-from control.webapp import app
 
 # not supported on current module
 if constants.ESP32 and False:
@@ -45,6 +44,9 @@ async def boot_procedure():
 
 async def main_task():
     """runs web server"""
+    # creates laserhead which lifts reset pin, disables REPL
+    from control.webapp import app
+
     logging.info("sleeping 5 seconds")
     await asyncio.sleep(5)
     server_task = asyncio.create_task(app.start_server(port=5000, debug=True))

@@ -3,8 +3,7 @@ from time import sleep
 
 import unittest
 
-from winbond import W25QFlash
-from .. import constants
+from ..laserhead import LASERHEAD
 
 import steppers
 
@@ -24,6 +23,36 @@ class Hardware(unittest.TestCase):
         )
         enable(1)
         assert res == "y"
+
+    def test_spirepeat(self, flash=False):
+        """test communciation with FPGA via SPI
+
+        create the required binary via
+        hexastorm/old/debug_spi/test_spi.py
+        """
+        if flash:
+            # generated via old/debug_spi/test_spi
+            LASERHEAD.flash("reply.bit")
+        print("The red led should be on")
+        bts = [0, 210, 222, 230]
+        LASERHEAD.host.reset(blank=False)
+        previous_byte = None
+        for idx, byte in enumerate(bts):
+            LASERHEAD.host.chip_select.value(0)
+            sleep(1)
+            response = bytearray([0])
+            data = bytearray([byte])
+            LASERHEAD.host.spi.write_readinto(data, response)
+            byte_received = response[0]
+            LASERHEAD.host.chip_select.value(1)
+            if idx != 0:
+                try:
+                    assert previous_byte == byte_received
+                except AssertionError:
+                    print(previous_byte)
+                    print(byte_received)
+                    raise Exception("Test failed: not equal")
+            previous_byte = byte
 
     def test_steppers_nolib(self):
         """write to chopconfig and verify data is returned
@@ -69,42 +98,7 @@ class Hardware(unittest.TestCase):
         File is written to flash ram
         FPGA reset is released and should program itself
         """
-        fpga_reset = Pin(1, Pin.OUT)
-
-        # FPGA in active reset
-        baudrate = int(1e6)
-        spi = SoftSPI(
-            baudrate=int(baudrate),
-            polarity=1,
-            phase=0,
-            sck=Pin(32),
-            mosi=Pin(25),
-            miso=Pin(26),
-        )
-        cs = Pin(27)
-
-        f = W25QFlash(spi=spi, cs=cs, baud=int(baudrate), software_reset=True)
-
-        fpga_reset.value(0)
-        buffsize = f.BLOCK_SIZE
-        # if dest.endswith("/"):  # minimal way to allow
-        #    dest = "".join((dest, source.split("/")[-1]))  # cp /sd/file /fl_ext/
-
-        with open(
-            constants.CONFIG["fpga"]["storagefolder"] + "/blink.bit", "rb"
-        ) as infile:
-            blocknum = 0
-            while True:
-                buf = infile.read(buffsize)
-                print(f" Writing {blocknum}.")
-                f.writeblocks(blocknum, buf)
-                if len(buf) < buffsize:
-                    print(f"Final block {blocknum}")
-                    break
-                else:
-                    blocknum += 1
-        sleep(1)
-        fpga_reset.value(1)
+        LASERHEAD.flash("blink.bit")
         res = input("Test wether led blinks, input y and enter for succes\n")
         assert res == "y"
 
