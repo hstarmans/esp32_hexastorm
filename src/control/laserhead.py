@@ -18,6 +18,7 @@ class Laserhead:
         self._pause = asyncio.Event()
         self._start = asyncio.Event()
         self.reset_state()
+        self.reset_fpga()
 
     def reset_fpga(self):
         self.host.reset()
