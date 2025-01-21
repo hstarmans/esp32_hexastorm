@@ -80,6 +80,7 @@ if called_by_make:
     # now trying https://github.com/micropython/micropython-lib/pull/278
     package("mrequests")
     package("winbond")
+    package("tmc")
     module("hexastorm/__init__.py")
     module("hexastorm/controller.py")
     module("hexastorm/ulabext.py")
@@ -89,4 +90,4 @@ if called_by_make:
     require("pyjwt")
     require("logging")
     require("unittest")
-    # module("boot.py")
+    module("boot.py")

@@ -21,7 +21,7 @@ poetry install
 I follow the procedure described on [esp32](https://github.com/micropython/micropython/tree/master/ports/esp32).
 First install esp-idf and activate it. Git cannot be able to download it.
 ```bash
-git clone -b v5.0.4 --recursive https://github.com/espressif/esp-idf.git$ 
+git clone -b v5.2.2 --recursive https://github.com/espressif/esp-idf.git$ 
 cd esp-idf
 ./install.sh       # (or install.bat on Windows)
 source export.sh   # (or export.bat on Windows)
@@ -31,11 +31,6 @@ The `install.sh` step only needs to be done once. You will need to source
 Hereafter, clone ulab, my stepper library, switch to the ESP32 branch.
 ```bash
 git clone https://github.com/v923z/micropython-ulab
-git clone https://github.com/hstarmans/TMCStepper
-cd TMCStepper
-git fetch
-git switch esp32
-cd ..
 ```
 Install Micropython normally, please note that micropython-ulab, TMCStepper and micropython should
 be in the same root folder.
@@ -51,6 +46,7 @@ make submodules
 The next step depends on the exact chip family you use for the ESP32. It might require a manual operation or not.
 Overall, the ESP32 needs to enter boot mode. Set the boot pin to low and toggle the reset pin.
 This typically causes the device to connect to a different com port. COM9 implies /dev/ttyS9 in the linux WSL layer.
+On windows devices can be seen via the DeviceManager, on linux use dmesg -d.
 Boards with a serial controller can be placed in programmer mode without toggling the pins and do this automatically. Boards can require a different baud rate, e.g. 115200 for ESP32 devkit 1.  
 For the ESP32S3, we use the 32 megabyte version and I use the partition which supports over the air updates.  
 Set in ESP32_GENERIC_S3/sdkconfig.board.  

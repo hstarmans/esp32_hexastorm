@@ -31,15 +31,27 @@ async def boot_procedure():
     If there is internet connection, machine time is updated.
     Machine will reset in timeout minutes
     """
+    from machine import Pin
+
+    # UART RX and TX connected via resistor
+    # and TMC2209, which results in endless
+    # communication and failure of micropython shell
+    # fix is to set UART1 to zero
+    pin43 = Pin(43, Pin.OUT)
+    pin43.value(0)
+    pin44 = Pin(44, Pin.OUT)
+    pin44.value(0)
+
     # connection status loop will try to reconnect
     # and set time in case of failure
     if bootlib.connect_wifi():
         await bootlib.set_time()
-    # errors created by mount_sd cannot be captured
-    # don't use on devices without sd
-    logging.info("sleeping 1 seconds")
-    await asyncio.sleep(1)
-    bootlib.mount_sd()
+
+    # https://github.com/thonny/thonny/issues/2624
+    import network
+
+    ap_if = network.WLAN(network.AP_IF)
+    ap_if.active(False)
 
 
 async def main_task():
@@ -65,3 +77,4 @@ if constants.ESP32:
     asyncio.run(boot_procedure())
     bootlib.start_webrepl()
     # main()
+
