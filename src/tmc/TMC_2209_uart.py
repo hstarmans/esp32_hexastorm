@@ -1,8 +1,11 @@
 import time
 import sys
 import struct
+import logging
 
 from machine import UART
+
+logger = logging.getLogger(__name__)
 
 #-----------------------------------------------------------------------
 # TMC_UART
@@ -71,14 +74,14 @@ class TMC_UART:
 
         rt = self.ser.write(bytes(self.rFrame))
         if rt != len(self.rFrame):
-            print("TMC2209: Err in write {}".format(__), file=sys.stderr)
+            logging.info("TMC2209: Err in write ", file=sys.stderr)
             return False
         time.sleep(self.communication_pause)  # adjust per baud and hardware. Sequential reads without some delay fail.
         if self.ser.any():
             rtn = self.ser.read()#read what it self 
         time.sleep(self.communication_pause)  # adjust per baud and hardware. Sequential reads without some delay fail.
-        if rtn == None:
-            print("TMC2209: Err in read")
+        if rtn is None:
+            logging.info("TMC2209: Err in read")
             return ""
 #         print("received "+str(len(rtn))+" bytes; "+str(len(rtn)*8)+" bits")
         return(rtn[7:11])
@@ -94,11 +97,11 @@ class TMC_UART:
             if(len(rtn)>=4):
                 break
             else:
-                print("TMC2209: did not get the expected 4 data bytes. Instead got "+str(len(rtn))+" Bytes")
+                logging.info("TMC2209: did not get the expected 4 data bytes. Instead got "+str(len(rtn))+" Bytes")
             if(tries>=10):
-                print("TMC2209: after 10 tries not valid answer. exiting")
-                print("TMC2209: is Stepper Powersupply switched on ?")
-                raise Exception("Cannot connect to stepper motor")
+                logging.info("TMC2209: after 10 tries not valid answer. exiting")
+                logging.info("TMC2209: is Stepper Powersupply switched on ?")
+                raise Exception("UART connection to stepper motors fails")
         val = struct.unpack(">i",rtn)[0]
         return(val)
 
@@ -125,7 +128,7 @@ class TMC_UART:
 
         rtn = self.ser.write(bytes(self.wFrame))
         if rtn != len(self.wFrame):
-            print("TMC2209: Err in write {}".format(__), file=sys.stderr)
+            logging.info("TMC2209: Err in write", file=sys.stderr)
             return False
         time.sleep(self.communication_pause)
 
@@ -145,9 +148,9 @@ class TMC_UART:
         ifcnt2 = self.read_int(IFCNT)
         
         if(ifcnt1 >= ifcnt2):
-            print("TMC2209: writing not successful!")
-            print("reg:{} val:{}", reg, val)
-            print("ifcnt:",ifcnt1,ifcnt2)
+            logging.info("TMC2209: writing not successful!")
+            logging.info("reg:{} val:{}", reg, val)
+            logging.info("ifcnt:",ifcnt1,ifcnt2)
             return False
         else:
             return True

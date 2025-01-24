@@ -1,5 +1,6 @@
 import asyncio
 from time import sleep, localtime
+import sys
 
 try:
     from mrequests import urequests as requests
@@ -36,6 +37,34 @@ def wrapper_esp32(res=None):
         return wrapper
 
     return decorator
+
+
+def reload(module):
+    """Reload a module in MicroPython.
+    
+    Allows to hot reload modules
+    """
+    module_name = module.__name__
+    if module_name in sys.modules:
+        del sys.modules[module_name]
+    return __import__(module_name)
+
+
+def disk_usage():
+    """Compute disk usage
+
+    prints disk usages and returns total, used and free bytes
+    """
+    statvfs = os.statvfs('/')  # Get file system statistics
+    # statvfs[0] is block size
+    total_mb = (statvfs[2] * statvfs[0]) / (1024 * 1024)
+    free_mb = (statvfs[3] * statvfs[0]) / (1024 * 1024)
+    used_mb = total_mb - free_mb
+    # Print the results in a user-friendly format
+    print(f"Total space: {total_mb:.2f} MB")
+    print(f"Used space: {used_mb:.2f} MB")
+    print(f"Free space: {free_mb:.2f} MB") 
+    return total_mb, used_mb, free_mb
 
 
 @wrapper_esp32()
