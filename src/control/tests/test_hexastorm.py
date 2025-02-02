@@ -1,14 +1,24 @@
-def run_test(class_name, function, variable=None):
-    print(f"executing class {class_name} in test_electrical")
-    exec("import unittest")
-    exec(f"from hexastorm.tests.test_electrical import {class_name}")
-    exec(f"tst = {class_name}()")
-    exec("tst.setUpClass()")
-    if variable:
-        print(variable)
-        exec(f"tst.{function}({variable})")
-    else:
-        exec(f"tst.{function}()")
+from hexastorm.tests import test_electrical
+
+def run_test(class_name, function_name, variable=None):    
+    print(f"Executing class {class_name} in test_electrical")
+    try:
+        # Get the class and function *directly*
+        test_class = getattr(test_electrical, class_name)
+        test_instance = test_class()
+        test_instance.setUpClass()  # Call setUpClass
+
+        test_function = getattr(test_instance, function_name) # Get the function
+
+        if variable is not None:
+            print(f"Got variable {variable}")
+            test_function(variable)  # Call the function directly
+        else:
+            test_function()  # Call without variable
+    except KeyboardInterrupt:
+        test_instance.host.reset() # Call reset if it exists.
+
+
 
 
 if __name__ == "__main__":
