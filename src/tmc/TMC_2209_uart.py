@@ -94,14 +94,15 @@ class TMC_UART:
         while(True):
             rtn = self.read_reg(reg)
             tries += 1
+            if((tries>=10) | (rtn is False)):
+                logging.info("TMC2209: after 10 tries not valid answer. exiting")
+                logging.info("TMC2209: is Stepper Powersupply switched on ?")
+                raise Exception("UART connection to stepper motors fails")
             if(len(rtn)>=4):
                 break
             else:
                 logging.info("TMC2209: did not get the expected 4 data bytes. Instead got "+str(len(rtn))+" Bytes")
-            if(tries>=10):
-                logging.info("TMC2209: after 10 tries not valid answer. exiting")
-                logging.info("TMC2209: is Stepper Powersupply switched on ?")
-                raise Exception("UART connection to stepper motors fails")
+
         val = struct.unpack(">i",rtn)[0]
         return(val)
 

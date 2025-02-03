@@ -78,10 +78,11 @@ You can run tests via the command below. The s-flag ensures print statements are
 ```bash
 poetry run pytest -s --pyargs tests.test_webserver::test_websocket
 ```
-The webserver can be tested via
+The webserver can be tested via, 
 ```bash
 poetry run python -m src.control.webapp
 ```
+Default password is "hex".
 
 ### Micropython Tests
 

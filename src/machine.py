@@ -17,8 +17,31 @@ class I2C:
         return bytearray([1])
 
 
+class SoftI2C(I2C):
+    pass
+
+
+class UART:
+
+    def __init__(self, serialport, baudrate=115200, tx=43, rx=44):
+        pass
+
+    def init(self, speed=115200 , bits=8, parity=None, stop=1):
+        pass
+
+    def write(self, data):
+        return data
+
+    def read_int(self, offset):
+        return []
+
+    def close(self):
+        pass
+
+
 class Pin:
     OUT = 0
+    IN = 1
     PULL_UP = 1
 
     def __init__(self, id, mode=-1, pull=-1, value=4):
@@ -28,6 +51,15 @@ class Pin:
         self.id = id
         self.mode = mode
         self.pull = pull
+
+    def on(self):
+        pass
+
+    def off(self):
+        pass
+
+    def cleanup():
+        pass
 
     def value(self, val):
         self.val = val
@@ -74,14 +106,17 @@ class SoftSPI:
 
 
 class SPI:
-    def __init__(self, number=0, baudrate=100_000, phase=-1, polarity=-1):
+    def __init__(self, number=0, sck=2, mosi=3, miso=4, baudrate=100_000, phase=-1, polarity=-1):
         self.init(number, baudrate, phase, polarity)
 
-    def init(self, number, baudrate=10, phase=-1, polarity=-1):
+    def init(self, number=2, baudrate=10, phase=-1, polarity=-1):
         self.number = number
         self.baudrate = baudrate
         self.phase = phase
         self.polarity = polarity
+
+    def deinit(self):
+        pass
 
     def write_readinto(self, txdata, rxdata):
         # very specific for test_stepper_nolib
