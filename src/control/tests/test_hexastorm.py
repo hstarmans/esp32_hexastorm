@@ -1,3 +1,6 @@
+import io
+import sys
+
 from hexastorm.tests import test_electrical
 
 def run_test(class_name, function_name, variable=None):    
@@ -17,6 +20,13 @@ def run_test(class_name, function_name, variable=None):
             test_function()  # Call without variable
     except KeyboardInterrupt:
         test_instance.host.reset() # Call reset if it exists.
+    except Exception as e:  
+        # reset after exception and print exception in red
+        test_instance.host.reset()
+        s = io.StringIO()
+        sys.print_exception(e, s)
+        error_message = s.getvalue()
+        print(f"\033[91m{error_message}\033[0m")
 
 
 
