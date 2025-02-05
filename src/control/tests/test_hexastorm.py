@@ -20,13 +20,15 @@ def run_test(class_name, function_name, variable=None):
             test_function()  # Call without variable
     except KeyboardInterrupt:
         test_instance.host.reset() # Call reset if it exists.
-    except Exception as e:  
-        # reset after exception and print exception in red
-        test_instance.host.reset()
+    except Exception as e:
+        # print exception in red
         s = io.StringIO()
         sys.print_exception(e, s)
         error_message = s.getvalue()
         print(f"\033[91m{error_message}\033[0m")
+        # reset after exception
+        test_instance.host.reset()
+
 
 
 
