@@ -104,12 +104,10 @@ async def set_time(tries=3):
 
 
 def set_log_level(level):
-    """sets to log level e.g. logging.DEBUG, INFO, WARNING"""
-    logging.basicConfig()
-    temp_logger = logging.getLogger()
-    temp_logger.setLevel(level)
-    # for handler in temp_logger.handlers:
-    #     handler.setLevel(level)
+    """Sets the log level for the root logger.  Call this ONCE at the start."""
+    print("USING ADAPTED FUNCTION")
+    logging.basicConfig(level=level) 
+    #format='%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s')
 
 
 @wrapper_esp32(res=["connected", "otheroption"])

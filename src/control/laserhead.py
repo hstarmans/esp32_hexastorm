@@ -4,7 +4,8 @@ from time import time
 from random import randint
 
 from .constants import CONFIG
-from hexastorm.controller import Host, executor
+from hexastorm.controller import Host
+from hexastorm.controller import executor as exe
 
 
 class Laserhead:
@@ -12,8 +13,6 @@ class Laserhead:
         self.host = Host(micropython=True)
         self.logger = logging.getLogger(__name__)
         self.debug = debug
-        if not debug:
-            self.host.init_steppers()
         self._stop = asyncio.Event()
         self._pause = asyncio.Event()
         self._start = asyncio.Event()
@@ -55,7 +54,7 @@ class Laserhead:
         self.logger.debug("Print is paused.")
         self._pause.set()
 
-    @executor
+    @exe
     def toggle_laser(self):
         laser = self.state["components"]["laser"]
         self.state["components"]["laser"] = laser = not laser
@@ -63,7 +62,7 @@ class Laserhead:
         if not self._debug:
             yield from self.host.enable_comp(laser0=laser)
 
-    @executor
+    @exe
     def toggle_prism(self):
         prism = self.state["components"]["rotating"]
         self.state["components"]["rotating"] = prism = not prism
@@ -71,11 +70,13 @@ class Laserhead:
         if not self._debug:
             yield from self.host.enable_comp(polygon=prism)
 
-    @executor
+    @exe
     def move(self, vector):
         self.logger.debug(f"Moving vector {vector}")
         if not self._debug:
+            self.host.enable_steppers = True
             yield from self.host.gotopoint(vector, absolute=False)
+            self.host.enable_steppers = False
 
     @property
     def state(self):
@@ -92,7 +93,7 @@ class Laserhead:
             self.logger.setLevel(logging.DEBUG)
         else:
             self.logger.setLevel(logging.NOTSET)
-
+    
     async def test_diode(self, timeout=3):
         self.logger.debug("Starting diode test")
         self.state["components"]["diodetest"] = None
@@ -101,27 +102,22 @@ class Laserhead:
             self.state["components"]["diodetest"] = (
                 True if randint(0, 10) > 5 else False
             )
-            return
         else:
-            for res in self.host.get_state():
-                pass
-            if res["photodiode_trigger"] != 0:
+            host_state = exe(self.host.get_state)()
+            if host_state["photodiode_trigger"] != 0:
                 self.logger.error("Diode already triggered")
                 self.state["components"]["diodetest"] = False
-                return
-            for _ in self.host.enable_comp(laser1=True, polygon=True):
-                pass
-            self.logger.debug(f"Wait for diode trigger, {timeout} seconds")
-            await asyncio.sleep(timeout)
-            for _ in self.host.enable_comp(laser1=False, polygon=False):
-                pass
-            for res in self.host.get_state():
-                pass
-            self.state["components"]["diodetest"] = res["photodiode_trigger"]
-            if res == 0:
-                self.logger.error("Diode not triggered")
             else:
-                self.logger.debug("Diode test passed")
+                exe(lambda: self.host.enable_comp(laser1=True, polygon=True))()
+                self.logger.debug(f"Wait for diode trigger, {timeout} seconds")
+                await asyncio.sleep(timeout)
+                exe(lambda: self.host.enable_comp(laser1=False, polygon=False))()
+                host_state = exe(self.host.get_state)()
+                self.state["components"]["diodetest"] = host_state["photodiode_trigger"]
+                if host_state == 0:
+                    self.logger.error("Diode not triggered")
+                else:
+                    self.logger.debug("Diode test passed")
 
     async def print_loop(self, fname):
         self._stop.clear()
