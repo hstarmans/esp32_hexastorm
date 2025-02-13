@@ -1,82 +1,47 @@
-import sys
+from time import sleep
+
+from machine import Pin
+
 from tmc.TMC_2209_StepperDriver import *
-import time
 
 
-print("---")
-print("SCRIPT START")
-print("---")
+pin_en = 38   # enable pin
+mtr_ids = [0, 1]    # uart id
+use_hex = True
 
 
+en = Pin(pin_en, Pin.OUT)
 
+if use_hex:
+    print("using hexastorm library")
+    from hexastorm.controller import Host
+    hst = Host(micropython=True)
+    for _ in range(3):
+        print("Test stages cannot move, press enter")
+        hst.enable_steppers = True
+        input()
+        print("Stages can move, press enter")
+        hst.enable_steppers = False
+        input()
+else:
+    print("using this script")
+    for mtr_id in mtr_ids:
+        tmc = TMC_2209(pin_en=pin_en, mtr_id=mtr_id)
+        tmc.setDirection_reg(False)
+        tmc.setVSense(True)
+        tmc.setCurrent(100)
+        tmc.setIScaleAnalog(True)
+        tmc.setInterpolation(True)
+        tmc.setSpreadCycle(False)
+        tmc.setMicrosteppingResolution(16)
+        tmc.setInternalRSense(False)
+        tmc.setMotorEnabled(False)
 
-
-#-----------------------------------------------------------------------
-# initiate the TMC_2209 class
-# use your pins for pin_step, pin_dir, pin_en here
-#-----------------------------------------------------------------------
-tmc = TMC_2209(pin_step=39, pin_dir=40, pin_en=38)
-
-
-
-
-
-#-----------------------------------------------------------------------
-# set the loglevel of the libary (currently only printed)
-# set whether the movement should be relative or absolute
-# both optional
-#-----------------------------------------------------------------------
-tmc.setLoglevel(Loglevel.info)
-tmc.setMovementAbsRel(MovementAbsRel.absolute)
-
-
-
-
-
-#-----------------------------------------------------------------------
-# these functions change settings in the TMC register
-#-----------------------------------------------------------------------
-tmc.setDirection_reg(False)
-tmc.setVSense(True)
-tmc.setCurrent(300)
-tmc.setIScaleAnalog(True)
-tmc.setInterpolation(True)
-tmc.setSpreadCycle(False)
-tmc.setMicrosteppingResolution(2)
-tmc.setInternalRSense(False)
-
-
-print("---\n---")
-
-
-
-
-
-#-----------------------------------------------------------------------
-# these functions read and print the current settings in the TMC register
-#-----------------------------------------------------------------------
-tmc.readIOIN()
-tmc.readCHOPCONF()
-tmc.readDRVSTATUS()
-tmc.readGCONF()
-
-print("---\n---")
-
-
-
-#-----------------------------------------------------------------------
-# deactivate the motor current output
-#-----------------------------------------------------------------------
-tmc.setMotorEnabled(False)
-
-print("---\n---")
-
-#-----------------------------------------------------------------------
-# deinitiate the TMC_2209 class
-#-----------------------------------------------------------------------
-del tmc
-
-print("---")
-print("SCRIPT FINISHED")
-print("---")
+    for _ in range(3):
+        print("Test stages cannot move, press enter")
+        en.value(0)
+        input()
+        print("Stages can move, press enter")
+        en.value(1)
+        input()
 
