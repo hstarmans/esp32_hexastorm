@@ -125,20 +125,11 @@ async def upload(request, session):
 
         # write the file to the files directory in 1K chunks
         with open(folder + "/" + filename, "wb") as f:
-            fail = 0
             while size > 0:
                 chunk = await request.stream.read(min(size, 1024))
                 f.write(chunk)
                 size -= len(chunk)
-                # no new chunk coming in, user hanged up
-                if len(chunk) == 0:
-                    fail += 1
-                if fail > 10:
-                    break
                 logger.info(f"processed {size}")
-        if fail > 10:
-            os.remove(folder + "/" + filename)
-            res = {"error": "user hanged up"}, 414
         res = {"success": "upload succeeded"}, 200
     else:
         res = {"unauthorized": "please login"}, 401

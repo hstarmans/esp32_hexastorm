@@ -181,77 +181,47 @@ async function upload(ev) {
     ev.preventDefault();
     const file = uploadformFile.files[0];
     if (!file) {
-      window.alert("No file sected");
-      return;
+        window.alert("No file selected");
+        return;
     }
-    await fetch('/upload', {
-      method: 'POST',
-      body: file,
-      headers: {
-        'Content-Type': 'application/octet-stream',
-        'Content-Disposition': `attachment; filename="${file.name}"`,
-      },
-    }).then(res => {
-      if (res.ok){
-        console.log('Upload accepted');
-        window.location.href = '/';
-      }
-      else{
-        window.alert("Upload failed, disk full");
-        window.location.href = '/';
-      }
-    });
-  }
 
-
-  // should provide progress bar
-  async function uploadnew(ev) {
-    ev.preventDefault();
-    const file = uploadformFile.files[0];
-    if (typeof file == 'undefined') {
-      window.alert("No file selected");
-      return;
-    }
     uploadcancel.style.display = '';
     uploadprogressbar.style.display = '';
     uploadbutton.style.display = 'none';
     uploadform.style.display = 'none';
-    const payload = new FormData();
-    payload.append(file.name, file);
+
     const req = new XMLHttpRequest();
     req.open("POST", '/upload');
     req.setRequestHeader('Content-Disposition', `attachment; filename="${file.name}"`);
-
-    req.upload.addEventListener('progress', function(e){
-      fraction = Math.round((e.loaded / e.total) * 100);
-      uploadprogressbar.setAttribute('aria-valuenow', String(fraction));
-      uploadprogressbar.setAttribute('style', 'width: ' + String(fraction) +'%' + ';');
-      uploadprogressbar.innerHTML = String(fraction) + ' %';
-    })
-
-    req.addEventListener('load', function(e){
-      if (req.status == 200){
-        console.log('Upload accepted');
-      }
-      else if ( req.status == 413){
-        window.alert("Upload failed, disk full");
-      }
-      else if ( req.status == 401){
-        window.alert("Unauthorized");
-      }
-      console.log('doesntwork');
-      window.location.href = '/';
+    req.upload.addEventListener('progress', function (e) {
+        const fraction = Math.round((e.loaded / e.total) * 100);
+        uploadprogressbar.setAttribute('aria-valuenow', String(fraction));
+        uploadprogressbar.style.width = fraction + '%'; // Simplified style
+        uploadprogressbar.innerHTML = fraction + ' %';
     });
-    req.addEventListener('error', function(e){
-      window.alert("Upload request received error");
-      window.location.href = '/';
-    })
-    req.send(payload);
-    uploadcancel.addEventListener("click", function(){
-      req.abort();
-      window.location.href = '/';
-    })
-  }
 
+    req.addEventListener('load', function (e) {
+        if (req.status === 200) {
+            console.log('Upload accepted');
+            console.log("File size after upload:", file.size); // Check file size
+        } else {
+            window.alert(`Upload failed with status ${req.status}`); // More informative error
+        }
+        window.location.href = '/'; // Redirect regardless of success/failure
+    });
 
-uploadbutton.addEventListener('click', uploadnew);
+    req.addEventListener('error', function (e) {
+        window.alert("Upload request received error");
+        window.location.href = '/';
+    });
+    // Ideally you would use FormData but this doesnt work with the backend
+    // files get corrupted
+    req.send(file); 
+    
+    uploadcancel.addEventListener("click", function () {
+        req.abort();
+        window.location.href = '/';
+    });
+}
+
+uploadbutton.addEventListener('click', upload);
