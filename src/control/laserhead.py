@@ -124,6 +124,7 @@ class Laserhead:
         self._stop.clear()
         self._pause.clear()
         if self._debug:
+            self.logger.info(f"Printing with laserpower {CONFIG["defaultprint"]["laserpower"]}.")
             # TODO: this would normally come from a file
             total_lines = 10
             self.reset_state()
@@ -153,15 +154,21 @@ class Laserhead:
                 lanewidth = struct.unpack("<f", f.read(4))[0]
                 facetsinlane = struct.unpack("<I", f.read(4))[0]
                 lanes = struct.unpack("<I", f.read(4))[0]
+                # sanity check
+                if (lanes < 0) or (lanes > 40) or (lanewidth > 15) or (lanewidth < 1):
+                    self.logger.error("File is invalid.")
+                    return
                 self.reset_state()
                 self.state["printing"] = True
                 self.state["job"]["totallines"] = int(facetsinlane * lanes)
                 self.state["job"]["filename"] = fname
                 start_time = time()
                 # z is not homed as it should be already in
-                # position so laser is in focus
+                # position for laser to be in focus
                 host.enable_steppers = True
-                #self.host.laser_current = 130  # assuming 1 channel
+                laserpower = CONFIG["defaultprint"]["laserpower"]
+                if (laserpower > 50) & (laserpower < 151):
+                    self.host.laser_current = laserpower  # using 2 channels
                 self.logger.info("Homing X- and Y-axis.")
                 exe(lambda: host.home_axes([1, 1, 0]))()
                 self.logger.info("Moving to start position.")
@@ -170,21 +177,6 @@ class Laserhead:
                 # enable scanhead
                 exe(lambda: host.enable_comp(synchronize=True))()
                 for lane in range(lanes):
-                    # checks for communcation with frontend
-                    if self._pause.is_set():
-                        self._pause.clear()
-                        while True:
-                            await asyncio.sleep(2)
-                            if self._stop.is_set() or self._pause.is_set():
-                                self._pause.clear()
-                                break
-                    if self._stop.is_set():
-                        self._stop.clear()
-                        break
-                    self.state["job"]["currentline"] = int(lane * facetsinlane)
-                    self.state["job"]["printingtime"] = round(time() - start_time)
-                    await asyncio.sleep(1) # time for propagation
-                    # end checks communication front-end
                     self.logger.info(f"Exposing lane {lane+1} from {lanes}.")
                     if lane > 0:
                         self.logger.info("Moving in x-direction for next lane.")
@@ -195,12 +187,28 @@ class Laserhead:
                         self.logger.info("Start exposing forward lane.")
                     else:
                         self.logger.info("Start exposing back lane.")
-                    for _ in range(facetsinlane):
-                        # cmd lst has length of 6
+                    for line in range(facetsinlane):
+                        if (line % 20 == 0):
+                            # align communcation with frontend
+                            if self._pause.is_set():
+                                self._pause.clear()
+                                while True:
+                                    await asyncio.sleep(2)
+                                    if self._stop.is_set() or self._pause.is_set():
+                                        self._pause.clear()
+                                        break
+                            if self._stop.is_set():
+                                self._stop.clear()
+                                break
+                            self.state["job"]["currentline"] = int(lane * facetsinlane + line)
+                            self.state["job"]["printingtime"] = round(time() - start_time)
+                            await asyncio.sleep(0.1) # time for propagation
+                            # end checks communication front-end
+                            # cmd lst has length of 6
                         for _ in range(6):
                             cmddata = f.read(9)
                             exe(lambda: host.send_command(cmddata, 
-                                                          blocking=True))()
+                                                            blocking=True))()
                     # send stopline
                     exe(lambda: host.writeline([]))()
             # disable scanhead

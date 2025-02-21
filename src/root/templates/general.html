@@ -21,13 +21,9 @@
                         <label for="printjobfilename" class="form-label">Filename</label>
                         <select id="printjobfilename" class="form-select">
                             {% for file in state['files'] %}
-                            <option value="{{file}}">{{file}}</option>
+                                <option value="{{file}}">{{file}}</option>
                             {% endfor %}
                         </select>
-                    </div>
-                    <div class="mb-3">
-                        <label for="passesperline" class="form-label">Exposures per line</label>
-                        <input id="passesperline" class="form-control" type="number" value="{{state['job']['passesperline']}}" min="1" max="10"/>
                     </div>
                     <div class="mb-3">
                         <label for="laserpower" class="form-label">Laser power [a.u]</label>

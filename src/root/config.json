@@ -1,7 +1,6 @@
 {
     "serial": -1,
     "defaultprint": {
-        "passesperline": 1,
         "laserpower": 70
     },
     "fpga": {
@@ -33,7 +32,7 @@
     "wifi_login": {
         "ssid": "default",
         "password": "defaultpass",
-        "webrepl_password": "hex",
+        "webrepl_password": "hexastorm",
         "essid": "hexastorm",
         "static_enabled": false,
         "static_ip": "192.168.1.249",

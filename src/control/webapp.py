@@ -11,6 +11,8 @@ from microdot.sse import with_sse
 from microdot.utemplate import Template
 from microdot.websocket import with_websocket
 
+import machine
+
 from . import bootlib, constants
 from .laserhead import LASERHEAD
 
@@ -143,6 +145,15 @@ async def logout(req, session):
     session.delete()
     return redirect("/")
 
+@app.get("/reset")
+@with_session
+async def reset(req, session):
+    authorized = is_authorized(session)
+    if authorized:
+        logger.info("reset machine")
+        machine.reset()
+    return redirect("/")
+
 
 @app.route("/command")
 @with_websocket
@@ -202,8 +213,6 @@ async def command(request, session, ws):
                 elif command == "startprint":
                     filename = jsondata["file"].replace("/", "_")
                     laserpower = int(jsondata["laserpower"])
-                    passes = int(jsondata["passes"])
-                    constants.CONFIG["defaultprint"]["passesperline"] = passes
                     constants.CONFIG["defaultprint"]["laserpower"] = laserpower
                     constants.update_config()
 

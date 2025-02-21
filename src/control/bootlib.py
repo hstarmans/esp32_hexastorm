@@ -80,7 +80,6 @@ def start_webrepl():
     wifi_login = constants.CONFIG["wifi_login"]
     webrepl.start(password=wifi_login["webrepl_password"])
 
-
 @wrapper_esp32()
 async def set_time(tries=3):
     """Update local time."""
@@ -105,9 +104,16 @@ async def set_time(tries=3):
 
 def set_log_level(level):
     """Sets the log level for the root logger.  Call this ONCE at the start."""
-    logging.basicConfig(level=level) 
-    #format='%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s')
-
+    if level is None:
+        level = logging.INFO
+    root_logger = logging.getLogger()
+    root_logger.setLevel(level)
+    # Create a handler to direct logs (usually to the console/stdout)
+    handler = logging.StreamHandler()
+    # streamhandler does not support filename and lineno
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    handler.setFormatter(formatter)
+    root_logger.addHandler(handler)
 
 @wrapper_esp32(res=["connected", "otheroption"])
 def list_wlans():
@@ -280,13 +286,14 @@ def connect_wifi(force=False):
         made_connection = True
         ap.active(False)
     if made_connection:
-        logging.info("Network config:", wlan.ifconfig())
+        logging.info(f"Network config {wlan.ifconfig()}")
     else:
         wlan.active(False)
         logging.error("Cannot connect to wifi, creating access point!")
+        logging.error(f"Used ssid {wifi_login['ssid']} and {wifi_login['password']}.")
         ap.active(True)
         ap.config(
-            essid=f"sensor_serial{constants['serial']}",
+            essid=f"sensor_serial{constants.CONFIG["serial"]}",
             authmode=network.AUTH_WPA_WPA2_PSK,
             max_clients=10,
             password=wifi_login["webrepl_password"],

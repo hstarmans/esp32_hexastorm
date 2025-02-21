@@ -1,6 +1,8 @@
 # Testing class
 #     Debugging class for testing code in linux.
 
+def reset():
+    print("resetting entire chip")
 
 class I2C:
     def __init__(self, id=0, scl=1, sda=2, freq=400000, timeout=50000):
