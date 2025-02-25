@@ -12,9 +12,6 @@
                 <a class="btn btn-dark" data-bs-toggle="modal" href="#terminalModal"><i class="bi bi-terminal"></i> Terminal</a>
             </li>
             <li class="nav-item me-3 me-lg-0">
-                <a class="btn btn-dark" data-bs-toggle="modal" href="#wifiModal"><i class="bi bi-wifi"></i> Wifi</a>
-            </li>
-            <li class="nav-item me-3 me-lg-0">
                 <a class="btn btn-dark" href="/logout"><i class="bi bi-box-arrow-right"></i> Logout</a>
             </li>
             <li class="nav-item me-3 me-lg-0">
@@ -26,39 +23,6 @@
 </nav>
 <br>
 {% endif %}
-
-
-
-<!-- Select wifi modal -->
-<div class="modal fade" id="wifiModal" tabindex="-1" aria-labelledby="wifiModalLabel" aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h1 class="modal-title fs-5" id="wifiModalLabel">Wifi settings</h1>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <p id="wificonnectedtext"> Wifi connected is {{state['wifi']['connected']}}. Current network set is {{state['wifi']['ssid']}} </p>
-                <form>
-                    <div class="mb-3">
-                        <label for="selectedwifi" class="form-label">Available wifis</label>
-                        <select id="selectedwifi" class="form-select">
-                            {% for wifi in state['wifi']['available'] %}
-                            <option value="{{wifi}}">{{wifi}}</option>
-                            {% endfor %}
-                        </select>
-                        <label for="wifipassword" class="form-label">Wifi password</label>
-                        <input name="wifipassword" type="text" class="form-control" id="wifipassword" value="{{state['wifi']['password']}}" placeholder="{{state['wifi']['password']}}">
-                    </div>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                <button id="changewifibutton" type="button" class="btn btn-success">Submit</button>
-            </div>
-        </div>
-    </div>
-</div>
 
 
 <!-- Launch terminal modal -->

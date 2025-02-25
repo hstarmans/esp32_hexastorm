@@ -195,18 +195,6 @@ async def command(request, session, ws):
                         + filename
                     )
                     webstate.update()
-                elif command == "changewifi":
-                    logger.info(
-                        f"connecting to {jsondata['wifi']} "
-                        + f"with {jsondata['password']}"
-                    )
-                    constants.CONFIG["wifi_login"]["ssid"] = jsondata["wifi"]
-                    constants.CONFIG["wifi_login"]["password"] = jsondata[
-                        "password"
-                    ]
-                    constants.update_config()
-                    bootlib.connect_wifi(force=True)
-                    webstate.update()
                 elif command == "startwebrepl":
                     bootlib.start_webrepl()
                     request.app.shutdown()
@@ -216,6 +204,7 @@ async def command(request, session, ws):
                     constants.CONFIG["defaultprint"]["laserpower"] = laserpower
                     constants.update_config()
 
+                    # actual update is pushed via /state, i.e. SSE not websocket
                     async def task_wrapper():
                         await LASERHEAD.print_loop(filename)
                         webstate.partial_update()

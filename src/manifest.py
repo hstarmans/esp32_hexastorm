@@ -21,7 +21,6 @@ root = Path("frozen_root.py")
 
 if (base_dir / code / root).is_file():
     os.remove(base_dir / code / root)
-
 work_dir = os.getcwd()
 os.chdir(base_dir)
 
@@ -48,6 +47,7 @@ subprocess.run(
         "root/",
         "control/frozen_root.py",
         "--target=/",
+        "--overwrite=never",
         "--on-import=extract",
         "--compress",
     ]

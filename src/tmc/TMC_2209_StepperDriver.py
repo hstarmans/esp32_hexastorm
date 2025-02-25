@@ -69,13 +69,10 @@ class TMC_2209:
         
         self.tmc_uart = TMC_UART(mtr_id=mtr_id)
         self._pin_en = pin_en
-        logging.info("TMC2209: Init")
         self.p_pin_en = GPIO(self._pin_en, GPIO.OUT)
-        logging.info("TMC2209: GPIO Init finished")      
         self.readStepsPerRevolution()
         self.clearGSTAT()
         self.tmc_uart.flushSerialBuffer()
-        logging.info("TMC2209: Init finished")
 
 
 #-----------------------------------------------------------------------
@@ -359,10 +356,8 @@ class TMC_2209:
     def setDirection_reg(self, direction):        
         gconf = self.tmc_uart.read_int(reg.GCONF)
         if(direction):
-            logging.info("TMC2209: write inverse motor direction")
             gconf = self.tmc_uart.set_bit(gconf, reg.shaft)
         else:
-            logging.info("TMC2209: write normal motor direction")
             gconf = self.tmc_uart.clear_bit(gconf, reg.shaft)
         self.tmc_uart.write_reg_check(reg.GCONF, gconf)
   
@@ -403,10 +398,8 @@ class TMC_2209:
     def setVSense(self,en):      
         chopconf = self.tmc_uart.read_int(reg.CHOPCONF)
         if(en):
-            logging.info("TMC2209: activated High sensitivity, low sense resistor voltage")
             chopconf = self.tmc_uart.set_bit(chopconf, reg.vsense)
         else:
-            logging.info("TMC2209: activated Low sensitivity, high sense resistor voltage")
             chopconf = self.tmc_uart.clear_bit(chopconf, reg.vsense)
         self.tmc_uart.write_reg_check(reg.CHOPCONF, chopconf)
 
@@ -478,9 +471,9 @@ class TMC_2209:
         CS_IHold = round(CS_IHold)
         hold_current_delay = round(hold_current_delay)
 
-        logging.info("TMC2209: CS_IRun: " + str(CS_IRun))
-        logging.info("TMC2209: CS_IHold: " + str(CS_IHold))
-        logging.info("TMC2209: Delay: " + str(hold_current_delay))
+        logging.debug("TMC2209: CS_IRun: " + str(CS_IRun))
+        logging.debug("TMC2209: CS_IHold: " + str(CS_IHold))
+        logging.debug("TMC2209: Delay: " + str(hold_current_delay))
 
         self.setIRun_Ihold(CS_IHold, CS_IRun, hold_current_delay)
 

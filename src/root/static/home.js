@@ -72,7 +72,6 @@ startprintbutton.addEventListener("click", function (e) {
   commandSocket.send(JSON.stringify({
   "command": "startprint", 
   "file": printjobfilename.value,
-  "passes": passesperline.value,
   "laserpower": laserpower.value}));
   window.location.href = '/';
 });
@@ -90,17 +89,6 @@ startwebreplbutton.addEventListener("click", async function (e) {
   if (window.location.href.indexOf('http://')==0){
     window.location = 'http://'+window.location.hostname+':8266'+window.location.pathname+window.location.search;
   }
-});
-
-
-
-changewifibutton.addEventListener("click", function (e) {
-  commandSocket.send(JSON.stringify({
-  "command": "changewifi", 
-  "wifi": selectedwifi.value,
-  "password": wifipassword.value,}));
-  window.alert("Please connect to new IP address.");
-  window.location.href = '/';
 });
 
 // a state is propagated from backend to the frontend
@@ -130,11 +118,6 @@ function onClose(event) {
 
 
 function updatemain(jsonData){
-  if (jsonData['wifi']['connected']){
-    wificonnectedtext.innerHTML = "Connected to wifi " + jsonData['wifi']['ssid'];
-  } else{
-    wificonnectedtext.innerHTML = "Not connected to wifi";
-  }
   if (jsonData['printing']){
         printingstate.style.display = '';
         controlstate.style.display = 'none';

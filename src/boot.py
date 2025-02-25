@@ -1,8 +1,9 @@
 import asyncio
 import os
 import json
-
 import logging
+
+from machine import Pin
 import ota.rollback
 
 from control import bootlib, constants
@@ -31,8 +32,6 @@ async def boot_procedure():
     If there is internet connection, machine time is updated.
     Machine will reset in timeout minutes
     """
-    from machine import Pin
-
     # UART RX and TX connected via resistor
     # and TMC2209, which results in endless
     # communication and failure of micropython shell
@@ -41,6 +40,12 @@ async def boot_procedure():
     pin43.value(0)
     pin44 = Pin(44, Pin.OUT)
     pin44.value(0)
+    ##
+    bootlib.set_log_level(logging.INFO)
+    # sleep allows you to exit a boot loop with CTRL+C
+    # a boot l
+    logging.info("sleeping 2 seconds")
+    await asyncio.sleep(2)
 
     # connection status loop will try to reconnect
     # and set time in case of failure
@@ -58,10 +63,10 @@ async def main_task():
     """runs web server"""
     # creates laserhead which lifts reset pin, disables REPL
     from control.webapp import app
-
-    logging.info("sleeping 5 seconds")
-    await asyncio.sleep(5)
-    server_task = asyncio.create_task(app.start_server(port=5000, debug=True))
+    
+    server_task = asyncio.create_task(app.start_server(port=5000, debug=False))
+    logging.info("Launching webserver.")
+    bootlib.connect_wifi() # to print settings
     await asyncio.gather(server_task)
 
 
@@ -70,11 +75,13 @@ def main():
         asyncio.run(main_task())
     except KeyboardInterrupt:
         logging.error("Keyboard interrupt")
-        pass
 
 
 if constants.ESP32:
-    asyncio.run(boot_procedure())
-    bootlib.start_webrepl()
+    try:
+        asyncio.run(boot_procedure())
+        bootlib.start_webrepl()
     # main()
+    except KeyboardInterrupt:
+        logging.error("Keyboard interrupt")
 

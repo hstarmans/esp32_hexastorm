@@ -74,14 +74,14 @@ class TMC_UART:
 
         rt = self.ser.write(bytes(self.rFrame))
         if rt != len(self.rFrame):
-            logging.info("TMC2209: Err in write ", file=sys.stderr)
+            logging.error("TMC2209: Err in write ", file=sys.stderr)
             return False
         time.sleep(self.communication_pause)  # adjust per baud and hardware. Sequential reads without some delay fail.
         if self.ser.any():
             rtn = self.ser.read()#read what it self 
         time.sleep(self.communication_pause)  # adjust per baud and hardware. Sequential reads without some delay fail.
         if rtn is None:
-            logging.info("TMC2209: Err in read")
+            logging.error("TMC2209: Err in read")
             return ""
 #         print("received "+str(len(rtn))+" bytes; "+str(len(rtn)*8)+" bits")
         return(rtn[7:11])

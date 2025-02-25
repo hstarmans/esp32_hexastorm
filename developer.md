@@ -1,8 +1,13 @@
 # ESP32 
-
-# Tools
-Mpremote is supported by Micropython. I tried [Mpfshell](https://github.com/wendlers/mpfshell) 
-and [rshell](https://github.com/dhylands/rshell). [Thonny](https://thonny.org/) offers best webrepl support.
+Webserver is roughly deployed as follows. A binary is generated, this binary is used to flash the ESP32S3.
+After flashing the ESP32, the user logs on to the ESP32 using Thonny. 
+Using the micropython shell, the user changes config.json and updates the wifi password. 
+The user programs the FPGA (only needed once) and launches the webserver.
+After cloning the repository also pull in the git lfs objects.
+```bash
+git clone https://github.com/hstarmans/esp32_hexastorm
+git lfs fetch --all
+``` 
 
 ## Python dependencies
 Install poetry in the directory in which you installed this library.
@@ -67,6 +72,11 @@ After building you might want to create a secrets.json by cloning config.json, f
 ```bash
 poetry run python utility.py --device /dev/ttyS8
 ```
+
+# Tools
+Mpremote is supported by Micropython. I tried [Mpfshell](https://github.com/wendlers/mpfshell) 
+and [rshell](https://github.com/dhylands/rshell). [Thonny](https://thonny.org/) offers best webrepl support.
+
 
 ### Tips
 You have to run ```make clean``` after ```make submodules```,

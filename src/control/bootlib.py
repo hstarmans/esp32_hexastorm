@@ -21,6 +21,9 @@ if constants.ESP32:
     from ota.update import OTA
 
 
+
+_logging_configured = False
+
 def wrapper_esp32(res=None):
     def decorator(func):
         if not constants.ESP32:
@@ -106,14 +109,19 @@ def set_log_level(level):
     """Sets the log level for the root logger.  Call this ONCE at the start."""
     if level is None:
         level = logging.INFO
+    global _logging_configured
+
+
     root_logger = logging.getLogger()
     root_logger.setLevel(level)
-    # Create a handler to direct logs (usually to the console/stdout)
-    handler = logging.StreamHandler()
-    # streamhandler does not support filename and lineno
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    handler.setFormatter(formatter)
-    root_logger.addHandler(handler)
+    if not _logging_configured:
+        # Create a handler to direct logs (usually to the console/stdout)
+        handler = logging.StreamHandler()
+        # streamhandler does not support filename and lineno
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        handler.setFormatter(formatter)
+        root_logger.addHandler(handler)
+        _logging_configured = True
 
 @wrapper_esp32(res=["connected", "otheroption"])
 def list_wlans():
