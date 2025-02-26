@@ -4,8 +4,8 @@ import logging
 import machine
 from machine import Pin as GPIO
 
-from .TMC_2209_uart import TMC_UART
-from . import TMC_2209_reg as reg
+from .uart import TMC_UART
+from . import reg as reg
 
 
 logger = logging.getLogger(__name__)
@@ -275,8 +275,7 @@ class TMC_2209:
         if en:
             self.p_pin_en.off()
         else:
-            self.p_pin_en.on()
-        logging.info("TMC2209: Motor output active: {}".format(en))   
+            self.p_pin_en.on()   
 
 #-----------------------------------------------------------------------
 # homes the motor in the given direction using stallguard
@@ -374,10 +373,8 @@ class TMC_2209:
     def setIScaleAnalog(self,en):        
         gconf = self.tmc_uart.read_int(reg.GCONF)
         if(en):
-            logging.info("TMC2209: activated Vref for current scale")
             gconf = self.tmc_uart.set_bit(gconf, reg.i_scale_analog)
         else:
-            logging.info("TMC2209: activated 5V-out for current scale")
             gconf = self.tmc_uart.clear_bit(gconf, reg.i_scale_analog)
         self.tmc_uart.write_reg_check(reg.GCONF, gconf)
 
@@ -420,10 +417,8 @@ class TMC_2209:
     def setInternalRSense(self,en):        
         gconf = self.tmc_uart.read_int(reg.GCONF)
         if(en):
-            logging.info("TMC2209: activated internal sense resistors.")
             gconf = self.tmc_uart.set_bit(gconf, reg.internal_rsense)
         else:
-            logging.info("TMC2209: activated operation with external sense resistors")
             gconf = self.tmc_uart.clear_bit(gconf, reg.internal_rsense)
         self.tmc_uart.write_reg_check(reg.GCONF, gconf)
 
@@ -438,9 +433,6 @@ class TMC_2209:
         ihold_irun = ihold_irun | IHold << 0
         ihold_irun = ihold_irun | IRun << 8
         ihold_irun = ihold_irun | IHoldDelay << 16
-        logging.info("TMC2209: ihold_irun: ", bin(ihold_irun))
-        #logging.info(bin(ihold_irun))
-        logging.info("TMC2209: writing ihold_irun")
         self.tmc_uart.write_reg_check(reg.IHOLD_IRUN, ihold_irun)
         
 #-----------------------------------------------------------------------
@@ -454,10 +446,10 @@ class TMC_2209:
         Vfs = 0
 
         if(self.getVSense()):
-            logging.info("TMC2209: Vsense: 1")
+            logging.debug("TMC2209: Vsense: 1")
             Vfs = 0.180 * Vref / 2.5
         else:
-            logging.info("TMC2209: Vsense: 0")
+            logging.debug("TMC2209: Vsense: 0")
             Vfs = 0.325 * Vref / 2.5
             
         CS_IRun = 32.0*1.41421*run_current/1000.0*(Rsense+0.02)/Vfs - 1
@@ -470,10 +462,6 @@ class TMC_2209:
         CS_IRun = round(CS_IRun)
         CS_IHold = round(CS_IHold)
         hold_current_delay = round(hold_current_delay)
-
-        logging.debug("TMC2209: CS_IRun: " + str(CS_IRun))
-        logging.debug("TMC2209: CS_IHold: " + str(CS_IHold))
-        logging.debug("TMC2209: Delay: " + str(hold_current_delay))
 
         self.setIRun_Ihold(CS_IHold, CS_IRun, hold_current_delay)
 
@@ -490,10 +478,8 @@ class TMC_2209:
     def setSpreadCycle(self,en_spread):
         gconf = self.tmc_uart.read_int(reg.GCONF)
         if(en_spread):
-            logging.info("TMC2209: activated Spreadcycle")
             gconf = self.tmc_uart.set_bit(gconf, reg.en_spreadcycle)
         else:
-            logging.info("TMC2209: activated Stealthchop")
             gconf = self.tmc_uart.clear_bit(gconf, reg.en_spreadcycle)
         self.tmc_uart.write_reg_check(reg.GCONF, gconf)
 
@@ -518,7 +504,7 @@ class TMC_2209:
         else:
             chopconf = self.tmc_uart.clear_bit(chopconf, reg.intpol)
 
-        logging.info("TMC2209: writing microstep interpolation setting: "+str(en))
+        logging.debug("TMC2209: writing microstep interpolation setting: "+str(en))
         self.tmc_uart.write_reg_check(reg.CHOPCONF, chopconf)
 
 #-----------------------------------------------------------------------
@@ -543,7 +529,7 @@ class TMC_2209:
         chopconf = int(chopconf) & int(4043309055)
         chopconf = chopconf | msresdezimal <<24
         
-        logging.info("TMC2209: writing "+str(msres)+" microstep setting")
+        logging.debug("TMC2209: writing "+str(msres)+" microstep setting")
         self.tmc_uart.write_reg_check(reg.CHOPCONF, chopconf)
         self.setMStepResolutionRegSelect(True)
         self.readStepsPerRevolution()
@@ -562,7 +548,7 @@ class TMC_2209:
         else:
             gconf = self.tmc_uart.clear_bit(gconf, reg.mstep_reg_select)
 
-        logging.info("TMC2209: writing MStep Reg Select: "+str(en))
+        logging.debug("TMC2209: writing MStep Reg Select: "+str(en))
         self.tmc_uart.write_reg_check(reg.GCONF, gconf)
 
 #-----------------------------------------------------------------------
@@ -585,7 +571,6 @@ class TMC_2209:
 #-----------------------------------------------------------------------
     def getInterfaceTransmissionCounter(self):
         ifcnt = self.tmc_uart.read_int(reg.IFCNT)
-        logging.info("TMC2209: Interface Transmission Counter: "+str(ifcnt))
         return ifcnt
 
 #-----------------------------------------------------------------------
@@ -613,11 +598,6 @@ class TMC_2209:
 # SG_RESULT ≤ SGTHRS*2
 #-----------------------------------------------------------------------
     def setStallguard_Threshold(self, threshold):
-
-        logging.info("TMC2209: sgthrs")
-        logging.info(bin(threshold))
-
-        logging.info("TMC2209: writing sgthrs")
         self.tmc_uart.write_reg_check(reg.SGTHRS, threshold)
 
 #-----------------------------------------------------------------------
@@ -625,11 +605,6 @@ class TMC_2209:
 # on  smart energy CoolStep and StallGuard to DIAG output. (unsigned)
 #-----------------------------------------------------------------------
     def setCoolStep_Threshold(self, threshold):
-
-        logging.info("TMC2209: tcoolthrs")
-        logging.info(bin(threshold))
-
-        logging.info("TMC2209: writing tcoolthrs")
         self.tmc_uart.write_reg_check(reg.TCOOLTHRS, threshold)
 
 #-----------------------------------------------------------------------
@@ -640,10 +615,7 @@ class TMC_2209:
     def setStallguard_Callback(self, pin_stallguard, threshold, my_callback, min_speed = 2000):
 
         self.setStallguard_Threshold(threshold)
-        self.setCoolStep_Threshold(min_speed)
-
-        logging.info("TMC2209: setup stallguard callback")
-        
+        self.setCoolStep_Threshold(min_speed)        
         #GPIO.setup(pin_stallguard, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)    
         #GPIO.add_event_detect(pin_stallguard, GPIO.RISING, callback=my_callback, bouncetime=300) 
         p25 = machine.Pin(pin_stallguard, machine.Pin.IN, machine.Pin.PULL_DOWN)
@@ -713,4 +685,5 @@ class TMC_2209:
 #-----------------------------------------------------------------------
     def stop(self):
         self._stop = True
+
 

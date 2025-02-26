@@ -2,7 +2,7 @@ from time import sleep
 
 from machine import Pin
 
-from tmc.TMC_2209_StepperDriver import *
+from tmc.stepperdriver import *
 
 
 pin_en = 38   # enable pin

@@ -7,6 +7,10 @@ from machine import UART
 
 logger = logging.getLogger(__name__)
 
+class ConnectionFail(Exception):
+    pass
+
+
 #-----------------------------------------------------------------------
 # TMC_UART
 #
@@ -74,14 +78,14 @@ class TMC_UART:
 
         rt = self.ser.write(bytes(self.rFrame))
         if rt != len(self.rFrame):
-            logging.error("TMC2209: Err in write ", file=sys.stderr)
+            logging.info("TMC2209: Err in write ", file=sys.stderr)
             return False
         time.sleep(self.communication_pause)  # adjust per baud and hardware. Sequential reads without some delay fail.
         if self.ser.any():
             rtn = self.ser.read()#read what it self 
         time.sleep(self.communication_pause)  # adjust per baud and hardware. Sequential reads without some delay fail.
         if rtn is None:
-            logging.error("TMC2209: Err in read")
+            logging.info("TMC2209: Err in read")
             return ""
 #         print("received "+str(len(rtn))+" bytes; "+str(len(rtn)*8)+" bits")
         return(rtn[7:11])
@@ -95,13 +99,13 @@ class TMC_UART:
             rtn = self.read_reg(reg)
             tries += 1
             if((tries>=10) | (rtn is False)):
-                logging.info("TMC2209: after 10 tries not valid answer. exiting")
-                logging.info("TMC2209: is Stepper Powersupply switched on ?")
-                raise Exception("UART connection to stepper motors fails")
+                logging.debug("TMC2209: after 10 tries not valid answer. exiting")
+                logging.debug("TMC2209: is Stepper Powersupply switched on ?")
+                raise ConnectionFail()
             if(len(rtn)>=4):
                 break
             else:
-                logging.info("TMC2209: did not get the expected 4 data bytes. Instead got "+str(len(rtn))+" Bytes")
+                logging.debug("TMC2209: did not get the expected 4 data bytes. Instead got "+str(len(rtn))+" Bytes")
 
         val = struct.unpack(">i",rtn)[0]
         return(val)
@@ -175,4 +179,5 @@ class TMC_UART:
 #-----------------------------------------------------------------------
     def clear_bit(self, value, bit):
         return value & ~(bit)
+
 
