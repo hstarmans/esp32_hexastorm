@@ -43,8 +43,7 @@ async def boot_procedure():
     ##
     bootlib.set_log_level(logging.INFO)
     # sleep allows you to exit a boot loop with CTRL+C
-    # a boot l
-    logging.info("sleeping 2 seconds")
+    logging.info("sleeping 2 seconds to allow for CTRL+C")
     await asyncio.sleep(2)
 
     # connection status loop will try to reconnect
@@ -57,6 +56,9 @@ async def boot_procedure():
 
     ap_if = network.WLAN(network.AP_IF)
     ap_if.active(False)
+
+    # show status
+    asyncio.run(bootlib.status_loop(loop=False))
 
 
 async def main_task():

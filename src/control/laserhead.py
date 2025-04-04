@@ -55,6 +55,31 @@ class Laserhead:
         self.logger.debug("Print is paused.")
         self._pause.set()
 
+    def laser_current(self, val):
+        """sets maximum laser current of laser driver per channel
+        """
+        self.host.laser_current(val)
+
+    @exe
+    def write_line(self, bitlst, stepsperline=1, direction=0):
+        yield from self.host.writeline(bitlst, stepsperline, direction)
+
+    @exe
+    def enable_comp(
+        self, laser0=False, laser1=False, polygon=False,
+    ):
+        """enable components
+
+        laser0   -- True enables laser channel 0
+        laser1   -- True enables laser channel 1
+        polygon  -- False enables polygon motor
+        """
+        self.logger.debug(f"laser0, laser1, polygon set to {laser0, laser1, polygon}")
+        if not self._debug:
+            yield from self.host.enable_comp(laser0=laser0, laser1=laser1, polygon=polygon)
+            self.state["components"]["laser"]  = laser0 or laser1
+            self.state["components"]["rotating"]  = polygon
+
     @exe
     def toggle_laser(self):
         laser = self.state["components"]["laser"]

@@ -1,5 +1,5 @@
 import asyncio
-from time import sleep, localtime
+from time import sleep, localtime, time
 import sys
 
 try:
@@ -20,6 +20,7 @@ if constants.ESP32:
     import webrepl
     from ota.update import OTA
 
+    from hexastorm.constants import platform
 
 
 _logging_configured = False
@@ -50,7 +51,9 @@ def reload(module):
     module_name = module.__name__
     if module_name in sys.modules:
         del sys.modules[module_name]
-    return __import__(module_name)
+    # Use the standard import statement
+    globals()[module_name] = __import__(module_name)
+    return globals()[module_name]
 
 
 def disk_usage():
@@ -226,32 +229,45 @@ def update_firmware(force=False, download=True):
 
 
 @wrapper_esp32()
-def show_state(color):
-    """flips to desired color
-
-    color: blue, green or red, otherwise off
+async def status_loop(loop=False):
+    """display connection status via onboard led
+    
+    tries to reconnect and update time
+    pulses a led
+    red led no wifi, blue led is wifi
     """
-    pass  # not connected
-    # for key, value in {"blue": 39, "green": 40, "red": 41}.items():
-    #     p = machine.Pin(value, machine.Pin.OUT)
-    #     p.on()
-    #     if color is key:
-    #         p.off()
-
-
-async def connection_status_and_time():
-    """display connection status via onboard led"""
+    on_time=2
+    off_time=6
+    wifi_cycle_time=60 
+    led_on = True
+    Pin = machine.Pin
+    wifi_connected = is_connected()
+    plf = platform(micropython=True)
+    blue_led = Pin(plf.led_blue, Pin.OUT)
+    red_led = Pin(plf.led_red, Pin.OUT)
+    current_time = time()
     while True:
-        show_state(None)
-        await asyncio.sleep(15)
-        if is_connected():
-            show_state("green")
+        if wifi_connected:
+            red_led.value(1)
+            blue_led.value(not led_on)
         else:
-            show_state("red")
-            connect_wifi()
-        if localtime()[0] < 2024:
+            red_led.value(not led_on)
+            blue_led.value(1)
+        # check year is greater than 2024
+        if (localtime()[0] < 2024) and wifi_connected: 
             await set_time(1)
-        await asyncio.sleep(5)
+        if led_on:
+            await asyncio.sleep(on_time)
+        else:
+            await asyncio.sleep(off_time)
+        led_on = (not led_on)
+        if (time() - current_time) >= wifi_cycle_time:
+            wifi_connected = is_connected()
+            current_time = time()
+            if not wifi_connected:
+                connect_wifi()
+        if not loop:
+            break
 
 
 @wrapper_esp32(res=True)
