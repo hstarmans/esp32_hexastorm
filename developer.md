@@ -25,7 +25,7 @@ The hexastorm library is imported using a symlink. This is seen as easier than u
 ```bash
 ln -s ~/python/hexastorm/src/hexastorm/ src/hexastorm
 ```
-Create the folder src/sd/jobs/.
+Create the folder src/root/sd/jobs/.
 
 ### Testing code in python
 The webserver can be tested via, 
