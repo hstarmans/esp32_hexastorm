@@ -1,34 +1,37 @@
-[tool.poetry]
-name = "control"
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "esp32-hexastorm"
 version = "0.1.0"
 description = "ESP32 wrapper for Hexastorm python library"
-authors = ["Rik Starmans <hstarmans@hexastorm.com>"]
-license = "CC BY-NC-SA"
+authors = [
+    { name = "Rik Starmans", email = "hstarmans@hexastorm.com" }
+]
+license = { file = "LICENSE.txt" }
 readme = "README.md"
-
-[tool.poetry.dependencies]
-python = ">=3.10"
-pytest = "^8.1.1"
-sseclient-py = "^1.8.0"
-requests = "^2.31.0"
-websocket-client = "^1.7.0"
-numpy = "^1.26.4"
-freezefs = "^2.4"
-pyjwt = "^2.8.0"
-pyclean = "^3.0.0"
-
-
-[tool.poetry.group.dev.dependencies]
-ruff = "^0.4.4"
-black = "^24.4.2"
-nbqa = "^1.8.5"
-
-[build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires-python = ">=3.12"
+dependencies = [
+    "freezefs>=2.4",
+    "numpy>=2.2.4",
+    "pyclean>=3.1.0",
+    "pyjwt>=2.10.1",
+    "pytest>=8.3.5",
+    "requests>=2.32.3",
+    "sseclient-py>=1.8.0",
+    "websocket-client>=1.8.0",
+]
 
 [tool.black]
 line-length = 79
 
 [tool.ruff]
 line-length = 79
+
+[dependency-groups]
+dev = [
+    "black>=25.1.0",
+    "nbqa>=1.9.1",
+    "ruff>=0.11.5",
+]

@@ -10,19 +10,52 @@ git lfs fetch --all
 ``` 
 
 ## Python dependencies
-Install poetry in the directory in which you installed this library.
+Install the dependency manager uv.
 ```bash
-sudo apt install python3 python3-pip
-curl -sSL https://install.python-poetry.org | python3 -
+sudo apt install pipx
+pipx ensurepath
+pipx install uv
 ```
-Use poetry to install the dependencies in pyproject.toml.
-The virtual environment needs to be installed in project for VSCode to detect it.
+Use uv to install the dependencies in pyproject.toml.
 ```bash
-poetry config virtualenvs.in-project true
-poetry install
+uv sync
+```
+Install the hexastorm libarry somewhere and symlink to it
+The hexastorm library is imported using a symlink. This is seen as easier than using git submodules.
+```bash
+ln -s ~/python/hexastorm/src/hexastorm/ src/hexastorm
+```
+Create the folder src/sd/jobs/.
+
+### Testing code in python
+The webserver can be tested via, 
+```bash
+uv run python -m src.control.webapp
+```
+Default password is "hex".
+You can run tests via the command below. The s-flag ensures print statements are directed to the shell.
+This test requires additonial steps, please refer to the code.
+```bash
+uv run pytest -s --pyargs tests.test_webserver::test_websocket
 ```
 
-## Creating a binary
+### Testinc code in micropython
+
+Prior to testing execute
+```bash
+cd src
+```
+Install micropython on linux with [ulab](https://github.com/v923z/micropython-ulab). Run tests via
+```bash
+micropython -m test.test_hardware
+```
+```
+This is tested as follows
+```bash
+micropython -m test.test_hexastorm LaserheadTest test_stable
+```
+
+## Creating a binary for the ESP32 microcontroller
 I follow the procedure described on [esp32](https://github.com/micropython/micropython/tree/master/ports/esp32).
 First install esp-idf and activate it. Git cannot be able to download it.
 ```bash
@@ -82,47 +115,3 @@ and [rshell](https://github.com/dhylands/rshell). [Thonny](https://thonny.org/) 
 You have to run ```make clean``` after ```make submodules```,
 if you change the cmake file. You don't need to run ```make submodules```
 each time.
-
-## Testing code
-You can run tests via the command below. The s-flag ensures print statements are directed to the shell.
-```bash
-poetry run pytest -s --pyargs tests.test_webserver::test_websocket
-```
-The webserver can be tested via, 
-```bash
-poetry run python -m src.control.webapp
-```
-Default password is "hex".
-
-### Micropython Tests
-
-Prior to testing execute
-```bash
-cd src
-```
-Install micropython on linux with [ulab](https://github.com/v923z/micropython-ulab). Run tests via
-```bash
-micropython -m test.test_hardware
-```
-The hexastorm library is imported using a symlink. This is seen as easier than using git submodules.
-```bash
-ln -s ~/python/hexastorm/src/hexastorm/ hexastorm
-```
-This is tested as follows
-```bash
-micropython -m test.test_hexastorm LaserheadTest test_stable
-```
-
-## Screen + controller
-A library is available [here](https://github.com/peterhinch/micropython-micro-gui)
-It also outlines which screens are supported.
-
-## Known Issues current developer board
-- Pin 1 and 3 are connected to the FPGA and the UART output of the REPL.
-You therefore need to connect to Web REPL, to flash the FPGA.
-- Copy partitions-4MiB.csv over the existing file in micropython/ports/esp32. 
-A slightly larger factory partition is needed to accommodate all the 
-C++ libraries.
-```bash
-$ cp partitions-4MiB.csv micropython/ports/esp32/
-```
