@@ -61,8 +61,8 @@ class Laserhead:
         self.host.laser_current(val)
 
     @exe
-    def write_line(self, bitlst, stepsperline=1, direction=0):
-        yield from self.host.writeline(bitlst, stepsperline, direction)
+    def write_line(self, bitlst, stepsperline=1, direction=0, repetitions=1):
+        yield from self.host.writeline(bitlst, stepsperline, direction, repetitions)
 
     @exe
     def enable_comp(
