@@ -83,15 +83,18 @@ def start_webrepl():
     # ideal procedure is first running webrepl_setup
     # password is stored not hashed, this is not ideal
     # webrepl.start()
-    wifi_login = constants.CONFIG["wifi_login"]
-    webrepl.start(password=wifi_login["webrepl_password"])
+    webrepl = constants.CONFIG["webrepl"]
+    if webrepl["start"]:
+        webrepl.start(password=webrepl["webrepl_password"])
+    else:
+        logging.info("Webrepl not started")
 
 @wrapper_esp32()
 async def set_time(tries=3):
     """Update local time."""
     logging.info(f"Local time before synchronization {localtime()}")
     if not is_connected():
-        logging.info("Tyring to connect to wifi connection")
+        logging.info("Trying to connect to wifi connection")
         if not connect_wifi():
             return
     for trial in range(tries):
@@ -320,7 +323,7 @@ def connect_wifi(force=False):
             essid=f"sensor_serial{constants.CONFIG["serial"]}",
             authmode=network.AUTH_WPA_WPA2_PSK,
             max_clients=10,
-            password=wifi_login["webrepl_password"],
+            password=wifi_login["ap_password"],
         )
     return made_connection
 

@@ -4,7 +4,7 @@ import struct
 from time import time
 from random import randint
 
-from .constants import CONFIG
+from .constants import CONFIG, wordsinscanline
 from hexastorm.controller import Host
 from hexastorm.controller import executor as exe
 
@@ -145,7 +145,7 @@ class Laserhead:
                 else:
                     self.logger.debug("Diode test passed.")
 
-    async def print_loop(self, fname):
+    async def print_loop(self, fname, exposureperline=1):
         self._stop.clear()
         self._pause.clear()
         if self._debug:
@@ -174,6 +174,16 @@ class Laserhead:
             self.state["printing"] = False
         else:
             host = self.host
+            bits_in_scanline = int(host.laser_params['bitsinscanline'])
+            words_in_line = wordsinscanline(bits_in_scanline)
+            # we are going to replace the first command
+            headers = {0: None, 1: None}
+            for direction in [0,1]:
+                line = host.bittobytelist(bitlst=[0]*bits_in_scanline, stepsperline=exposureperline,
+                                          direction=direction)
+                cmdlst = host.bytetocmdlist(line)
+                headers[direction] = cmdlst[0]
+
             with open(CONFIG["webserver"]["job_folder"] + f"/{fname}", "rb") as f:
                 # 1. Header
                 lanewidth = struct.unpack("<f", f.read(4))[0]
@@ -226,11 +236,18 @@ class Laserhead:
                     else:
                         self.logger.info("Start exposing back lane.")
                     for _ in range(facetsinlane):
-                        # cmd lst has length of 6
-                        for _ in range(6):
-                            cmddata = f.read(9)
-                            exe(lambda: host.send_command(cmddata, 
-                                                          blocking=True))()
+                        for exposure in range(exposureperline):
+                            if exposure != 0:
+                                f.seek(9*words_in_line, -1)
+                            for word in range(words_in_line):
+                                cmddata = f.read(9)
+                                if word == 0:
+                                    if lane % 2 == 1:
+                                        cmddata = headers[0]
+                                    else:
+                                        cmddata = headers[1]
+                                exe(lambda: host.send_command(cmddata, 
+                                                              blocking=True))()
                     # send stopline
                     exe(lambda: host.writeline([]))()
             # disable scanhead

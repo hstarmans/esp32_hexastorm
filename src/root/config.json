@@ -21,6 +21,10 @@
         "bin_name": "micropython.bin",
         "token": ""
     },
+    "webrepl":{
+        "start": false,
+        "webrepl_password": "hexastorm"
+    },
     "webserver": {
         "password": "dd7b857b942e5bba6f062d46c9e6100cf84a7f61a59591b6b193b7a6b10a5705",
         "salt": "6bcad2870a09b584d9045736c372085c58a871bf4ec1333f128e2f7c37d2806e",
@@ -32,8 +36,8 @@
     "wifi_login": {
         "ssid": "default",
         "password": "defaultpass",
-        "webrepl_password": "hexastorm",
         "essid": "hexastorm",
+        "ap_password": "hexastorm",
         "static_enabled": false,
         "static_ip": "192.168.1.249",
         "dnsmask": "255.255.255.0",
