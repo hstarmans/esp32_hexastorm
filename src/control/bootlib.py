@@ -44,9 +44,12 @@ def wrapper_esp32(res=None):
 
 
 def reload(module):
-    """Reload a module in MicroPython.
+    """Reload a module in micropython.
     
-    Allows to hot reload modules
+    Allows to hot reload modules.
+    Hot reloading is challenging. You need
+    to update all scopes, run
+    import module again, to update micropython shell scope.
     """
     module_name = module.__name__
     if module_name in sys.modules:
@@ -83,9 +86,9 @@ def start_webrepl():
     # ideal procedure is first running webrepl_setup
     # password is stored not hashed, this is not ideal
     # webrepl.start()
-    webrepl = constants.CONFIG["webrepl"]
-    if webrepl["start"]:
-        webrepl.start(password=webrepl["webrepl_password"])
+    webrepl_dct = constants.CONFIG["webrepl"]
+    if webrepl_dct["start"]:
+        webrepl.start(password=webrepl_dct["webrepl_password"])
     else:
         logging.info("Webrepl not started")
 

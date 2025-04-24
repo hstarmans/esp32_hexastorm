@@ -3,7 +3,12 @@ import sys
 
 from hexastorm.tests import test_electrical
 
-def run_test(class_name, function_name, variable=None):    
+def run_test(class_name, function_name, *args, **kwargs):
+    """executes test in hexastorm.tests.test_electrical
+    
+    Hexastorm uses yield syntax due to Amaranth HDL and that's why test are
+    executed in this elaborated way.
+    """
     print(f"Executing class {class_name} in test_electrical")
     try:
         # Get the class and function *directly*
@@ -13,9 +18,10 @@ def run_test(class_name, function_name, variable=None):
 
         test_function = getattr(test_instance, function_name) # Get the function
 
-        if variable is not None:
-            print(f"Got variable {variable}")
-            test_function(variable)  # Call the function directly
+        if args or kwargs:
+            print(f"Got positional arguments: {args}")
+            print(f"Got keyword arguments: {kwargs}")
+            test_function(*args, **kwargs)   # Call the function directly
         else:
             test_function()  # Call without variable
     except KeyboardInterrupt:
