@@ -4,7 +4,8 @@ import struct
 from time import time
 from random import randint
 
-from .constants import CONFIG, wordsinscanline
+from .constants import CONFIG 
+from hexastorm.constants import wordsinscanline
 from hexastorm.controller import Host
 from hexastorm.controller import executor as exe
 
