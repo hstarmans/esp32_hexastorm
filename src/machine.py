@@ -1,5 +1,10 @@
-# Testing class
-#     Debugging class for testing code in linux.
+"""Testing Class: Mocking MicroPython's 'machine' Module
+
+This class serves as a debugging tool for testing MicroPython code within a Linux environment.
+Since the 'machine' module, which provides hardware-specific functionalities, is not available in standard Python,
+this class creates a simplified mock implementation. This allows developers to execute and test
+certain aspects of their MicroPython code on a Linux machine without requiring an actual ESP32 device.
+"""
 
 def reset():
     print("resetting entire chip")

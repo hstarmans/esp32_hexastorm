@@ -10,8 +10,13 @@ from sseclient import SSEClient
 
 
 class WebApp:
-    """class to interact with ESP32 hexastorm webserver"""
-
+    """class to interact with ESP32 hexastorm webserver
+    
+    This is not the main webapp. It creates a webserver when
+    you start it. You can then connect to it using the other 
+    methods.
+    As such it can be use for debugging. 
+    """
     def __init__(self):
         # export IP="192.168.1.8",
         # PORT=5000,
@@ -26,7 +31,7 @@ class WebApp:
             self.webappdir = os.environ.get("WEBAPP")
         if ip == "localhost":
             self.process = subprocess.Popen(
-                ["poetry", "run", "python", "-m", "src.control.webapp"],
+                ["uv", "run", "python", "-m", "src.control.webapp"],
                 cwd=self.webappdir,
             )
             time.sleep(1)

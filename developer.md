@@ -1,117 +1,169 @@
 # ESP32 
-Webserver is roughly deployed as follows. A binary is generated, this binary is used to flash the ESP32S3.
-After flashing the ESP32, the user logs on to the ESP32 using Thonny. 
-Using the micropython shell, the user changes config.json and updates the wifi password. 
-The user programs the FPGA (only needed once) and launches the webserver.
-After cloning the repository also pull in the git lfs objects.
+The webserver deployment process involves generating a binary, flashing it to the ESP32, configuring the device, 
+programming the FPGA (one-time operation), and finally launching the webserver.
+Begin by cloning the project repository, ensuring you also retrieve the Git Large File Storage (LFS) objects.
 ```bash
 git clone https://github.com/hstarmans/esp32_hexastorm
 git lfs fetch --all
 ``` 
-
-## Python dependencies
-Install the dependency manager uv.
-```bash
-sudo apt install pipx
-pipx ensurepath
-pipx install uv
+After flashing the ESP32, see creating binary for the ESP32, connect to it using Thonny. Access the MicroPython shell via USB, to modify the config.json file 
+and update the Wi-Fi password. In the micropython shell you can test the connection via
+```python
+import control.bootlib
+control.bootlib.connect_wifi()
 ```
-Use uv to install the dependencies in pyproject.toml.
-```bash
-uv sync
+Reboot the ESP32 and you should be able to connect to the micropython webinterface by configuring
+Thonny with the correct ip, port and password.
+Program the FPGA.
+```python
+from hexastorm.controller import Host
+hst = Host(micropython=True)
+hst.flash_fpga("nameofbitfile.bit")
 ```
-Install the hexastorm libarry somewhere and symlink to it
-The hexastorm library is imported using a symlink. This is seen as easier than using git submodules.
-```bash
-ln -s ~/python/hexastorm/src/hexastorm/ src/hexastorm
-```
-Create the folder src/root/sd/jobs/.
-
-### Testing code in python
-The webserver can be tested via, 
-```bash
-uv run python -m src.control.webapp
-```
-Default password is "hex".
-You can run tests via the command below. The s-flag ensures print statements are directed to the shell.
-This test requires additonial steps, please refer to the code.
-```bash
-uv run pytest -s --pyargs tests.test_webserver::test_websocket
+The bitfile is generated using the [https://github.com/hstarmans/hexastorm](hexastorm) library and
+```shell
+uv run python -m hexastorm.tests.build.test_build TestBuild.test_all
 ```
 
-### Testinc code in micropython
+## Setting Up the Development Environment
 
-Prior to testing execute
-```bash
-cd src
-```
-Install micropython on linux with [ulab](https://github.com/v923z/micropython-ulab). Run tests via
-```bash
-micropython -m test.test_hardware
-```
-```
-This is tested as follows
-```bash
-micropython -m test.test_hexastorm LaserheadTest test_stable
-```
+Before building the MicroPython firmware, you need to install the necessary Python dependencies and link the `hexastorm` library.
 
-## Creating a binary for the ESP32 microcontroller
-I follow the procedure described on [esp32](https://github.com/micropython/micropython/tree/master/ports/esp32).
-First install esp-idf and activate it. Git cannot be able to download it.
-```bash
-git clone -b v5.2.2 --recursive https://github.com/espressif/esp-idf.git$ 
-cd esp-idf
-./install.sh       # (or install.bat on Windows)
-source export.sh   # (or export.bat on Windows)
-```
-The `install.sh` step only needs to be done once. You will need to source
-`export.sh` for every new session.
-Hereafter, clone ulab, my stepper library, switch to the ESP32 branch.
-```bash
-git clone https://github.com/v923z/micropython-ulab
-```
-Install Micropython normally, please note that micropython-ulab, TMCStepper and micropython should
-be in the same root folder.
-```bash
-git clone https://github.com/micropython/micropython.git
-cd micropython
-cd mpy-cross
-make
-cd ..
-cd ports/esp32
-make submodules
-```
-The next step depends on the exact chip family you use for the ESP32. It might require a manual operation or not.
-Overall, the ESP32 needs to enter boot mode. Set the boot pin to low and toggle the reset pin.
-This typically causes the device to connect to a different com port. COM9 implies /dev/ttyS9 in the linux WSL layer.
-On windows devices can be seen via the DeviceManager, on linux use dmesg -d.
-Boards with a serial controller can be placed in programmer mode without toggling the pins and do this automatically. Boards can require a different baud rate, e.g. 115200 for ESP32 devkit 1.  
-For the ESP32S3, we use the 32 megabyte version and I use the partition which supports over the air updates.  
-Set in ESP32_GENERIC_S3/sdkconfig.board.  
-```
-CONFIG_BOOTLOADER_ROLLBACK_ENABLE=y
-CONFIG_ESPTOOLPY_FLASHSIZE_32MB=y
-CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions-32MiB-ota.csv
-CONFIG_ESPTOOLPY_OCT_FLASH=y
-```  
-Copy micropython.cmake from this repo to the root folder of micropython-ulab, TMCStepper and micropython.
-Build the board as follows.
-Add erase and deploy the board at the end of this command.
-```erase``` and ```deploy```  
-```bash
-make BOARD=ESP32_GENERIC_S3 BOARD_VARIANT=SPIRAM_OCT PORT=/dev/ttyS16 FROZEN_MANIFEST=/home/hstarmans/python/esp32_hexastorm/src/manifest.py USER_C_MODULES=../../../../micropython.cmake
-```
-After building you might want to create a secrets.json by cloning config.json, fill in the ESSID and password and copy it to the ESP32 via
-```bash
-poetry run python utility.py --device /dev/ttyS8
-```
+1.  **Install `uv`:**
+    `uv` is used as the dependency manager. Install it using `pipx`.
+    ```bash
+    sudo apt install pipx
+    pipx ensurepath
+    pipx install uv
+    ```
 
-# Tools
-Mpremote is supported by Micropython. I tried [Mpfshell](https://github.com/wendlers/mpfshell) 
-and [rshell](https://github.com/dhylands/rshell). [Thonny](https://thonny.org/) offers best webrepl support.
+2.  **Install Project Dependencies:**
+    Navigate to the project directory and use `uv` to install the dependencies listed in `pyproject.toml`.
+    ```bash
+    uv sync
+    ```
+
+3.  **Link the `hexastorm` Library (Alternative to Submodules):**
+    Instead of using Git submodules, a symbolic link can be created to the `hexastorm` library. 
+    ```bash
+    ln -s ~/CORRECTFOLDERONYOURSYSTEM/hexastorm/src/hexastorm/ THISPROJECT/src/hexastorm
+    ```
+
+4.  **Create the Jobs Directory:**
+    Create the necessary directory for job files on the emulated SD card.
+    ```bash
+    mkdir -p THISPROJECT/src/root/sd/jobs/
+    ```
+## Creating a Binary for the ESP32 Microcontroller
+
+The process of creating a MicroPython binary for the ESP32 involves using the Espressif IoT Development Framework (ESP-IDF). The following steps are based on the procedure described in the [MicroPython ESP32 port documentation](https://github.com/micropython/micropython/tree/master/ports/esp32).
+
+1.  **Install and Activate ESP-IDF:**
+    Clone the ESP-IDF repository (version v5.2.2 is specified) recursively and then run the installation script. You'll need to source the export script in each new terminal session. Note that Git might not be able to download ESP-IDF directly; ensure you have the necessary permissions and network configuration.
+    ```bash
+    git clone -b v5.2.2 --recursive https://github.com/espressif/esp-idf.git
+    cd esp-idf
+    ./install.sh       # (or install.bat on Windows)
+    source export.sh   # (or export.bat on Windows)
+    ```
+
+2.  **Clone Additional Libraries:**
+    Clone the `ulab` and `micropython` repositories. Ideally, `micropython-ulab` and `micropython` should reside in the same root folder.
+    ```bash
+    git clone https://github.com/v923z/micropython-ulab
+    git clone https://github.com/micropython/micropython.git
+    ```
+
+3.  **Build `mpy-cross`:**
+    Navigate to the `mpy-cross` directory within the `micropython` repository and build the cross-compiler.
+    ```bash
+    cd micropython
+    cd mpy-cross
+    make
+    cd ..
+    ```
+
+4.  **Initialize ESP32 Submodules:**
+    Go to the ESP32 port directory in the `micropython` repository and initialize the submodules.
+    ```bash
+    cd ports/esp32
+    make submodules
+    ```
+
+5.  **Configure ESP32 Boot Mode and Serial Port:**
+    The ESP32 needs to be in boot mode for flashing. This often involves setting the boot pin low and toggling the reset pin. The device will typically connect to a different serial port during this mode (e.g., `/dev/ttyS9` in Linux WSL, COM port in Windows Device Manager). Some boards with a serial controller can enter programmer mode automatically. The baud rate might also vary (e.g., 115200 for ESP32 devkit 1).
+
+6.  **Configure Partition Scheme for ESP32S3:**
+    For the ESP32S3 with 32MB of flash, the configuration for over-the-air (OTA) updates and the custom partition table needs to be set in the `sdkconfig.board` file within the `ESP32_GENERIC_S3` configuration. To function properly an ESP32 with octal RAM is required.
+    ```
+    CONFIG_BOOTLOADER_ROLLBACK_ENABLE=y
+    CONFIG_ESPTOOLPY_FLASHSIZE_32MB=y
+    CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions-32MiB-ota.csv
+    CONFIG_ESPTOOLPY_OCT_FLASH=y
+    ```
+
+7.  **Copy `micropython.cmake`:**
+    Copy the `micropython.cmake` file from this repository to the root directory containing `micropython-ulab`, and `micropython`.
+    The cmake file ensure that micropython is build with ulab.
+
+8.  **Build and Flash the Firmware:**
+    Use the `make` command to build the firmware for the ESP32S3. The command includes options for the board, serial port, and frozen modules defined in the `manifest.py` file. The `erase` and `deploy` commands can be added to the end of this command to automatically erase the flash and deploy the new firmware. Adjust the `PORT` to match your ESP32's serial port (e.g., `/dev/ttyS16`).
+    ```bash
+    make BOARD=ESP32_GENERIC_S3 BOARD_VARIANT=SPIRAM_OCT PORT=/dev/ttyS16 FROZEN_MANIFEST=/CORRECTROOTFOLDER/esp32_hexastorm/src/manifest.py USER_C_MODULES=../../../../micropython.cmake erase deploy
+    ```
+
+9.  **Configure Secrets (Optional):**
+    After flashing, you might want to create a `secrets.json` file (by copying and modifying `config.json`) with your Wi-Fi ESSID and password and copy it to the ESP32 using a utility script. Ensure `uv` is installed for running this script. Adjust the device port as needed (e.g., `/dev/ttyS8`).
+    ```bash
+    uv run python utility.py --device /dev/ttyS8
+    ```
 
 
-### Tips
-You have to run ```make clean``` after ```make submodules```,
-if you change the cmake file. You don't need to run ```make submodules```
-each time.
+## Testing
+
+The project includes options for testing the webserver and hardware components in both Python and MicroPython environments.
+
+### Testing Code in Python
+
+1.  **Run the Webserver:**
+    You can test the webserver directly from your Python environment. The default password is "hex".
+    ```bash
+    uv run python -m src.control.webapp
+    ```
+
+2.  **Run WebSocket Tests:**
+    Specific tests for the WebSocket functionality can be executed using `pytest`. Refer to the code for any additional setup required for this test. The `-s` flag ensures print statements are displayed in the shell.
+    ```bash
+    uv run pytest -s --pyargs tests.test_webserver::test_websocket
+    ```
+
+### Testing Code in MicroPython
+
+1.  **Navigate to the Source Directory:**
+    ```bash
+    cd src
+    ```
+
+2.  **Install MicroPython with `ulab` (Linux):**
+    If you haven't already, install MicroPython on your Linux system with the `ulab` library. Follow the instructions on the [ulab GitHub repository](https://github.com/v923z/micropython-ulab).
+
+3.  **Run Hardware Tests:**
+    Execute the hardware-specific tests.
+    ```bash
+    micropython -m test.test_hardware
+    ```
+
+4.  **Run `hexastorm` Tests:**
+    Run specific tests for the `hexastorm` library.
+    ```bash
+    micropython -m test.test_hexastorm LaserheadTest test_stable
+
+## Tools
+The best shell tool is `mpremote`. If you prefer a GUI use[Thonny](https://thonny.org/). Other tools like [Mpfshell](https://github.com/wendlers/mpfshell) and [rshell](https://github.com/dhylands/rshell) were tested but deemed less ideal.
+
+
+## Tips
+
+-   After running `make submodules`, it's necessary to execute `make clean` if you modify the `cmake` file.
+-   You do not need to run `make submodules` every time you build the firmware.
+-   rm the build directory prior to a new build

@@ -1,3 +1,13 @@
+"""Shell script for the final configuration of the ESP32S3
+after the correct firmware has been flashed.
+
+This script automates post-flashing configuration tasks for the ESP32S3.
+It assumes the device has already been flashed with the appropriate binary
+and is ready for setup. Use this script to perform actions such as
+setting Wi-Fi credentials, configuring network settings, or initializing
+application-specific parameters directly on the ESP32S3.
+"""
+
 import argparse
 import subprocess
 from time import sleep
