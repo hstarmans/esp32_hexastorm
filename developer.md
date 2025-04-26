@@ -1,4 +1,4 @@
-# ESP32 
+# ESP32 Webserver Deployment
 The webserver deployment process involves generating a binary, flashing it to the ESP32, configuring the device, 
 programming the FPGA (one-time operation), and finally launching the webserver.
 Begin by cloning the project repository, ensuring you also retrieve the Git Large File Storage (LFS) objects.
