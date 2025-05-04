@@ -86,11 +86,7 @@ def start_webrepl():
     # ideal procedure is first running webrepl_setup
     # password is stored not hashed, this is not ideal
     # webrepl.start()
-    webrepl_dct = constants.CONFIG["webrepl"]
-    if webrepl_dct["start"]:
-        webrepl.start(password=webrepl_dct["webrepl_password"])
-    else:
-        logging.info("Webrepl not started")
+    webrepl.start(password=constants.CONFIG["webrepl"]["webrepl_password"])
 
 @wrapper_esp32()
 async def set_time(tries=3):

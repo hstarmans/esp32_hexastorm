@@ -72,18 +72,19 @@ async def main_task():
     await asyncio.gather(server_task)
 
 
-def main():
-    try:
-        asyncio.run(main_task())
-    except KeyboardInterrupt:
-        logging.error("Keyboard interrupt")
-
-
 if constants.ESP32:
     try:
         asyncio.run(boot_procedure())
-        bootlib.start_webrepl()
-    # main()
+        if constants.CONFIG["webrepl"]["start"]:
+            bootlib.start_webrepl()
+        else:
+            logging.info("Webrepl not started")
+        if constants.CONFIG["webserver"]["start"]:
+            asyncio.run(main_task())
+        else:
+            logging.info("Webserver not started")
     except KeyboardInterrupt:
         logging.error("Keyboard interrupt")
+    except Exception as e:
+        logging.error(f"An unexpected error occurred: {e}")
 

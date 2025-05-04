@@ -175,12 +175,12 @@ class Laserhead:
             self.state["printing"] = False
         else:
             host = self.host
-            bits_in_scanline = int(host.laser_params['bitsinscanline'])
+            bits_in_scanline = int(host.laser_params['BITSINSCANLINE'])
             words_in_line = wordsinscanline(bits_in_scanline)
             # we are going to replace the first command
             headers = {0: None, 1: None}
             for direction in [0,1]:
-                line = host.bittobytelist(bitlst=[0]*bits_in_scanline, stepsperline=exposureperline,
+                line = host.bittobytelist(bitlst=[0]*bits_in_scanline, stepsperline=(1/exposureperline),
                                           direction=direction)
                 cmdlst = host.bytetocmdlist(line)
                 headers[direction] = cmdlst[0]
@@ -236,13 +236,16 @@ class Laserhead:
                         self.logger.info("Start exposing forward lane.")
                     else:
                         self.logger.info("Start exposing back lane.")
+
                     for _ in range(facetsinlane):
-                        for exposure in range(exposureperline):
-                            if exposure != 0:
-                                f.seek(9*words_in_line, -1)
-                            for word in range(words_in_line):
-                                cmddata = f.read(9)
-                                if word == 0:
+                        # Read the entire line's data into a buffer
+                        line_data = f.read(words_in_line * 9)
+                        for _ in range(exposureperline):
+                            for word_index in range(words_in_line):
+                                start_index = word_index * 9
+                                cmddata = line_data[start_index : start_index + 9]
+                                # the header is adapted
+                                if word_index == 0:
                                     if lane % 2 == 1:
                                         cmddata = headers[0]
                                     else:
