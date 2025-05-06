@@ -35,7 +35,7 @@ def update_config():
     with open(fname, "w") as fp:
         if not ESP32:
             recurse_dct(CONFIG, "src/root/sd/", "sd/")
-        json.dump(CONFIG, fp)
+        json.dump(CONFIG, fp, indent=4)
         if not ESP32:
             recurse_dct(CONFIG, "sd/", "src/root/sd/")
 

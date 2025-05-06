@@ -200,8 +200,8 @@ async def command(request, session, ws):
                     request.app.shutdown()
                 elif command == "startprint":
                     filename = jsondata["file"].replace("/", "_")
-                    laserpower = int(jsondata["laserpower"])
-                    constants.CONFIG["defaultprint"]["laserpower"] = laserpower
+                    constants.CONFIG["defaultprint"]["laserpower"] = int(jsondata["laserpower"])
+                    constants.CONFIG["defaultprint"]["exposureperline"] = int(jsondata["exposureperline"])
                     constants.update_config()
 
                     # actual update is pushed via /state, i.e. SSE not websocket

@@ -1,7 +1,8 @@
 {
     "serial": -1,
     "defaultprint": {
-        "laserpower": 70
+        "laserpower": 70,
+        "exposureperline": 4
     },
     "fpga": {
         "version": "0.1",
@@ -21,7 +22,7 @@
         "bin_name": "micropython.bin",
         "token": ""
     },
-    "webrepl":{
+    "webrepl": {
         "start": false,
         "webrepl_password": "hexastorm"
     },

@@ -33,6 +33,8 @@ class Laserhead:
             "currentline": 0,
             "totallines": 0,
             "printingtime": 0,
+            "exposureperline": 1,
+            "laserpower": 70,
             "filename": "no file name",
         }
         job.update(CONFIG["defaultprint"])
@@ -146,19 +148,24 @@ class Laserhead:
                 else:
                     self.logger.debug("Diode test passed.")
 
-    async def print_loop(self, fname, exposureperline=1):
+    async def print_loop(self, fname):
         self._stop.clear()
         self._pause.clear()
+        self.reset_state()
+        self.state["printing"] = True
+        self.state["job"]["filename"] = fname
+        self.state["job"]["laserpower"] = CONFIG["defaultprint"]["laserpower"]
+        self.state["job"]["exposureperline"] = CONFIG["defaultprint"]["exposureperline"]
         if self._debug:
-            self.logger.info(f"Printing with laserpower {CONFIG["defaultprint"]["laserpower"]}.")
+            self.logger.info(f"Printing with laserpower {self.state["job"]["laserpower"]}"
+                             f" and {self.state["job"]["exposureperline"]} exposures.")
             # TODO: this would normally come from a file
             total_lines = 10
-            self.reset_state()
-            self.state["printing"] = True
+            
             self.state["job"]["totallines"] = total_lines
-            self.state["job"]["filename"] = fname
             start_time = time()
             for line in range(total_lines):
+                self.logger.info(f"Exposing line {line}.")
                 if self._pause.is_set():
                     self._pause.clear()
                     while True:
@@ -180,7 +187,7 @@ class Laserhead:
             # we are going to replace the first command
             headers = {0: None, 1: None}
             for direction in [0,1]:
-                line = host.bittobytelist(bitlst=[0]*bits_in_scanline, stepsperline=(1/exposureperline),
+                line = host.bittobytelist(bitlst=[0]*bits_in_scanline, stepsperline=(1/self.state["job"]["exposureperline"]),
                                           direction=direction)
                 cmdlst = host.bytetocmdlist(line)
                 headers[direction] = cmdlst[0]
@@ -191,18 +198,15 @@ class Laserhead:
                 facetsinlane = struct.unpack("<I", f.read(4))[0]
                 lanes = struct.unpack("<I", f.read(4))[0]
                 self.reset_state()
-                self.state["printing"] = True
                 self.state["job"]["totallines"] = int(facetsinlane * lanes)
-                self.state["job"]["filename"] = fname
                 start_time = time()
                 await asyncio.sleep(1) # time for propagation, update is pushed via SSE
                 # z is not homed as it should be already in
                 # position so laser is in focus
                 host.enable_steppers = True
-                laserpower = CONFIG["defaultprint"]["laserpower"]
+                laserpower = self.state["job"]["laserpower"]
                 if (laserpower > 50) & (laserpower < 151):
-                    pass
-                    #self.host.laser_current = 130  # assuming 1 channel
+                    self.host.laser_current = laserpower
                 self.logger.info("Homing X- and Y-axis.")
                 exe(lambda: host.home_axes([1, 1, 0]))()
                 self.logger.info("Moving to start position.")
@@ -240,7 +244,7 @@ class Laserhead:
                     for _ in range(facetsinlane):
                         # Read the entire line's data into a buffer
                         line_data = f.read(words_in_line * 9)
-                        for _ in range(exposureperline):
+                        for _ in range(self.state["job"]["exposureperline"]):
                             for word_index in range(words_in_line):
                                 start_index = word_index * 9
                                 cmddata = line_data[start_index : start_index + 9]

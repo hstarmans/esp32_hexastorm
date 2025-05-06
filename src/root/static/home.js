@@ -72,7 +72,8 @@ startprintbutton.addEventListener("click", function (e) {
   commandSocket.send(JSON.stringify({
   "command": "startprint", 
   "file": printjobfilename.value,
-  "laserpower": laserpower.value}));
+  "laserpower": laserpower.value,
+  "exposureperline": exposureperline.value}));
   window.location.href = '/';
 });
 
@@ -124,7 +125,7 @@ function updatemain(jsonData){
         filename.innerHTML = "Filename is " + String(jsonData['job']['filename']);
         lines.innerHTML = String(jsonData['job']['currentline']) + " of " + String(jsonData['job']['totallines']);
         printingtime.innerHTML = String(jsonData['job']['printingtime']) + " seconds elapsed";
-        exposure.innerHTML = "Line is exposed " + String(jsonData['job']['passesperline']) + " times with a laser power of " + String(jsonData['job']['laserpower']) + " [a.u.]" 
+        exposure.innerHTML = "Line is exposed " + String(jsonData['job']['exposureperline']) + " times with a laser power of " + String(jsonData['job']['laserpower']) + " [a.u.]" 
         fraction = parseInt(jsonData['job']['currentline']) / parseInt(jsonData['job']['totallines']) * 100;
         progressbar.setAttribute('aria-valuenow', String(fraction));
         progressbar.setAttribute('style', 'width: ' + String(fraction) +'%' + ';');

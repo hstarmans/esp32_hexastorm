@@ -29,6 +29,10 @@
                         <label for="laserpower" class="form-label">Laser power [a.u]</label>
                         <input id="laserpower" class="form-control" type="number" value="{{state['job']['laserpower']}}" min="50" max="150"/>
                     </div>
+                    <div class="mb-3">
+                        <label for="exposureperline" class="form-label">Times a line is exposed</label>
+                        <input id="exposureperline" class="form-control" type="number" value="{{state['job']['exposureperline']}}" min="1" max="8"/>
+                    </div>
                 </form>
             </div>
             <div class="modal-footer">
