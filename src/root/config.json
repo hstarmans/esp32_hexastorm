@@ -23,7 +23,7 @@
         "token": ""
     },
     "webrepl": {
-        "start": false,
+        "start": true,
         "webrepl_password": "hexastorm"
     },
     "webserver": {

@@ -35,9 +35,11 @@ def update_config():
     with open(fname, "w") as fp:
         if not ESP32:
             recurse_dct(CONFIG, "src/root/sd/", "sd/")
-        json.dump(CONFIG, fp, indent=4)
-        if not ESP32:
+            json.dump(CONFIG, fp, indent=4)
             recurse_dct(CONFIG, "sd/", "src/root/sd/")
+        else:
+            # micropython doesn't support indent
+            json.dump(CONFIG, fp, separators=(',\n', ':\n'))
 
 
 CONFIG = load_config()

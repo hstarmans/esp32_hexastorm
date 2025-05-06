@@ -83,6 +83,7 @@ if constants.ESP32:
             asyncio.run(main_task())
         else:
             logging.info("Webserver not started")
+    # requires micropython shell connection via USB not webrepl
     except KeyboardInterrupt:
         logging.error("Keyboard interrupt")
     except Exception as e:
