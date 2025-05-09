@@ -148,7 +148,10 @@ class Laserhead:
                 if host_state == 0:
                     self.logger.error("Diode not triggered.")
                 else:
-                    self.logger.debug("Diode test passed.")
+                    self.logger.debug("Diode test passed. Stable test requires 15 seconds.")
+                    self.enable_comp(synchronize=True)
+                    await asyncio.sleep(15)
+                    self.enable_comp(synchronize=False)
 
     async def print_loop(self, fname):
         self._stop.clear()

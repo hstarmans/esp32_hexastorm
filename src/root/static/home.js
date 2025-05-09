@@ -152,7 +152,8 @@ function updatemain(jsonData){
             laser.innerHTML = "Turn laser on";
         }
         if (jsonData['components']['diodetest']){
-            testresult.innerHTML = "Diode test successfull.";
+            testresult.innerHTML = ("Diode test successfull. Laser synchronized for 15 seconds, " +
+                "verify it's stable and does not blink.");
         } else if (jsonData['components']['diodetest'] == false) {
             testresult.innerHTML = "Diode test failed.";
         } else {
