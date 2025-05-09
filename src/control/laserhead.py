@@ -34,7 +34,8 @@ class Laserhead:
             "totallines": 0,
             "printingtime": 0,
             "exposureperline": 1,
-            "laserpower": 70,
+            "singlefacet": False,
+            "laserpower": 130,
             "filename": "no file name",
         }
         job.update(CONFIG["defaultprint"])
@@ -69,7 +70,7 @@ class Laserhead:
 
     @exe
     def enable_comp(
-        self, laser0=False, laser1=False, polygon=False,
+        self, laser0=False, laser1=False, polygon=False, synchronize=False, singlefacet=False
     ):
         """enable components
 
@@ -79,9 +80,10 @@ class Laserhead:
         """
         self.logger.debug(f"laser0, laser1, polygon set to {laser0, laser1, polygon}")
         if not self._debug:
-            yield from self.host.enable_comp(laser0=laser0, laser1=laser1, polygon=polygon)
+            yield from self.host.enable_comp(laser0=laser0, laser1=laser1, polygon=polygon, synchronize=synchronize, singlefacet=singlefacet)
             self.state["components"]["laser"]  = laser0 or laser1
             self.state["components"]["rotating"]  = polygon
+            self.state["job"]["singlefacet"]  = singlefacet
 
     @exe
     def toggle_laser(self):
@@ -156,9 +158,15 @@ class Laserhead:
         self.state["job"]["filename"] = fname
         self.state["job"]["laserpower"] = CONFIG["defaultprint"]["laserpower"]
         self.state["job"]["exposureperline"] = CONFIG["defaultprint"]["exposureperline"]
+        self.state["job"]["singlefacet"] = CONFIG["defaultprint"]["singlefacet"]
         if self._debug:
-            self.logger.info(f"Printing with laserpower {self.state["job"]["laserpower"]}"
+            basestring = (f"Printing with laserpower {self.state["job"]["laserpower"]}"
                              f" and {self.state["job"]["exposureperline"]} exposures.")
+            if self.state["job"]["singlefacet"]:
+                basestring += "using a single facet."
+            else:
+                basestring += "without using a single facet."
+            self.logger.info(basestring)
             # TODO: this would normally come from a file
             total_lines = 10
             
@@ -182,6 +190,7 @@ class Laserhead:
             self.state["printing"] = False
         else:
             host = self.host
+            self.enable_comp(singlefacet=self.state["job"]["singlefacet"])
             bits_in_scanline = int(host.laser_params['BITSINSCANLINE'])
             words_in_line = wordsinscanline(bits_in_scanline)
             # we are going to replace the first command

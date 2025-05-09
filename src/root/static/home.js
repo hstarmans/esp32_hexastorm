@@ -73,7 +73,8 @@ startprintbutton.addEventListener("click", function (e) {
   "command": "startprint", 
   "file": printjobfilename.value,
   "laserpower": laserpower.value,
-  "exposureperline": exposureperline.value}));
+  "exposureperline": exposureperline.value,
+  "singlefacet": singlefacet.checked}));
   window.location.href = '/';
 });
 
@@ -125,7 +126,13 @@ function updatemain(jsonData){
         filename.innerHTML = "Filename is " + String(jsonData['job']['filename']);
         lines.innerHTML = String(jsonData['job']['currentline']) + " of " + String(jsonData['job']['totallines']);
         printingtime.innerHTML = String(jsonData['job']['printingtime']) + " seconds elapsed";
-        exposure.innerHTML = "Line is exposed " + String(jsonData['job']['exposureperline']) + " times with a laser power of " + String(jsonData['job']['laserpower']) + " [a.u.]" 
+        exposure.innerHTML = ("Line is exposed " + String(jsonData['job']['exposureperline']) 
+        + " times with a laser power of " + String(jsonData['job']['laserpower']) + " [a.u.]" );
+        if (jsonData["job"]['singlefacet']){
+            exposure.innerHTML += " using a single facet";
+        } else{
+            exposure.innerHTML += " without using a single facet";
+        }
         fraction = parseInt(jsonData['job']['currentline']) / parseInt(jsonData['job']['totallines']) * 100;
         progressbar.setAttribute('aria-valuenow', String(fraction));
         progressbar.setAttribute('style', 'width: ' + String(fraction) +'%' + ';');

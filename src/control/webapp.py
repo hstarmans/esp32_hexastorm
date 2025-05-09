@@ -202,6 +202,7 @@ async def command(request, session, ws):
                     filename = jsondata["file"].replace("/", "_")
                     constants.CONFIG["defaultprint"]["laserpower"] = int(jsondata["laserpower"])
                     constants.CONFIG["defaultprint"]["exposureperline"] = int(jsondata["exposureperline"])
+                    constants.CONFIG["defaultprint"]["singlefacet"] = bool(jsondata["singlefacet"])
                     constants.update_config()
 
                     # actual update is pushed via /state, i.e. SSE not websocket

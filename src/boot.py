@@ -75,14 +75,14 @@ async def main_task():
 if constants.ESP32:
     try:
         asyncio.run(boot_procedure())
-        if constants.CONFIG["webrepl"]["start"]:
+        if constants.CONFIG["webserver"]["start"]:
+            logging.info("Webserver started")
+            asyncio.run(main_task())
+        elif constants.CONFIG["webrepl"]["start"]:
+            logging.info("Webrepl started")
             bootlib.start_webrepl()
         else:
-            logging.info("Webrepl not started")
-        if constants.CONFIG["webserver"]["start"]:
-            asyncio.run(main_task())
-        else:
-            logging.info("Webserver not started")
+            logging.info("Webserver and webrepl not started")
     # requires micropython shell connection via USB not webrepl
     except KeyboardInterrupt:
         logging.error("Keyboard interrupt")

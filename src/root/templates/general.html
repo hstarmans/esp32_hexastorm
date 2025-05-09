@@ -33,6 +33,10 @@
                         <label for="exposureperline" class="form-label">Times a line is exposed</label>
                         <input id="exposureperline" class="form-control" type="number" value="{{state['job']['exposureperline']}}" min="1" max="8"/>
                     </div>
+                    <div class="mb-3">
+                        <label for="singlefacet" class="form-check-label">Use one facet per rotation</label>
+                        <input id="singlefacet" class="form-check-input" type="checkbox" {% if state['job']['singlefacet'] %} checked {% endif %}/>
+                    </div>
                 </form>
             </div>
             <div class="modal-footer">

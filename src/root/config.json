@@ -1,8 +1,9 @@
 {
     "serial": -1,
     "defaultprint": {
-        "laserpower": 70,
-        "exposureperline": 4
+        "laserpower": 130,
+        "exposureperline": 4,
+        "singlefacet": false
     },
     "fpga": {
         "version": "0.1",
