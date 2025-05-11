@@ -193,7 +193,6 @@ class Laserhead:
             self.state["printing"] = False
         else:
             host = self.host
-            self.enable_comp(singlefacet=self.state["job"]["singlefacet"])
             bits_in_scanline = int(host.laser_params['BITSINSCANLINE'])
             words_in_line = wordsinscanline(bits_in_scanline)
             # we are going to replace the first command
@@ -225,7 +224,7 @@ class Laserhead:
                 # scanning direction offset is needed to prevent lock with home
                 exe(lambda: host.gotopoint([70, 5, 0], absolute=False))()
                 # enable scanhead
-                exe(lambda: host.enable_comp(synchronize=True))()
+                exe(lambda: host.enable_comp(synchronize=True, singlefacet=self.state["job"]["singlefacet"]))()
                 for lane in range(lanes):
                     # checks for communcation with frontend
                     if self._pause.is_set():
@@ -256,7 +255,7 @@ class Laserhead:
                     for _ in range(facetsinlane):
                         # Read the entire line's data into a buffer
                         line_data = f.read(words_in_line * 9)
-                        for _ in range(self.state["job"]["exposureperline"]):
+                        def sendline():
                             for word_index in range(words_in_line):
                                 start_index = word_index * 9
                                 cmddata = line_data[start_index : start_index + 9]
@@ -268,6 +267,27 @@ class Laserhead:
                                         cmddata = headers[1]
                                 exe(lambda: host.send_command(cmddata, 
                                                               blocking=True))()
+                        for _ in range(self.state["job"]["exposureperline"]):
+                            max_attempts = 3
+                            for attempt in range(max_attempts+1):
+                                try:
+                                    sendline()
+                                    break # Exit loop if successfull
+                                except Exception as e:
+                                    # communication can fail, this is believed to originate from
+                                    # the lack of CRC bytes.. This fix introduces a small error
+                                    if "FPGA" in str(e):
+                                        if attempt == max_attempts:
+                                            self.logger.error("Communication with FPGA not succesfull, job aborted")
+                                            host.reset()
+                                            return
+                                        else:
+                                            self.logger.error("Error detected on FPGA, wait 3 seconds"
+                                            "for buffer to deplete and try again.")
+                                            await asyncio.sleep(3)
+                                            host.reset()
+                                            exe(lambda: host.enable_comp(synchronize=True, singlefacet=self.state["job"]["singlefacet"]))()
+                                
                     # send stopline
                     exe(lambda: host.writeline([]))()
             # disable scanhead
