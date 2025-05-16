@@ -46,6 +46,7 @@ class Laserhead:
         }
         state = {
             "printing": False,
+            "paused": False,
             "job": job,
             "components": components,
         }
@@ -57,7 +58,12 @@ class Laserhead:
 
     def pause_print(self):
         self.logger.debug("Print is paused.")
-        self._pause.set()
+        if self._pause.is_set():
+            self._pause.clear()
+        else:
+            self._pause.set()
+        self.state["paused"] = self._pause.is_set()
+
 
     def laser_current(self, val):
         """sets maximum laser current of laser driver per channel
@@ -154,6 +160,17 @@ class Laserhead:
                     self.enable_comp(synchronize=False)
 
     async def print_loop(self, fname):
+        async def handle_pausing_and_stopping():
+            if self._pause.is_set():
+                while self._pause.is_set() and not self._stop.is_set():
+                    await asyncio.sleep(2)
+                    self.logger.debug("Printloop in pause")
+                self.logger.debug("Printloop resumed")
+            if self._stop.is_set():
+                return True
+            return False
+
+
         self._stop.clear()
         self._pause.clear()
         self.reset_state()
@@ -177,15 +194,7 @@ class Laserhead:
             start_time = time()
             for line in range(total_lines):
                 self.logger.info(f"Exposing line {line}.")
-                if self._pause.is_set():
-                    self._pause.clear()
-                    while True:
-                        await asyncio.sleep(2)
-                        if self._stop.is_set() or self._pause.is_set():
-                            self._pause.clear()
-                            break
-                if self._stop.is_set():
-                    self._stop.clear()
+                if await handle_pausing_and_stopping():
                     break
                 self.state["job"]["currentline"] = line + 1
                 self.state["job"]["printingtime"] = round(time() - start_time)
@@ -208,10 +217,9 @@ class Laserhead:
                 lanewidth = struct.unpack("<f", f.read(4))[0]
                 facetsinlane = struct.unpack("<I", f.read(4))[0]
                 lanes = struct.unpack("<I", f.read(4))[0]
-                self.reset_state()
                 self.state["job"]["totallines"] = int(facetsinlane * lanes)
                 start_time = time()
-                await asyncio.sleep(1) # time for propagation, update is pushed via SSE
+                await asyncio.sleep(2) # time for propagation, update is pushed via SSE
                 # z is not homed as it should be already in
                 # position so laser is in focus
                 host.enable_steppers = True
@@ -226,16 +234,7 @@ class Laserhead:
                 # enable scanhead
                 exe(lambda: host.enable_comp(synchronize=True, singlefacet=self.state["job"]["singlefacet"]))()
                 for lane in range(lanes):
-                    # checks for communcation with frontend
-                    if self._pause.is_set():
-                        self._pause.clear()
-                        while True:
-                            await asyncio.sleep(2)
-                            if self._stop.is_set() or self._pause.is_set():
-                                self._pause.clear()
-                                break
-                    if self._stop.is_set():
-                        self._stop.clear()
+                    if await handle_pausing_and_stopping():
                         break
                     self.state["job"]["currentline"] = int(lane * facetsinlane)
                     self.state["job"]["printingtime"] = round(time() - start_time)
@@ -251,8 +250,17 @@ class Laserhead:
                         self.logger.info("Start exposing forward lane.")
                     else:
                         self.logger.info("Start exposing back lane.")
-
-                    for _ in range(facetsinlane):
+                    
+                    aantalfacetten = int(host.laser_params['RPM']/self.state["job"]["exposureperline"])
+                    if self.state["job"]["singlefacet"]:
+                        aantalfacetten = int(aantalfacetten/4)
+                    for facet in range(facetsinlane):
+                        if facet % aantalfacetten == 0:
+                            self.state["job"]["currentline"] = int(lane * facetsinlane) + facet
+                            self.state["job"]["printingtime"] = round(time() - start_time)
+                            await asyncio.sleep(1)
+                            if await handle_pausing_and_stopping():
+                                break
                         # Read the entire line's data into a buffer
                         line_data = f.read(words_in_line * 9)
                         def sendline():
@@ -295,7 +303,7 @@ class Laserhead:
             self.logger.info("Waiting for stopline to execute.")
             exe(lambda: host.enable_comp(synchronize=False))()
             host.enable_steppers = False
-            self.logger.info("Finished exposure.")
+            self.logger.info(f"Finished exposure. Total printing time {self.state["job"]["printingtime"]}")
             self.state["printing"] = False
 
 

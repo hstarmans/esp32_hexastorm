@@ -126,6 +126,9 @@ function updatemain(jsonData){
         filename.innerHTML = "Filename is " + String(jsonData['job']['filename']);
         lines.innerHTML = String(jsonData['job']['currentline']) + " of " + String(jsonData['job']['totallines']);
         printingtime.innerHTML = String(jsonData['job']['printingtime']) + " seconds elapsed";
+        if (jsonData["paused"]){
+            printingtime.innerHTML = "Printing paused after; " + printingtime.innerHTML
+        }
         exposure.innerHTML = ("Line is exposed " + String(jsonData['job']['exposureperline']) 
         + " times with a laser power of " + String(jsonData['job']['laserpower']) + " [a.u.]" );
         if (jsonData["job"]['singlefacet']){
@@ -133,7 +136,7 @@ function updatemain(jsonData){
         } else{
             exposure.innerHTML += " without using a single facet";
         }
-        fraction = parseInt(jsonData['job']['currentline']) / parseInt(jsonData['job']['totallines']) * 100;
+        fraction = Math.round(parseInt(jsonData['job']['currentline']) / parseInt(jsonData['job']['totallines']) * 100);
         progressbar.setAttribute('aria-valuenow', String(fraction));
         progressbar.setAttribute('style', 'width: ' + String(fraction) +'%' + ';');
         progressbar.innerHTML = String(fraction) + ' %';
