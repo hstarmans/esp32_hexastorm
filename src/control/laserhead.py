@@ -9,11 +9,12 @@ from hexastorm.constants import wordsinscanline
 from hexastorm.controller import Host
 from hexastorm.controller import executor as exe
 
+logger = logging.getLogger(__name__)
+
 
 class Laserhead:
     def __init__(self, debug=False):
         self.host = Host(micropython=True)
-        self.logger = logging.getLogger(__name__)
         self.debug = debug
         self._stop = asyncio.Event()
         self._pause = asyncio.Event()
@@ -53,11 +54,11 @@ class Laserhead:
         self._state = state
 
     def stop_print(self):
-        self.logger.debug("Print is stopped.")
+        logger.debug("Print is stopped.")
         self._stop.set()
 
     def pause_print(self):
-        self.logger.debug("Print is paused.")
+        logger.debug("Print is paused.")
         if self._pause.is_set():
             self._pause.clear()
         else:
@@ -84,7 +85,7 @@ class Laserhead:
         laser1   -- True enables laser channel 1
         polygon  -- False enables polygon motor
         """
-        self.logger.debug(f"laser0, laser1, polygon set to {laser0, laser1, polygon}")
+        logger.debug(f"laser0, laser1, polygon set to {laser0, laser1, polygon}")
         if not self._debug:
             yield from self.host.enable_comp(laser0=laser0, laser1=laser1, polygon=polygon, synchronize=synchronize, singlefacet=singlefacet)
             self.state["components"]["laser"]  = laser0 or laser1
@@ -95,7 +96,7 @@ class Laserhead:
     def toggle_laser(self):
         laser = self.state["components"]["laser"]
         self.state["components"]["laser"] = laser = not laser
-        self.logger.debug(f"Laser on is {laser}")
+        logger.debug(f"Laser on is {laser}")
         if not self._debug:
             yield from self.host.enable_comp(laser0=laser)
 
@@ -103,13 +104,13 @@ class Laserhead:
     def toggle_prism(self):
         prism = self.state["components"]["rotating"]
         self.state["components"]["rotating"] = prism = not prism
-        self.logger.debug(f"Change rotation state prism to {prism}.")
+        logger.debug(f"Change rotation state prism to {prism}.")
         if not self._debug:
             yield from self.host.enable_comp(polygon=prism)
 
     @exe
     def move(self, vector):
-        self.logger.debug(f"Moving vector {vector}.")
+        logger.debug(f"Moving vector {vector}.")
         if not self._debug:
             self.host.enable_steppers = True
             yield from self.host.gotopoint(vector, absolute=False)
@@ -127,12 +128,12 @@ class Laserhead:
     def debug(self, value):
         self._debug = value
         if value:
-            self.logger.setLevel(logging.DEBUG)
+            logger.setLevel(logging.DEBUG)
         else:
-            self.logger.setLevel(logging.NOTSET)
+            logger.setLevel(logging.NOTSET)
     
     async def test_diode(self, timeout=3):
-        self.logger.debug("Starting diode test.")
+        logger.debug("Starting diode test.")
         self.state["components"]["diodetest"] = None
         if self._debug:
             await asyncio.sleep(timeout)
@@ -142,19 +143,19 @@ class Laserhead:
         else:
             host_state = exe(self.host.get_state)()
             if host_state["photodiode_trigger"] != 0:
-                self.logger.error("Diode already triggered.")
+                logger.error("Diode already triggered.")
                 self.state["components"]["diodetest"] = False
             else:
                 exe(lambda: self.host.enable_comp(laser1=True, polygon=True))()
-                self.logger.debug(f"Wait for diode trigger, {timeout} seconds.")
+                logger.debug(f"Wait for diode trigger, {timeout} seconds.")
                 await asyncio.sleep(timeout)
                 exe(lambda: self.host.enable_comp(laser1=False, polygon=False))()
                 host_state = exe(self.host.get_state)()
                 self.state["components"]["diodetest"] = host_state["photodiode_trigger"]
                 if host_state == 0:
-                    self.logger.error("Diode not triggered.")
+                    logger.error("Diode not triggered.")
                 else:
-                    self.logger.debug("Diode test passed. Stable test requires 15 seconds.")
+                    logger.debug("Diode test passed. Stable test requires 15 seconds.")
                     self.enable_comp(synchronize=True)
                     await asyncio.sleep(15)
                     self.enable_comp(synchronize=False)
@@ -164,8 +165,8 @@ class Laserhead:
             if self._pause.is_set():
                 while self._pause.is_set() and not self._stop.is_set():
                     await asyncio.sleep(2)
-                    self.logger.debug("Printloop in pause")
-                self.logger.debug("Printloop resumed")
+                    logger.debug("Printloop in pause")
+                logger.debug("Printloop resumed")
             if self._stop.is_set():
                 return True
             return False
@@ -186,14 +187,14 @@ class Laserhead:
                 basestring += "using a single facet."
             else:
                 basestring += "without using a single facet."
-            self.logger.info(basestring)
+            logger.info(basestring)
             # TODO: this would normally come from a file
             total_lines = 10
             
             self.state["job"]["totallines"] = total_lines
             start_time = time()
             for line in range(total_lines):
-                self.logger.info(f"Exposing line {line}.")
+                logger.info(f"Exposing line {line}.")
                 if await handle_pausing_and_stopping():
                     break
                 self.state["job"]["currentline"] = line + 1
@@ -226,9 +227,9 @@ class Laserhead:
                 laserpower = self.state["job"]["laserpower"]
                 if (laserpower > 50) & (laserpower < 151):
                     self.host.laser_current = laserpower
-                self.logger.info("Homing X- and Y-axis.")
+                logger.info("Homing X- and Y-axis.")
                 exe(lambda: host.home_axes([1, 1, 0]))()
-                self.logger.info("Moving to start position.")
+                logger.info("Moving to start position.")
                 # scanning direction offset is needed to prevent lock with home
                 exe(lambda: host.gotopoint([70, 5, 0], absolute=False))()
                 # enable scanhead
@@ -240,16 +241,16 @@ class Laserhead:
                     self.state["job"]["printingtime"] = round(time() - start_time)
                     await asyncio.sleep(1) # time for propagation, update pushed via SSE
                     # end checks communication front-end
-                    self.logger.info(f"Exposing lane {lane+1} from {lanes}.")
+                    logger.info(f"Exposing lane {lane+1} from {lanes}.")
                     if lane > 0:
-                        self.logger.info("Moving in x-direction for next lane.")
+                        logger.info("Moving in x-direction for next lane.")
                         exe(lambda: host.gotopoint(
                             [lanewidth, 0, 0], absolute=False
                         ))()
                     if lane % 2 == 1:
-                        self.logger.info("Start exposing forward lane.")
+                        logger.info("Start exposing forward lane.")
                     else:
-                        self.logger.info("Start exposing back lane.")
+                        logger.info("Start exposing back lane.")
                     
                     aantalfacetten = int(host.laser_params['RPM']/self.state["job"]["exposureperline"])
                     if self.state["job"]["singlefacet"]:
@@ -276,6 +277,8 @@ class Laserhead:
                                 exe(lambda: host.send_command(cmddata, 
                                                               blocking=True))()
                         for _ in range(self.state["job"]["exposureperline"]):
+                            # NOTE: code clone a similar things is also available in controller
+                            # known as retry on fpga error
                             max_attempts = 3
                             for attempt in range(max_attempts+1):
                                 try:
@@ -286,11 +289,11 @@ class Laserhead:
                                     # the lack of CRC bytes.. This fix introduces a small error
                                     if "FPGA" in str(e):
                                         if attempt == max_attempts:
-                                            self.logger.error("Communication with FPGA not succesfull, job aborted")
+                                            logger.error("Communication with FPGA not succesfull, job aborted")
                                             host.reset()
                                             return
                                         else:
-                                            self.logger.error("Error detected on FPGA, wait 3 seconds"
+                                            logger.error("Error detected on FPGA, wait 3 seconds"
                                             "for buffer to deplete and try again.")
                                             await asyncio.sleep(3)
                                             host.reset()
@@ -300,10 +303,10 @@ class Laserhead:
                     exe(lambda: host.writeline([]))()
             # disable scanhead
             await asyncio.sleep(1) # time for propagation
-            self.logger.info("Waiting for stopline to execute.")
+            logger.info("Waiting for stopline to execute.")
             exe(lambda: host.enable_comp(synchronize=False))()
             host.enable_steppers = False
-            self.logger.info(f"Finished exposure. Total printing time {self.state["job"]["printingtime"]}")
+            logger.info(f"Finished exposure. Total printing time {self.state["job"]["printingtime"]}")
             self.state["printing"] = False
 
 
