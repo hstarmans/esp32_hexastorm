@@ -7,8 +7,13 @@ servers for MicroPython and standard Python.
 """
 import asyncio
 import io
-import json
+import re
 import time
+
+try:
+    import orjson as json
+except ImportError:
+    import json
 
 try:
     from inspect import iscoroutinefunction, iscoroutine
@@ -56,23 +61,9 @@ MUTED_SOCKET_ERRORS = [
 ]
 
 
-def urldecode_str(s):
-    s = s.replace('+', ' ')
-    parts = s.split('%')
-    if len(parts) == 1:
-        return s
-    result = [parts[0]]
-    for item in parts[1:]:
-        if item == '':
-            result.append('%')
-        else:
-            code = item[:2]
-            result.append(chr(int(code, 16)))
-            result.append(item[2:])
-    return ''.join(result)
-
-
-def urldecode_bytes(s):
+def urldecode(s):
+    if isinstance(s, str):
+        s = s.encode()
     s = s.replace(b'+', b' ')
     parts = s.split(b'%')
     if len(parts) == 1:
@@ -329,7 +320,8 @@ class Request:
         pass
 
     def __init__(self, app, client_addr, method, url, http_version, headers,
-                 body=None, stream=None, sock=None):
+                 body=None, stream=None, sock=None, url_prefix='',
+                 subapp=None):
         #: The application instance to which this request belongs.
         self.app = app
         #: The address of the client, as a tuple (host, port).
@@ -338,6 +330,12 @@ class Request:
         self.method = method
         #: The request URL, including the path and query string.
         self.url = url
+        #: The URL prefix, if the endpoint comes from a mounted
+        #: sub-application, or else ''.
+        self.url_prefix = url_prefix
+        #: The sub-application instance, or `None` if this isn't a mounted
+        #: endpoint.
+        self.subapp = subapp
         #: The path portion of the URL.
         self.path = url
         #: The query string portion of the URL.
@@ -377,6 +375,7 @@ class Request:
         self.sock = sock
         self._json = None
         self._form = None
+        self._files = None
         self.after_request_handlers = []
 
     @staticmethod
@@ -433,12 +432,12 @@ class Request:
             if isinstance(urlencoded, str):
                 for kv in [pair.split('=', 1)
                            for pair in urlencoded.split('&') if pair]:
-                    data[urldecode_str(kv[0])] = urldecode_str(kv[1]) \
+                    data[urldecode(kv[0])] = urldecode(kv[1]) \
                         if len(kv) > 1 else ''
             elif isinstance(urlencoded, bytes):  # pragma: no branch
                 for kv in [pair.split(b'=', 1)
                            for pair in urlencoded.split(b'&') if pair]:
-                    data[urldecode_bytes(kv[0])] = urldecode_bytes(kv[1]) \
+                    data[urldecode(kv[0])] = urldecode(kv[1]) \
                         if len(kv) > 1 else b''
         return data
 
@@ -471,7 +470,13 @@ class Request:
     def form(self):
         """The parsed form submission body, as a
         :class:`MultiDict <microdot.MultiDict>` object, or ``None`` if the
-        request does not have a form submission."""
+        request does not have a form submission.
+
+        Forms that are URL encoded are processed by default. For multipart
+        forms to be processed, the
+        :func:`with_form_data <microdot.multipart.with_form_data>`
+        decorator must be added to the route.
+        """
         if self._form is None:
             if self.content_type is None:
                 return None
@@ -480,6 +485,17 @@ class Request:
                 return None
             self._form = self._parse_urlencoded(self.body)
         return self._form
+
+    @property
+    def files(self):
+        """The files uploaded in the request as a dictionary, or ``None`` if
+        the request does not have any files.
+
+        The :func:`with_form_data <microdot.multipart.with_form_data>`
+        decorator must be added to the route that receives file uploads for
+        this property to be set.
+        """
+        return self._files
 
     def after_request(self, f):
         """Register a request-specific function to run after the request is
@@ -562,9 +578,9 @@ class Response:
         self.headers = NoCaseDict(headers or {})
         self.reason = reason
         if isinstance(body, (dict, list)):
-            self.body = json.dumps(body).encode()
+            body = json.dumps(body)
             self.headers['Content-Type'] = 'application/json; charset=UTF-8'
-        elif isinstance(body, str):
+        if isinstance(body, str):
             self.body = body.encode()
         else:
             # this applies to bytes, file-like objects or generators
@@ -598,7 +614,7 @@ class Response:
             else:  # pragma: no cover
                 http_cookie += '; Expires=' + time.strftime(
                     '%a, %d %b %Y %H:%M:%S GMT', expires.timetuple())
-        if max_age:
+        if max_age is not None:
             http_cookie += '; Max-Age=' + str(max_age)
         if secure:
             http_cookie += '; Secure'
@@ -616,10 +632,10 @@ class Response:
 
         :param cookie: The cookie's name.
         :param kwargs: Any cookie opens and flags supported by
-                       ``set_cookie()`` except ``expires``.
+                       ``set_cookie()`` except ``expires`` and ``max_age``.
         """
         self.set_cookie(cookie, '', expires='Thu, 01 Jan 1970 00:00:01 GMT',
-                        **kwargs)
+                        max_age=0, **kwargs)
 
     def complete(self):
         if isinstance(self.body, bytes) and \
@@ -774,7 +790,10 @@ class Response:
         first.
         """
         if content_type is None:
-            ext = filename.split('.')[-1]
+            if compressed and filename.endswith('.gz'):
+                ext = filename[:-3].split('.')[-1]
+            else:
+                ext = filename.split('.')[-1]
             if ext in Response.types_map:
                 content_type = Response.types_map[ext]
             else:
@@ -795,13 +814,23 @@ class Response:
 
 
 class URLPattern():
+    segment_patterns = {
+        'string': '/([^/]+)',
+        'int': '/(-?\\d+)',
+        'path': '/(.+)',
+    }
+    segment_parsers = {
+        'int': lambda value: int(value),
+    }
+
     def __init__(self, url_pattern):
         self.url_pattern = url_pattern
         self.segments = []
         self.regex = None
+
+    def compile(self):
         pattern = ''
-        use_regex = False
-        for segment in url_pattern.lstrip('/').split('/'):
+        for segment in self.url_pattern.lstrip('/').split('/'):
             if segment and segment[0] == '<':
                 if segment[-1] != '>':
                     raise ValueError('invalid URL pattern')
@@ -812,81 +841,46 @@ class URLPattern():
                     type_ = 'string'
                     name = segment
                 parser = None
-                if type_ == 'string':
-                    parser = self._string_segment
-                    pattern += '/([^/]+)'
-                elif type_ == 'int':
-                    parser = self._int_segment
-                    pattern += '/(-?\\d+)'
-                elif type_ == 'path':
-                    use_regex = True
-                    pattern += '/(.+)'
-                elif type_.startswith('re:'):
-                    use_regex = True
+                if type_.startswith('re:'):
                     pattern += '/({pattern})'.format(pattern=type_[3:])
                 else:
-                    raise ValueError('invalid URL segment type')
+                    if type_ not in self.segment_patterns:
+                        raise ValueError('invalid URL segment type')
+                    pattern += self.segment_patterns[type_]
+                    parser = self.segment_parsers.get(type_)
                 self.segments.append({'parser': parser, 'name': name,
                                       'type': type_})
             else:
                 pattern += '/' + segment
-                self.segments.append({'parser': self._static_segment(segment)})
-        if use_regex:
-            import re
-            self.regex = re.compile('^' + pattern + '$')
+                self.segments.append({'parser': None})
+        self.regex = re.compile('^' + pattern + '$')
+        return self.regex
+
+    @classmethod
+    def register_type(cls, type_name, pattern='[^/]+', parser=None):
+        cls.segment_patterns[type_name] = '/({})'.format(pattern)
+        cls.segment_parsers[type_name] = parser
 
     def match(self, path):
         args = {}
-        if self.regex:
-            g = self.regex.match(path)
-            if not g:
-                return
-            i = 1
-            for segment in self.segments:
-                if 'name' not in segment:
-                    continue
-                value = g.group(i)
-                if segment['type'] == 'int':
-                    value = int(value)
-                args[segment['name']] = value
-                i += 1
-        else:
-            if len(path) == 0 or path[0] != '/':
-                return
-            path = path[1:]
-            args = {}
-            for segment in self.segments:
-                if path is None:
-                    return
-                arg, path = segment['parser'](path)
+        g = (self.regex or self.compile()).match(path)
+        if not g:
+            return
+        i = 1
+        for segment in self.segments:
+            if 'name' not in segment:
+                continue
+            arg = g.group(i)
+            if segment['parser']:
+                arg = self.segment_parsers[segment['type']](arg)
                 if arg is None:
                     return
-                if 'name' in segment:
-                    if not arg:
-                        return
-                    args[segment['name']] = arg
-            if path is not None:
-                return
+            args[segment['name']] = arg
+            i += 1
         return args
 
-    def _static_segment(self, segment):
-        def _static(value):
-            s = value.split('/', 1)
-            if s[0] == segment:
-                return '', s[1] if len(s) > 1 else None
-            return None, None
-        return _static
-
-    def _string_segment(self, value):
-        s = value.split('/', 1)
-        return s[0], s[1] if len(s) > 1 else None
-
-    def _int_segment(self, value):
-        s = value.split('/', 1)
-        try:
-            return int(s[0]), s[1] if len(s) > 1 else None
-        except ValueError:
-            return None, None
+    def __repr__(self):  # pragma: no cover
+        return 'URLPattern: {}'.format(self.url_pattern)
 
 
 class HTTPException(Exception):
@@ -956,7 +950,7 @@ class Microdot:
         def decorated(f):
             self.url_map.append(
                 ([m.upper() for m in (methods or ['GET'])],
-                 URLPattern(url_pattern), f))
+                 URLPattern(url_pattern), f, '', None))
             return f
         return decorated
 
@@ -1124,24 +1118,33 @@ class Microdot:
             return f
         return decorated
 
-    def mount(self, subapp, url_prefix=''):
+    def mount(self, subapp, url_prefix='', local=False):
         """Mount a sub-application, optionally under the given URL prefix.
 
         :param subapp: The sub-application to mount.
         :param url_prefix: The URL prefix to mount the application under.
+        :param local: When set to ``True``, the before, after and error request
+                      handlers only apply to endpoints defined in the
+                      sub-application. When ``False``, they apply to the entire
+                      application. The default is ``False``.
         """
-        for methods, pattern, handler in subapp.url_map:
+        for methods, pattern, handler, _prefix, _subapp in subapp.url_map:
             self.url_map.append(
                 (methods, URLPattern(url_prefix + pattern.url_pattern),
-                 handler))
-        for handler in subapp.before_request_handlers:
-            self.before_request_handlers.append(handler)
-        for handler in subapp.after_request_handlers:
-            self.after_request_handlers.append(handler)
-        for handler in subapp.after_error_request_handlers:
-            self.after_error_request_handlers.append(handler)
-        for status_code, handler in subapp.error_handlers.items():
-            self.error_handlers[status_code] = handler
+                 handler, url_prefix + _prefix, _subapp or subapp))
+        if not local:
+            for handler in subapp.before_request_handlers:
+                self.before_request_handlers.append(handler)
+            subapp.before_request_handlers = []
+            for handler in subapp.after_request_handlers:
+                self.after_request_handlers.append(handler)
+            subapp.after_request_handlers = []
+            for handler in subapp.after_error_request_handlers:
+                self.after_error_request_handlers.append(handler)
+            subapp.after_error_request_handlers = []
+            for status_code, handler in subapp.error_handlers.items():
+                self.error_handlers[status_code] = handler
+            subapp.error_handlers = {}
 
     @staticmethod
     def abort(status_code, reason=None):
@@ -1191,7 +1194,7 @@ class Microdot:
         Example::
 
             import asyncio
-            from microdot_asyncio import Microdot
+            from microdot import Microdot
 
             app = Microdot()
 
@@ -1268,7 +1271,7 @@ class Microdot:
 
         Example::
 
-            from microdot_asyncio import Microdot
+            from microdot import Microdot
 
             app = Microdot()
 
@@ -1299,23 +1302,28 @@ class Microdot:
     def find_route(self, req):
         method = req.method.upper()
         if method == 'OPTIONS' and self.options_handler:
-            return self.options_handler(req)
+            return self.options_handler(req), '', None
         if method == 'HEAD':
             method = 'GET'
         f = 404
-        for route_methods, route_pattern, route_handler in self.url_map:
+        p = ''
+        s = None
+        for route_methods, route_pattern, route_handler, url_prefix, subapp \
+                in self.url_map:
             req.url_args = route_pattern.match(req.path)
             if req.url_args is not None:
+                p = url_prefix
+                s = subapp
                 if method in route_methods:
                     f = route_handler
                     break
                 else:
                     f = 405
-        return f
+        return f, p, s
 
     def default_options_handler(self, req):
         allow = []
-        for route_methods, route_pattern, route_handler in self.url_map:
+        for route_methods, route_pattern, _, _, _ in self.url_map:
             if route_pattern.match(req.path) is not None:
                 allow.extend(route_methods)
         if 'GET' in allow:
@@ -1332,9 +1340,9 @@ class Microdot:
             print_exception(exc)
 
         res = await self.dispatch_request(req)
-        if res != Response.already_handled:  # pragma: no branch
-            await res.write(writer)
         try:
+            if res != Response.already_handled:  # pragma: no branch
+                await res.write(writer)
             await writer.aclose()
         except OSError as exc:  # pragma: no cover
             if exc.errno in MUTED_SOCKET_ERRORS:
@@ -1346,38 +1354,76 @@ class Microdot:
                 method=req.method, path=req.path,
                 status_code=res.status_code))
 
+    def get_request_handlers(self, req, attr, local_first=True):
+        handlers = getattr(self, attr + '_handlers')
+        local_handlers = getattr(req.subapp, attr + '_handlers') \
+            if req and req.subapp else []
+        return local_handlers + handlers if local_first \
+            else handlers + local_handlers
+
+    async def error_response(self, req, status_code, reason=None):
+        if req and req.subapp and status_code in req.subapp.error_handlers:
+            return await invoke_handler(
+                req.subapp.error_handlers[status_code], req)
+        elif status_code in self.error_handlers:
+            return await invoke_handler(self.error_handlers[status_code], req)
+        return reason or 'N/A', status_code
+
     async def dispatch_request(self, req):
         after_request_handled = False
         if req:
             if req.content_length > req.max_content_length:
-                if 413 in self.error_handlers:
-                    res = await invoke_handler(self.error_handlers[413], req)
-                else:
-                    res = 'Payload too large', 413
+                # the request body is larger than allowed
+                res = await self.error_response(req, 413, 'Payload too large')
             else:
-                f = self.find_route(req)
+                # find the route in the app's URL map
+                f, req.url_prefix, req.subapp = self.find_route(req)
+
                 try:
                     res = None
                     if callable(f):
-                        for handler in self.before_request_handlers:
+                        # invoke the before request handlers
+                        for handler in self.get_request_handlers(
+                                req, 'before_request', False):
                             res = await invoke_handler(handler, req)
                             if res:
                                 break
+
+                        # invoke the endpoint handler
                         if res is None:
-                            res = await invoke_handler(
-                                f, req, **req.url_args)
+                            res = await invoke_handler(f, req, **req.url_args)
+
+                        # process the response
+                        if isinstance(res, int):
+                            # an integer response is taken as a status code
+                            # with an empty body
+                            res = '', res
                         if isinstance(res, tuple):
+                            # handle a tuple response
+                            if isinstance(res[0], int):
+                                # a tuple that starts with an int has an empty
+                                # body
+                                res = ('', res[0],
+                                       res[1] if len(res) > 1 else {})
                             body = res[0]
                             if isinstance(res[1], int):
+                                # extract the status code and headers (if
+                                # available)
                                 status_code = res[1]
                                 headers = res[2] if len(res) > 2 else {}
                             else:
+                                # if the status code is missing, assume 200
                                 status_code = 200
                                 headers = res[1]
                             res = Response(body, status_code, headers)
                         elif not isinstance(res, Response):
+                            # any other response types are wrapped in a
+                            # Response object
                             res = Response(res)
-                        for handler in self.after_request_handlers:
+
+                        # invoke the after request handlers
+                        for handler in self.get_request_handlers(
+                                req, 'after_request', True):
                             res = await invoke_handler(
                                 handler, req, res) or res
                         for handler in req.after_request_handlers:
@@ -1385,50 +1431,62 @@ class Microdot:
                                 handler, req, res) or res
                         after_request_handled = True
                     elif isinstance(f, dict):
+                        # the response from an OPTIONS request is a dict with
+                        # headers
                         res = Response(headers=f)
-                    elif f in self.error_handlers:
-                        res = await invoke_handler(self.error_handlers[f], req)
                     else:
-                        res = 'Not found', f
+                        # if the route is not found, return a 404 or 405
+                        # response as appropriate
+                        res = await self.error_response(req, f, 'Not found')
                 except HTTPException as exc:
-                    if exc.status_code in self.error_handlers:
-                        res = self.error_handlers[exc.status_code](req)
-                    else:
-                        res = exc.reason, exc.status_code
+                    # an HTTP exception was raised while handling this request
+                    res = await self.error_response(req, exc.status_code,
+                                                    exc.reason)
                 except Exception as exc:
+                    # an unexpected exception was raised while handling this
+                    # request
                     print_exception(exc)
-                    exc_class = None
+
+                    # invoke the error handler for the exception class if one
+                    # exists
+                    handler = None
                     res = None
-                    if exc.__class__ in self.error_handlers:
-                        exc_class = exc.__class__
+                    if req.subapp and exc.__class__ in \
+                            req.subapp.error_handlers:
+                        handler = req.subapp.error_handlers[exc.__class__]
+                    elif exc.__class__ in self.error_handlers:
+                        handler = self.error_handlers[exc.__class__]
                     else:
+                        # walk up the exception class hierarchy to try to find
+                        # a handler
                         for c in mro(exc.__class__)[1:]:
-                            if c in self.error_handlers:
-                                exc_class = c
+                            if req.subapp and c in req.subapp.error_handlers:
+                                handler = req.subapp.error_handlers[c]
                                 break
-                    if exc_class:
+                            elif c in self.error_handlers:
+                                handler = self.error_handlers[c]
+                                break
+                    if handler:
                         try:
-                            res = await invoke_handler(
-                                self.error_handlers[exc_class], req, exc)
+                            res = await invoke_handler(handler, req, exc)
                         except Exception as exc2:  # pragma: no cover
                             print_exception(exc2)
                     if res is None:
-                        if 500 in self.error_handlers:
-                            res = await invoke_handler(
-                                self.error_handlers[500], req)
-                        else:
-                            res = 'Internal server error', 500
+                        # if there is still no response, issue a 500 error
+                        res = await self.error_response(
+                            req, 500, 'Internal server error')
         else:
-            if 400 in self.error_handlers:
-                res = await invoke_handler(self.error_handlers[400], req)
-            else:
-                res = 'Bad request', 400
+            # if the request could not be parsed, issue a 400 error
+            res = await self.error_response(req, 400, 'Bad request')
         if isinstance(res, tuple):
             res = Response(*res)
         elif not isinstance(res, Response):
             res = Response(res)
         if not after_request_handled:
-            for handler in self.after_error_request_handlers:
+            # if the request did not finish due to an error, invoke the after
+            # error request handler
+            for handler in self.get_request_handlers(
+                    req, 'after_error_request', True):
                 res = await invoke_handler(
                     handler, req, res) or res
         res.is_head = (req and req.method == 'HEAD')

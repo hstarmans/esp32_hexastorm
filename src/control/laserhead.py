@@ -87,7 +87,8 @@ class Laserhead:
         """
         logger.debug(f"laser0, laser1, polygon set to {laser0, laser1, polygon}")
         if not self._debug:
-            yield from self.host.enable_comp(laser0=laser0, laser1=laser1, polygon=polygon, synchronize=synchronize, singlefacet=singlefacet)
+            yield from self.host.enable_comp(laser0=laser0, laser1=laser1, polygon=polygon,
+                                              synchronize=synchronize, singlefacet=singlefacet)
             self.state["components"]["laser"]  = laser0 or laser1
             self.state["components"]["rotating"]  = polygon
             self.state["job"]["singlefacet"]  = singlefacet
@@ -264,7 +265,8 @@ class Laserhead:
                                 break
                         # Read the entire line's data into a buffer
                         line_data = f.read(words_in_line * 9)
-                        def sendline():
+                        for _ in range(self.state["job"]["exposureperline"]):
+                            # sendline
                             for word_index in range(words_in_line):
                                 start_index = word_index * 9
                                 cmddata = line_data[start_index : start_index + 9]
@@ -275,30 +277,7 @@ class Laserhead:
                                     else:
                                         cmddata = headers[1]
                                 exe(lambda: host.send_command(cmddata, 
-                                                              blocking=True))()
-                        for _ in range(self.state["job"]["exposureperline"]):
-                            # NOTE: code clone a similar things is also available in controller
-                            # known as retry on fpga error
-                            max_attempts = 3
-                            for attempt in range(max_attempts+1):
-                                try:
-                                    sendline()
-                                    break # Exit loop if successfull
-                                except Exception as e:
-                                    # communication can fail, this is believed to originate from
-                                    # the lack of CRC bytes.. This fix introduces a small error
-                                    if "FPGA" in str(e):
-                                        if attempt == max_attempts:
-                                            logger.error("Communication with FPGA not succesfull, job aborted")
-                                            host.reset()
-                                            return
-                                        else:
-                                            logger.error("Error detected on FPGA, wait 3 seconds"
-                                            "for buffer to deplete and try again.")
-                                            await asyncio.sleep(3)
-                                            host.reset()
-                                            exe(lambda: host.enable_comp(synchronize=True, singlefacet=self.state["job"]["singlefacet"]))()
-                                
+                                                              blocking=True))()                           
                     # send stopline
                     exe(lambda: host.writeline([]))()
             # disable scanhead

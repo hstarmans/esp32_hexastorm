@@ -1,7 +1,6 @@
 import jwt
 from microdot.microdot import invoke_handler
-
-secret_key = None
+from microdot.helpers import wraps
 
 
 class SessionDict(dict):
@@ -30,14 +29,21 @@ class Session:
     """
     secret_key = None
 
-    def __init__(self, app=None, secret_key=None):
+    def __init__(self, app=None, secret_key=None, cookie_options=None):
         self.secret_key = secret_key
+        self.cookie_options = cookie_options or {}
         if app is not None:
             self.initialize(app)
 
-    def initialize(self, app, secret_key=None):
+    def initialize(self, app, secret_key=None, cookie_options=None):
         if secret_key is not None:
             self.secret_key = secret_key
+        if cookie_options is not None:
+            self.cookie_options = cookie_options
+        if 'path' not in self.cookie_options:
+            self.cookie_options['path'] = '/'
+        if 'http_only' not in self.cookie_options:
+            self.cookie_options['http_only'] = True
         app._session = self
 
     def get(self, request):
@@ -57,13 +63,7 @@ class Session:
         if session is None:
             request.g._session = SessionDict(request, {})
             return request.g._session
-        try:
-            session = jwt.decode(session, self.secret_key,
-                                 algorithms=['HS256'])
-        except jwt.exceptions.PyJWTError:  # pragma: no cover
-            request.g._session = SessionDict(request, {})
-        else:
-            request.g._session = SessionDict(request, session)
+        request.g._session = SessionDict(request, self.decode(session))
         return request.g._session
 
     def update(self, request, session):
@@ -89,12 +89,12 @@ class Session:
         if not self.secret_key:
             raise ValueError('The session secret key is not configured')
 
-        encoded_session = jwt.encode(session, self.secret_key,
-                                     algorithm='HS256')
+        encoded_session = self.encode(session)
 
         @request.after_request
         def _update_session(request, response):
-            response.set_cookie('session', encoded_session, http_only=True)
+            response.set_cookie('session', encoded_session,
+                                **self.cookie_options)
             return response
 
     def delete(self, request):
@@ -117,9 +117,20 @@ class Session:
         """
         @request.after_request
         def _delete_session(request, response):
-            response.set_cookie('session', '', http_only=True,
-                                expires='Thu, 01 Jan 1970 00:00:01 GMT')
+            response.delete_cookie('session', **self.cookie_options)
             return response
+
+    def encode(self, payload, secret_key=None):
+        return jwt.encode(payload, secret_key or self.secret_key,
+                          algorithm='HS256')
+
+    def decode(self, session, secret_key=None):
+        try:
+            payload = jwt.decode(session, secret_key or self.secret_key,
+                                 algorithms=['HS256'])
+        except jwt.exceptions.PyJWTError:  # pragma: no cover
+            return {}
+        return payload
 
 
 def with_session(f):
@@ -136,13 +147,9 @@ def with_session(f):
     Note that the decorator does not save the session. To update the session,
     call the :func:`session.save() <microdot.session.SessionDict.save>` method.
     """
+    @wraps(f)
     async def wrapper(request, *args, **kwargs):
         return await invoke_handler(
             f, request, request.app._session.get(request), *args, **kwargs)
 
-    for attr in ['__name__', '__doc__', '__module__', '__qualname__']:
-        try:
-            setattr(wrapper, attr, getattr(f, attr))
-        except AttributeError:  # pragma: no cover
-            pass
     return wrapper
