@@ -20,10 +20,10 @@ if constants.ESP32:
     import webrepl
     from ota.update import OTA
 
-    from hexastorm.constants import platform
-
+    from hexastorm.config import PlatformConfig
 
 _logging_configured = False
+
 
 def wrapper_esp32(res=None):
     def decorator(func):
@@ -45,7 +45,7 @@ def wrapper_esp32(res=None):
 
 def reload(module):
     """Reload a module in micropython.
-    
+
     Allows to hot reload modules.
     Hot reloading is challenging. You need
     to update all scopes, run
@@ -64,7 +64,7 @@ def disk_usage():
 
     prints disk usages and returns total, used and free bytes
     """
-    statvfs = os.statvfs('/')  # Get file system statistics
+    statvfs = os.statvfs("/")  # Get file system statistics
     # statvfs[0] is block size
     total_mb = (statvfs[2] * statvfs[0]) / (1024 * 1024)
     free_mb = (statvfs[3] * statvfs[0]) / (1024 * 1024)
@@ -72,7 +72,7 @@ def disk_usage():
     # Print the results in a user-friendly format
     print(f"Total space: {total_mb:.2f} MB")
     print(f"Used space: {used_mb:.2f} MB")
-    print(f"Free space: {free_mb:.2f} MB") 
+    print(f"Free space: {free_mb:.2f} MB")
     return total_mb, used_mb, free_mb
 
 
@@ -87,6 +87,7 @@ def start_webrepl():
     # password is stored not hashed, this is not ideal
     # webrepl.start()
     webrepl.start(password=constants.CONFIG["webrepl"]["webrepl_password"])
+
 
 @wrapper_esp32()
 async def set_time(tries=3):
@@ -116,17 +117,19 @@ def set_log_level(level):
         level = logging.INFO
     global _logging_configured
 
-
     root_logger = logging.getLogger()
     root_logger.setLevel(level)
     if not _logging_configured:
         # Create a handler to direct logs (usually to the console/stdout)
         handler = logging.StreamHandler()
         # streamhandler does not support filename and lineno
-        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        formatter = logging.Formatter(
+            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        )
         handler.setFormatter(formatter)
         root_logger.addHandler(handler)
         _logging_configured = True
+
 
 @wrapper_esp32(res=["connected", "otheroption"])
 def list_wlans():
@@ -233,20 +236,20 @@ def update_firmware(force=False, download=True):
 @wrapper_esp32()
 async def status_loop(loop=False):
     """display connection status via onboard led
-    
+
     tries to reconnect and update time
     pulses a led
     red led no wifi, blue led is wifi
     """
-    on_time=2
-    off_time=6
-    wifi_cycle_time=60 
+    on_time = 2
+    off_time = 6
+    wifi_cycle_time = 60
     led_on = True
     Pin = machine.Pin
     wifi_connected = is_connected()
-    plf = platform(micropython=True)
-    blue_led = Pin(plf.led_blue, Pin.OUT)
-    red_led = Pin(plf.led_red, Pin.OUT)
+    leds = PlatformConfig(test=False).esp32_cfg["leds"]
+    blue_led = Pin(leds["blue"], Pin.OUT)
+    red_led = Pin(leds["red"], Pin.OUT)
     current_time = time()
     while True:
         if wifi_connected:
@@ -256,13 +259,13 @@ async def status_loop(loop=False):
             red_led.value(not led_on)
             blue_led.value(1)
         # check year is greater than 2024
-        if (localtime()[0] < 2024) and wifi_connected: 
+        if (localtime()[0] < 2024) and wifi_connected:
             await set_time(1)
         if led_on:
             await asyncio.sleep(on_time)
         else:
             await asyncio.sleep(off_time)
-        led_on = (not led_on)
+        led_on = not led_on
         if (time() - current_time) >= wifi_cycle_time:
             wifi_connected = is_connected()
             current_time = time()
@@ -316,10 +319,12 @@ def connect_wifi(force=False):
     else:
         wlan.active(False)
         logging.error("Cannot connect to wifi, creating access point!")
-        logging.error(f"Used ssid {wifi_login['ssid']} and {wifi_login['password']}.")
+        logging.error(
+            f"Used ssid {wifi_login['ssid']} and {wifi_login['password']}."
+        )
         ap.active(True)
         ap.config(
-            essid=f"sensor_serial{constants.CONFIG["serial"]}",
+            essid=f"sensor_serial{constants.CONFIG['serial']}",
             authmode=network.AUTH_WPA_WPA2_PSK,
             max_clients=10,
             password=wifi_login["ap_password"],
