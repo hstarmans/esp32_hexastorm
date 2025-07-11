@@ -4,30 +4,24 @@ import struct
 from time import time
 from random import randint
 
-from .constants import CONFIG 
-from hexastorm.constants import wordsinscanline
-from hexastorm.controller import Host
-from hexastorm.controller import executor as exe
+from .constants import CONFIG
+from hexastorm.fpga_host.micropython import ESP32Host
 
 logger = logging.getLogger(__name__)
 
 
-class Laserhead:
+class Laserhead(ESP32Host):
     def __init__(self, debug=False):
-        self.host = Host(micropython=True)
         self.debug = debug
         self._stop = asyncio.Event()
         self._pause = asyncio.Event()
         self._start = asyncio.Event()
         self.reset_state()
-        self.reset_fpga()
+        self.reset()
 
-    def reset_fpga(self):
-        self.host.reset()
-
-    def flash(self, filename):
+    async def flash_fpga(self, filename):
         fname = CONFIG["fpga"]["storagefolder"] + f"/{filename}"
-        self.host.flash_fpga(fname)
+        await super().flash_fpga(fname)
 
     def reset_state(self):
         job = {
@@ -65,19 +59,13 @@ class Laserhead:
             self._pause.set()
         self.state["paused"] = self._pause.is_set()
 
-
-    def laser_current(self, val):
-        """sets maximum laser current of laser driver per channel
-        """
-        self.host.laser_current(val)
-
-    @exe
-    def write_line(self, bitlst, stepsperline=1, direction=0, repetitions=1):
-        yield from self.host.writeline(bitlst, stepsperline, direction, repetitions)
-
-    @exe
-    def enable_comp(
-        self, laser0=False, laser1=False, polygon=False, synchronize=False, singlefacet=False
+    async def enable_comp(
+        self,
+        laser0=False,
+        laser1=False,
+        polygon=False,
+        synchronize=False,
+        singlefacet=False,
     ):
         """enable components
 
@@ -85,36 +73,40 @@ class Laserhead:
         laser1   -- True enables laser channel 1
         polygon  -- False enables polygon motor
         """
-        logger.debug(f"laser0, laser1, polygon set to {laser0, laser1, polygon}")
+        logger.debug(
+            f"laser0, laser1, polygon set to {laser0, laser1, polygon}"
+        )
+        self.state["components"]["laser"] = laser0 or laser1
+        self.state["components"]["rotating"] = polygon
+        self.state["job"]["singlefacet"] = singlefacet
         if not self._debug:
-            yield from self.host.enable_comp(laser0=laser0, laser1=laser1, polygon=polygon,
-                                              synchronize=synchronize, singlefacet=singlefacet)
-            self.state["components"]["laser"]  = laser0 or laser1
-            self.state["components"]["rotating"]  = polygon
-            self.state["job"]["singlefacet"]  = singlefacet
+            await super().enable_comp(
+                laser0=laser0,
+                laser1=laser1,
+                polygon=polygon,
+                synchronize=synchronize,
+                singlefacet=singlefacet,
+            )
 
-    @exe
-    def toggle_laser(self):
+    async def toggle_laser(self):
         laser = self.state["components"]["laser"]
         self.state["components"]["laser"] = laser = not laser
         logger.debug(f"Laser on is {laser}")
         if not self._debug:
-            yield from self.host.enable_comp(laser0=laser)
+            await super().enable_comp(laser0=laser)
 
-    @exe
-    def toggle_prism(self):
+    async def toggle_prism(self):
         prism = self.state["components"]["rotating"]
         self.state["components"]["rotating"] = prism = not prism
         logger.debug(f"Change rotation state prism to {prism}.")
         if not self._debug:
-            yield from self.host.enable_comp(polygon=prism)
+            await super().enable_comp(polygon=prism)
 
-    @exe
-    def move(self, vector):
+    async def move(self, vector):
         logger.debug(f"Moving vector {vector}.")
         if not self._debug:
             self.host.enable_steppers = True
-            yield from self.host.gotopoint(vector, absolute=False)
+            await super().gotopoint(vector, absolute=False)
             self.host.enable_steppers = False
 
     @property
@@ -132,7 +124,7 @@ class Laserhead:
             logger.setLevel(logging.DEBUG)
         else:
             logger.setLevel(logging.NOTSET)
-    
+
     async def test_diode(self, timeout=3):
         logger.debug("Starting diode test.")
         self.state["components"]["diodetest"] = None
@@ -142,24 +134,28 @@ class Laserhead:
                 True if randint(0, 10) > 5 else False
             )
         else:
-            host_state = exe(self.host.get_state)()
-            if host_state["photodiode_trigger"] != 0:
+            fpga_state = await super().fpga_state
+            if fpga_state["photodiode_trigger"] != 0:
                 logger.error("Diode already triggered.")
                 self.state["components"]["diodetest"] = False
             else:
-                exe(lambda: self.host.enable_comp(laser1=True, polygon=True))()
+                await super().enable_comp(laser1=True, polygon=True)
                 logger.debug(f"Wait for diode trigger, {timeout} seconds.")
                 await asyncio.sleep(timeout)
-                exe(lambda: self.host.enable_comp(laser1=False, polygon=False))()
-                host_state = exe(self.host.get_state)()
-                self.state["components"]["diodetest"] = host_state["photodiode_trigger"]
-                if host_state == 0:
+                await super().enable_comp(laser1=False, polygon=False)
+                fpga_state = await super().fpga_state
+                self.state["components"]["diodetest"] = fpga_state[
+                    "photodiode_trigger"
+                ]
+                if fpga_state == 0:
                     logger.error("Diode not triggered.")
                 else:
-                    logger.debug("Diode test passed. Stable test requires 15 seconds.")
-                    self.enable_comp(synchronize=True)
+                    logger.debug(
+                        "Diode test passed. Stable test requires 15 seconds."
+                    )
+                    await self.enable_comp(synchronize=True)
                     await asyncio.sleep(15)
-                    self.enable_comp(synchronize=False)
+                    await self.enable_comp(synchronize=False)
 
     async def print_loop(self, fname):
         async def handle_pausing_and_stopping():
@@ -172,18 +168,23 @@ class Laserhead:
                 return True
             return False
 
-
         self._stop.clear()
         self._pause.clear()
         self.reset_state()
         self.state["printing"] = True
         self.state["job"]["filename"] = fname
         self.state["job"]["laserpower"] = CONFIG["defaultprint"]["laserpower"]
-        self.state["job"]["exposureperline"] = CONFIG["defaultprint"]["exposureperline"]
-        self.state["job"]["singlefacet"] = CONFIG["defaultprint"]["singlefacet"]
+        self.state["job"]["exposureperline"] = CONFIG["defaultprint"][
+            "exposureperline"
+        ]
+        self.state["job"]["singlefacet"] = CONFIG["defaultprint"][
+            "singlefacet"
+        ]
         if self._debug:
-            basestring = (f"Printing with laserpower {self.state["job"]["laserpower"]}"
-                             f" and {self.state["job"]["exposureperline"]} exposures.")
+            basestring = (
+                f"Printing with laserpower {self.state['job']['laserpower']}"
+                f" and {self.state['job']['exposureperline']} exposures."
+            )
             if self.state["job"]["singlefacet"]:
                 basestring += "using a single facet."
             else:
@@ -191,7 +192,7 @@ class Laserhead:
             logger.info(basestring)
             # TODO: this would normally come from a file
             total_lines = 10
-            
+
             self.state["job"]["totallines"] = total_lines
             start_time = time()
             for line in range(total_lines):
@@ -203,92 +204,114 @@ class Laserhead:
                 await asyncio.sleep(5)
             self.state["printing"] = False
         else:
-            host = self.host
-            bits_in_scanline = int(host.laser_params['BITSINSCANLINE'])
-            words_in_line = wordsinscanline(bits_in_scanline)
-            # we are going to replace the first command
-            headers = {0: None, 1: None}
-            for direction in [0,1]:
-                line = host.bittobytelist(bitlst=[0]*bits_in_scanline, stepsperline=(1/self.state["job"]["exposureperline"]),
-                                          direction=direction)
-                cmdlst = host.bytetocmdlist(line)
-                headers[direction] = cmdlst[0]
+            bits_scanline = int(self.cfg.laser_timing["scanline_length"])
+            words_scanline = self.cfg.hdl_cfg.words_scanline
+            # protocol sends over command + word, where word can contain instruction
+            # command needs to be adapted for exposures per line
+            commands = {0: None, 1: None}
+            for direction in [0, 1]:
+                line = self.bit_to_byte_list(
+                    laser_bits=[0] * bits_scanline,
+                    steps_line=(1 / self.state["job"]["exposureperline"]),
+                    direction=direction,
+                )
+                cmd_lst = self.byte_to_cmd_list(line)
+                commands[direction] = cmd_lst[0]
 
-            with open(CONFIG["webserver"]["job_folder"] + f"/{fname}", "rb") as f:
+            with open(
+                CONFIG["webserver"]["job_folder"] + f"/{fname}", "rb"
+            ) as f:
                 # 1. Header
-                lanewidth = struct.unpack("<f", f.read(4))[0]
-                facetsinlane = struct.unpack("<I", f.read(4))[0]
+                lane_width = struct.unpack("<f", f.read(4))[0]
+                facets_lane = struct.unpack("<I", f.read(4))[0]
                 lanes = struct.unpack("<I", f.read(4))[0]
-                self.state["job"]["totallines"] = int(facetsinlane * lanes)
+                self.state["job"]["totallines"] = int(facets_lane * lanes)
                 start_time = time()
-                await asyncio.sleep(2) # time for propagation, update is pushed via SSE
+                await asyncio.sleep(2)
+                # time for propagation, update is pushed via SSE
                 # z is not homed as it should be already in
                 # position so laser is in focus
-                host.enable_steppers = True
+                self.enable_steppers = True
                 laserpower = self.state["job"]["laserpower"]
                 if (laserpower > 50) & (laserpower < 151):
                     self.host.laser_current = laserpower
                 logger.info("Homing X- and Y-axis.")
-                exe(lambda: host.home_axes([1, 1, 0]))()
+                await self.home_axes([1, 1, 0])
                 logger.info("Moving to start position.")
                 # scanning direction offset is needed to prevent lock with home
-                exe(lambda: host.gotopoint([70, 5, 0], absolute=False))()
+                await self.gotopoint([70, 5, 0], absolute=False)
                 # enable scanhead
-                exe(lambda: host.enable_comp(synchronize=True, singlefacet=self.state["job"]["singlefacet"]))()
+                await self.enable_comp(
+                    synchronize=True,
+                    singlefacet=self.state["job"]["singlefacet"],
+                )
                 for lane in range(lanes):
                     if await handle_pausing_and_stopping():
                         break
-                    self.state["job"]["currentline"] = int(lane * facetsinlane)
-                    self.state["job"]["printingtime"] = round(time() - start_time)
-                    await asyncio.sleep(1) # time for propagation, update pushed via SSE
+                    self.state["job"]["currentline"] = int(lane * facets_lane)
+                    self.state["job"]["printingtime"] = round(
+                        time() - start_time
+                    )
+                    await asyncio.sleep(1)
+                    # time for propagation, update pushed via SSE
                     # end checks communication front-end
-                    logger.info(f"Exposing lane {lane+1} from {lanes}.")
+                    logger.info(f"Exposing lane {lane + 1} from {lanes}.")
                     if lane > 0:
                         logger.info("Moving in x-direction for next lane.")
-                        exe(lambda: host.gotopoint(
-                            [lanewidth, 0, 0], absolute=False
-                        ))()
+                        await self.gotopoint(
+                            [lane_width, 0, 0], absolute=False
+                        )
                     if lane % 2 == 1:
                         logger.info("Start exposing forward lane.")
                     else:
                         logger.info("Start exposing back lane.")
-                    
-                    aantalfacetten = int(host.laser_params['RPM']/self.state["job"]["exposureperline"])
+
+                    total_facets = int(
+                        self.cfg.laser_timing["rpm"]
+                        / self.state["job"]["exposureperline"]
+                    )
                     if self.state["job"]["singlefacet"]:
-                        aantalfacetten = int(aantalfacetten/4)
-                    for facet in range(facetsinlane):
-                        if facet % aantalfacetten == 0:
-                            self.state["job"]["currentline"] = int(lane * facetsinlane) + facet
-                            self.state["job"]["printingtime"] = round(time() - start_time)
+                        total_facets = int(total_facets / 4)
+                    for facet in range(facets_lane):
+                        if facet % total_facets == 0:
+                            self.state["job"]["currentline"] = (
+                                int(lane * facets_lane) + facet
+                            )
+                            self.state["job"]["printingtime"] = round(
+                                time() - start_time
+                            )
                             await asyncio.sleep(1)
                             if await handle_pausing_and_stopping():
                                 break
                         # Read the entire line's data into a buffer
-                        line_data = f.read(words_in_line * 9)
+                        line_data = f.read(words_scanline * 9)
                         for _ in range(self.state["job"]["exposureperline"]):
                             # sendline
-                            for word_index in range(words_in_line):
+                            for word_index in range(words_scanline):
                                 start_index = word_index * 9
-                                cmddata = line_data[start_index : start_index + 9]
+                                cmd_data = line_data[
+                                    start_index : start_index + 9
+                                ]
                                 # the header is adapted
                                 if word_index == 0:
                                     if lane % 2 == 1:
-                                        cmddata = headers[0]
+                                        cmd_data = commands[0]
                                     else:
-                                        cmddata = headers[1]
-                                exe(lambda: host.send_command(cmddata, 
-                                                              blocking=True))()                           
+                                        cmd_data = commands[1]
+                                await self.send_command(
+                                    cmd_data, blocking=True
+                                )
                     # send stopline
-                    exe(lambda: host.writeline([]))()
+                    await self.write_line([])
             # disable scanhead
-            await asyncio.sleep(1) # time for propagation
+            await asyncio.sleep(1)  # time for propagation
             logger.info("Waiting for stopline to execute.")
-            exe(lambda: host.enable_comp(synchronize=False))()
-            host.enable_steppers = False
-            logger.info(f"Finished exposure. Total printing time {self.state["job"]["printingtime"]}")
+            await self.enable_comp(synchronize=False)
+            self.enable_steppers = False
+            logger.info(
+                f"Finished exposure. Total printing time {self.state['job']['printingtime']}"
+            )
             self.state["printing"] = False
-
-
 
 
 LASERHEAD = Laserhead()

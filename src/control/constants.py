@@ -2,7 +2,7 @@ import json
 import logging
 import sys
 
-ESP32 = False if sys.platform in ["linux", "win32"] else True
+ESP32 = False if sys.platform in ["linux", "win32", "darwin"] else True
 logger = logging.getLogger(__name__)
 
 if ESP32:
@@ -39,7 +39,7 @@ def update_config():
             recurse_dct(CONFIG, "sd/", "src/root/sd/")
         else:
             # micropython doesn't support indent
-            json.dump(CONFIG, fp, separators=(',\n', ':\n'))
+            json.dump(CONFIG, fp, separators=(",\n", ":\n"))
 
 
 CONFIG = load_config()

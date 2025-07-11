@@ -145,6 +145,7 @@ async def logout(req, session):
     session.delete()
     return redirect("/")
 
+
 @app.get("/reset")
 @with_session
 async def reset(req, session):
@@ -175,9 +176,9 @@ async def command(request, session, ws):
                     LASERHEAD.pause_print()
             else:
                 if command == "toggleprism":
-                    LASERHEAD.toggle_prism()
+                    await LASERHEAD.toggle_prism()
                 elif command == "togglelaser":
-                    LASERHEAD.toggle_laser()
+                    await LASERHEAD.toggle_laser()
                 elif command == "diodetest":
                     webstate.state["components"]["diodetest"] = None
                     await ws.send(json.dumps(webstate.state))
@@ -185,7 +186,7 @@ async def command(request, session, ws):
                 elif command == "move":
                     steps = float(jsondata["steps"])
                     vector = [int(x) * steps for x in jsondata["vector"]]
-                    LASERHEAD.move(vector)
+                    await LASERHEAD.move(vector)
                 elif command == "deletefile":
                     filename = jsondata["file"].replace("/", "_")
                     logger.info(f"Deleting {filename}")
@@ -200,9 +201,15 @@ async def command(request, session, ws):
                     request.app.shutdown()
                 elif command == "startprint":
                     filename = jsondata["file"].replace("/", "_")
-                    constants.CONFIG["defaultprint"]["laserpower"] = int(jsondata["laserpower"])
-                    constants.CONFIG["defaultprint"]["exposureperline"] = int(jsondata["exposureperline"])
-                    constants.CONFIG["defaultprint"]["singlefacet"] = bool(jsondata["singlefacet"])
+                    constants.CONFIG["defaultprint"]["laserpower"] = int(
+                        jsondata["laserpower"]
+                    )
+                    constants.CONFIG["defaultprint"]["exposureperline"] = int(
+                        jsondata["exposureperline"]
+                    )
+                    constants.CONFIG["defaultprint"]["singlefacet"] = bool(
+                        jsondata["singlefacet"]
+                    )
                     constants.update_config()
 
                     # actual update is pushed via /state, i.e. SSE not websocket
