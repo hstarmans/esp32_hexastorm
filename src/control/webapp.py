@@ -16,6 +16,7 @@ import machine
 from . import bootlib, constants
 from .laserhead import LASERHEAD
 
+# Template & static paths
 if not constants.ESP32:
     static_dir = "src/root/static"
     temp_dir = "src/root/templates"
@@ -23,7 +24,7 @@ if not constants.ESP32:
 else:
     static_dir = "static/"
 
-
+# App setup
 app = Microdot()
 Session(app, secret_key=constants.CONFIG["webserver"]["salt"])
 Response.default_content_type = "text/html"
@@ -42,11 +43,9 @@ def is_authorized(session):
 
 
 def pass_to_sha(password):
-    """convert pass to sha by adding salt
-    returns a string
-    """
-    if isinstance(password, type(None)):
-        return 0
+    """Hash password with salt using SHA256 (hex output)."""
+    if not password:
+        return ""
     h = hashlib.sha256()
     h.update(constants.CONFIG["webserver"]["salt"].encode())
     h.update(password.encode())
@@ -54,7 +53,7 @@ def pass_to_sha(password):
 
 
 class Webstate:
-    """Defines dictionary which is shared with web front end."""
+    """Web-facing application state."""
 
     def __init__(self):
         self.state = {}
@@ -65,8 +64,12 @@ class Webstate:
 
     def update(self):
         self.partial_update()
+        try:
+            files = os.listdir(constants.CONFIG["webserver"]["job_folder"])
+        except OSError:
+            files = ""
         dct = {
-            "files": os.listdir(constants.CONFIG["webserver"]["job_folder"]),
+            "files": files,
             "wifi": {
                 "connected": bootlib.is_connected(),
                 "available": bootlib.list_wlans(),
@@ -91,52 +94,51 @@ async def index(req, session):
     if authorized:
         logger.info("User logged in")
         webstate.update()
-        return Template("home.html").generate_async(
-            authorized=authorized, state=webstate.state
-        )
+        return Template("home.html").generate_async(state=webstate.state)
     else:
+        login_fail = "password" in session
         return (
-            Template("login.html").generate_async(authorized=authorized),
+            Template("login.html").generate_async(login_fail=login_fail),
             401,
         )
 
 
-@app.post("/upload")
-@with_session
-async def upload(request, session):
-    authorized = is_authorized(session)
-    folder = constants.CONFIG["webserver"]["job_folder"]
-    if authorized:
-        files = os.listdir(folder)
-        if (len(files) > 0) & (
-            sum(os.stat(folder + "/" + f)[6] for f in files) / (1024 * 1024)
-            > constants.CONFIG["webserver"]["max_content_length"]
-        ):
-            return {"error": "resource not found"}, 413
+# @app.post("/upload")
+# @with_session
+# async def upload(request, session):
+#     authorized = is_authorized(session)
+#     folder = constants.CONFIG["webserver"]["job_folder"]
+#     if authorized:
+#         files = os.listdir(folder)
+#         if (len(files) > 0) & (
+#             sum(os.stat(folder + "/" + f)[6] for f in files) / (1024 * 1024)
+#             > constants.CONFIG["webserver"]["max_content_length"]
+#         ):
+#             return {"error": "resource not found"}, 413
 
-        # obtain the filename and size from request headers
-        filename = (
-            request.headers["Content-Disposition"]
-            .split("filename=")[1]
-            .strip('"')
-        )
-        size = int(request.headers["Content-Length"])
+#         # obtain the filename and size from request headers
+#         filename = (
+#             request.headers["Content-Disposition"]
+#             .split("filename=")[1]
+#             .strip('"')
+#         )
+#         size = int(request.headers["Content-Length"])
 
-        # sanitize the filename
-        filename = filename.replace("/", "_")
+#         # sanitize the filename
+#         filename = filename.replace("/", "_")
 
-        # write the file to the files directory in 1K chunks
-        with open(folder + "/" + filename, "wb") as f:
-            while size > 0:
-                chunk = await request.stream.read(min(size, 1024))
-                f.write(chunk)
-                size -= len(chunk)
-                logger.info(f"processed {size}")
-        res = {"success": "upload succeeded"}, 200
-    else:
-        res = {"unauthorized": "please login"}, 401
-    webstate.update()
-    return res
+#         # write the file to the files directory in 1K chunks
+#         with open(folder + "/" + filename, "wb") as f:
+#             while size > 0:
+#                 chunk = await request.stream.read(min(size, 1024))
+#                 f.write(chunk)
+#                 size -= len(chunk)
+#                 logger.info(f"processed {size}")
+#         res = {"success": "upload succeeded"}, 200
+#     else:
+#         res = {"unauthorized": "please login"}, 401
+#     webstate.update()
+#     return res
 
 
 @app.get("/logout")
@@ -149,96 +151,111 @@ async def logout(req, session):
 @app.get("/reset")
 @with_session
 async def reset(req, session):
-    authorized = is_authorized(session)
-    if authorized:
-        logger.info("reset machine")
-        machine.reset()
-    return redirect("/")
-
-
-@app.route("/command")
-@with_websocket
-@with_session
-async def command(request, session, ws):
-    authorized = is_authorized(session)
-    if not authorized:
+    if not is_authorized(session):
         return redirect("/")
-    while authorized:
-        data = await ws.receive()
-        try:
-            jsondata = json.loads(data)
-            logger.debug(jsondata)
-            command = jsondata["command"]
-            if LASERHEAD.state["printing"]:
-                if command == "stopprint":
-                    LASERHEAD.stop_print()
-                elif command == "pauseprint":
-                    LASERHEAD.pause_print()
-            else:
-                if command == "toggleprism":
-                    await LASERHEAD.toggle_prism()
-                elif command == "togglelaser":
-                    await LASERHEAD.toggle_laser()
-                elif command == "diodetest":
-                    webstate.state["components"]["diodetest"] = None
-                    await ws.send(json.dumps(webstate.state))
-                    await LASERHEAD.test_diode()
-                elif command == "move":
-                    steps = float(jsondata["steps"])
-                    vector = [int(x) * steps for x in jsondata["vector"]]
-                    await LASERHEAD.move(vector)
-                elif command == "deletefile":
-                    filename = jsondata["file"].replace("/", "_")
-                    logger.info(f"Deleting {filename}")
-                    os.remove(
-                        constants.CONFIG["webserver"]["job_folder"]
-                        + "/"
-                        + filename
-                    )
-                    webstate.update()
-                elif command == "startwebrepl":
-                    bootlib.start_webrepl()
-                    request.app.shutdown()
-                elif command == "startprint":
-                    filename = jsondata["file"].replace("/", "_")
-                    constants.CONFIG["defaultprint"]["laserpower"] = int(
-                        jsondata["laserpower"]
-                    )
-                    constants.CONFIG["defaultprint"]["exposureperline"] = int(
-                        jsondata["exposureperline"]
-                    )
-                    constants.CONFIG["defaultprint"]["singlefacet"] = bool(
-                        jsondata["singlefacet"]
-                    )
-                    constants.update_config()
 
-                    # actual update is pushed via /state, i.e. SSE not websocket
-                    async def task_wrapper():
-                        await LASERHEAD.print_loop(filename)
-                        webstate.partial_update()
-
-                    # start the print loop
-                    asyncio.create_task(task_wrapper())
-            webstate.partial_update()
-        except Exception as e:
-            logger.error(f"Error in command {e}")
-        await ws.send(json.dumps(webstate.state))
+    logger.info("reset machine")
+    machine.reset()
 
 
-@app.route("/state")
-@with_sse
+@app.post("/move")
 @with_session
-async def state(request, session, sse):
-    authorized = is_authorized(session)
-    if authorized:
-        await sse.send(webstate.state, event="message")
-    else:
-        await sse.send({"notauthorized": 0}, event="message")
+async def move(request, session):
+    if not is_authorized(session):
+        return redirect("/")
+
+    data = request.json
+    steps = float(data.get("steps", 1))
+    vector = [int(x) * steps for x in data.get("vector", [0, 0, 0])]
+    await LASERHEAD.move(vector)
+
+    # Return updated partial state to update Alpine or HTMX
+    return Response(
+        json.dumps(webstate.state), headers={"Content-Type": "application/json"}
+    )
 
 
-@app.route("/favicon.ico")
-async def favicon(request):
-    return send_file(f"{static_dir}/favicon.webp", max_age=86400)
+# @app.route("/command")
+# @with_websocket
+# @with_session
+# async def command(request, session, ws):
+#     authorized = is_authorized(session)
+#     if not authorized:
+#         return redirect("/")
+#     while authorized:
+#         data = await ws.receive()
+#         try:
+#             jsondata = json.loads(data)
+#             logger.debug(jsondata)
+#             command = jsondata["command"]
+#             if LASERHEAD.state["printing"]:
+#                 if command == "stopprint":
+#                     LASERHEAD.stop_print()
+#                 elif command == "pauseprint":
+#                     LASERHEAD.pause_print()
+#             else:
+#                 if command == "toggleprism":
+#                     await LASERHEAD.toggle_prism()
+#                 elif command == "togglelaser":
+#                     await LASERHEAD.toggle_laser()
+#                 elif command == "diodetest":
+#                     webstate.state["components"]["diodetest"] = None
+#                     await ws.send(json.dumps(webstate.state))
+#                     await LASERHEAD.test_diode()
+#                 elif command == "move":
+#                     steps = float(jsondata["steps"])
+#                     vector = [int(x) * steps for x in jsondata["vector"]]
+#                     await LASERHEAD.move(vector)
+#                 elif command == "deletefile":
+#                     filename = jsondata["file"].replace("/", "_")
+#                     logger.info(f"Deleting {filename}")
+#                     os.remove(
+#                         constants.CONFIG["webserver"]["job_folder"] + "/" + filename
+#                     )
+#                     webstate.update()
+#                 elif command == "startwebrepl":
+#                     bootlib.start_webrepl()
+#                     request.app.shutdown()
+#                 elif command == "startprint":
+#                     filename = jsondata["file"].replace("/", "_")
+#                     constants.CONFIG["defaultprint"]["laserpower"] = int(
+#                         jsondata["laserpower"]
+#                     )
+#                     constants.CONFIG["defaultprint"]["exposureperline"] = int(
+#                         jsondata["exposureperline"]
+#                     )
+#                     constants.CONFIG["defaultprint"]["singlefacet"] = bool(
+#                         jsondata["singlefacet"]
+#                     )
+#                     constants.update_config()
+
+#                     # actual update is pushed via /state, i.e. SSE not websocket
+#                     async def task_wrapper():
+#                         await LASERHEAD.print_loop(filename)
+#                         webstate.partial_update()
+
+#                     # start the print loop
+#                     asyncio.create_task(task_wrapper())
+#             webstate.partial_update()
+#         except Exception as e:
+#             logger.error(f"Error in command {e}")
+#         await ws.send(json.dumps(webstate.state))
+
+
+# @app.route("/state")
+# @with_sse
+# @with_session
+# async def state(request, session, sse):
+#     authorized = is_authorized(session)
+#     if authorized:
+#         await sse.send(webstate.state, event="message")
+#     else:
+#         await sse.send({"notauthorized": 0}, event="message")
+
+
+# @app.route("/favicon.ico")
+# async def favicon(request):
+#     return send_file(f"{static_dir}/favicon.webp", max_age=86400)
 
 
 @app.route("/static/<path:path>")

@@ -1,10 +1,12 @@
-{% if authorized==True %}
 <!-- Navbar -->
 <nav class="navbar bg-dark" data-bs-theme="dark">
     <!-- Container wrapper -->
     <div class="container-fluid">
         <a href="/" class="navbar-brand">
-            <img src="static/hexastormlogo.webp" alt="hexastorm" width="25%">
+            <img src="static/hexastormlogo.webp"
+                 alt="hexastorm"
+                 height="25%"
+                 width="25%">
         </a>
         <!-- Icons -->
         <ul class="nav justify-content-end">
@@ -22,16 +24,20 @@
     <!-- Container wrapper -->
 </nav>
 <br>
-{% endif %}
-
-
 <!-- Launch terminal modal -->
-<div class="modal fade" id="terminalModal" tabindex="-1" aria-labelledby="terminalModalLabel" aria-hidden="true">
+<div class="modal fade"
+     id="terminalModal"
+     tabindex="-1"
+     aria-labelledby="terminalModalLabel"
+     aria-hidden="true">
     <div class="modal-dialog">
         <div class="modal-content">
             <div class="modal-header">
                 <h1 class="modal-title fs-5" id="terminalModalLabel">Webrepl</h1>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                <button type="button"
+                        class="btn-close"
+                        data-bs-dismiss="modal"
+                        aria-label="Close"></button>
             </div>
             <div class="modal-body">
                 <form>

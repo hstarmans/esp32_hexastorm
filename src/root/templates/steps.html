@@ -1,11 +1,13 @@
-<p class="text-center">Stepsize [mm]</p>
-<hr style="margin-top:-10px"/>
-<div id="stepsize" class="list-group list-group-horizontal">
-  <a class="list-group-item list-group-item-success list-group-item-action">0.1</a>
-  <a class="list-group-item list-group-item-success list-group-item-action">1</a>
-  <a class="list-group-item list-group-item-success list-group-item-action active">10</a>
-  <a class="list-group-item list-group-item-success list-group-item-action">100</a>
+<p class="text-center mb-0">Stepsize [mm]</p>
+<hr class="mt-0 mb-1" />
+<div class="btn-group d-flex justify-content-center"
+     role="group"
+     x-data="{ selected: 10 }">
+  <template x-for="value in [0.1, 1, 10, 100]" :key="value">
+    <button type="button"
+            class="btn"
+            :class="selected === value ? 'btn-success' : 'btn-outline-success'"
+            @click="selected = value; $dispatch('step-change', { step: value })"
+            x-text="value"></button>
+  </template>
 </div>
-<script>
-
-</script>
