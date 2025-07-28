@@ -28,7 +28,7 @@ def run_test(class_name, function_name, *args, **kwargs):
         else:
             test_function()  # Call without variable
     except KeyboardInterrupt:
-        test_instance.host.reset()  # Call reset if it exists.
+        test_instance.tearDownClass()
     except Exception as e:
         # print exception in red
         s = io.StringIO()
@@ -36,7 +36,7 @@ def run_test(class_name, function_name, *args, **kwargs):
         error_message = s.getvalue()
         print(f"\033[91m{error_message}\033[0m")
         # reset after exception
-        test_instance.host.reset()
+        test_instance.tearDownClass()
 
 
 if __name__ == "__main__":
