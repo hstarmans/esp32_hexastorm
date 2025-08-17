@@ -137,9 +137,9 @@ class TMC_UART:
 
         time.sleep(self.communication_pause)
 
-        reply = self._read_exact(self._REPLY_LEN)
-        if len(reply) < self._REPLY_LEN:
-            raise ConnectionFail()
+        # return length can vary
+        if self.ser.any():
+            reply = self.ser.read()
 
         if reply is None:
             raise ConnectionFail()
@@ -262,7 +262,7 @@ class TMC_UART:
         """Update only bits in `mask` to match `value`."""
         cur = self.read_u32(reg)
         new_val = (cur & ~mask) | (value & mask)
-        self.write_reg(reg, new_val)
+        self.write_reg_check(reg, new_val)
 
     def probe(self):
         """
