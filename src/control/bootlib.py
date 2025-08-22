@@ -43,22 +43,6 @@ def wrapper_esp32(res=None):
     return decorator
 
 
-def reload(module):
-    """Reload a module in micropython.
-
-    Allows to hot reload modules.
-    Hot reloading is challenging. You need
-    to update all scopes, run
-    import module again, to update micropython shell scope.
-    """
-    module_name = module.__name__
-    if module_name in sys.modules:
-        del sys.modules[module_name]
-    # Use the standard import statement
-    globals()[module_name] = __import__(module_name)
-    return globals()[module_name]
-
-
 def disk_usage():
     """Compute disk usage
 
