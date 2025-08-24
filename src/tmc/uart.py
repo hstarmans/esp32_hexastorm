@@ -1,6 +1,9 @@
 import time
 import struct
 import logging
+
+from .reg import GSTAT, IFCNT
+
 from machine import UART
 
 logger = logging.getLogger(__name__)
@@ -21,21 +24,15 @@ class TMC_UART:
     _READ_FRAME_LEN = 4
     _WRITE_FRAME_LEN = 8
     _REPLY_LEN = 12  # typical reply length from TMC (sync..crc, 12 bytes)
-    _IFCNT = 0x02
 
-    def __init__(
-        self,
-        mtr_id,
-        uart_dct,
-        communication_pause=None,
-    ):
+    def __init__(self, mtr_id, uart_dct, communication_pause=None):
         """
         Initialize UART communication with a TMC driver.
 
         Args:
             mtr_id (int): Motor/driver address (0-3 for TMC2209).
-            uart_dct: dict: UART configuration dictionary
-            communication_pause (float, optional): Minimum pause (in seconds) between UART operations.
+            uart_dct (dict): UART configuration dict with 'id', 'ctor', 'init'.
+            communication_pause (float, optional): Minimum pause (s) between UART ops.
         """
         self.mtr_id = mtr_id
         self.ser = UART(uart_dct["id"], **uart_dct["ctor"])
@@ -57,7 +54,7 @@ class TMC_UART:
         """Deinitialize UART on object deletion."""
         self.ser.close()
 
-    # -------------------- internals --------------------
+    # -------------------- internals (MicroPython only) --------------------
 
     @staticmethod
     def _crc8_atm(data, initial=0x00):
@@ -75,57 +72,135 @@ class TMC_UART:
 
     def _read_exact(self, n, timeout_ms=None):
         """
-        Read exactly n bytes from UART, with timeout.
+        Read exactly n bytes from UART or return fewer on timeout.
 
         Args:
-            n (int): Number of bytes to read.
-            timeout_ms (int, optional): Timeout in milliseconds.
+            n (int): Number of bytes requested.
+            timeout_ms (int, optional): Max time to wait for the whole read.
         Returns:
-            bytes: Data read from UART.
+            bytes: Up to n bytes read before the timeout.
         """
         buf = bytearray()
-        ticks_ms = getattr(time, "ticks_ms", None)
-        ticks_diff = getattr(time, "ticks_diff", None)
 
-        if ticks_ms and ticks_diff:
-            start = ticks_ms()
-            while len(buf) < n:
-                chunk = self.ser.read(n - len(buf))
-                if chunk:
-                    buf.extend(chunk)
-                    continue
-                if timeout_ms is None:
-                    ser_timeout = getattr(self.ser, "timeout", None)
-                    timeout_ms = 2 * (ser_timeout if ser_timeout else 20)
-                if ticks_diff(ticks_ms(), start) >= timeout_ms:
-                    break
-        else:
-            start = time.time()
-            while len(buf) < n:
-                chunk = self.ser.read(n - len(buf))
-                if chunk:
-                    buf.extend(chunk)
-                    continue
-                if timeout_ms is None:
-                    timeout_ms = 40
-                if (time.time() - start) * 1000.0 >= timeout_ms:
-                    break
+        # default timeout: 2x UART timeout or 40ms
+        if timeout_ms is None:
+            ser_timeout = getattr(self.ser, "timeout", None)
+            timeout_ms = int(2 * (ser_timeout if ser_timeout else 20))
+
+        start = time.ticks_ms()
+        while len(buf) < n:
+            chunk = self.ser.read(n - len(buf))
+            if chunk:
+                buf.extend(chunk)
+            if time.ticks_diff(time.ticks_ms(), start) >= timeout_ms:
+                break
 
         return bytes(buf)
+
+    def _read_reply(
+        self, expect_addr=None, expect_reg=None, min_len=12, timeout_ms=None
+    ):
+        """
+        Tolerant reply reader.
+
+        Behavior:
+          - Waits for incoming bytes (uses UART.any()).
+          - Accumulates a buffer and finds the last 0x55 that still leaves ≥11 bytes after it.
+          - Performs optional CRC and echo checks (lenient: warn only).
+
+        Args:
+            expect_addr (int|None): Optional expected slave address (echo).
+            expect_reg (int|None): Optional expected register (echo).
+            min_len (int): Minimum frame length to return (default 12).
+            timeout_ms (int|None): Per-frame timeout.
+
+        Returns:
+            bytes: A frame (length >= min_len) starting at the chosen SYNC.
+
+        Raises:
+            ConnectionFail: If no plausible frame is found before timeout.
+        """
+        SYNC = self._SYNC
+
+        # default per-frame timeout
+        if timeout_ms is None:
+            ser_timeout = getattr(self.ser, "timeout", None)
+            timeout_ms = int(3 * (ser_timeout if ser_timeout else 20))
+
+        start = time.ticks_ms()
+        buf = bytearray()
+
+        while time.ticks_diff(time.ticks_ms(), start) < timeout_ms:
+            # wait until at least some bytes are available
+            if not self.ser.any():
+                time.sleep(0.0005)
+                continue
+
+            # read whatever is available
+            chunk = self.ser.read()
+            if chunk:
+                buf.extend(chunk)
+
+                # try to find a plausible frame within buf
+                last_sync = -1
+                for i in range(len(buf)):
+                    if buf[i] == SYNC and (i + 11) < len(buf):
+                        last_sync = i
+
+                if last_sync >= 0:
+                    # In practice TMC replies are 12 bytes. Keep only min_len from sync if available.
+                    end = min(last_sync + min_len, len(buf))
+                    frame = bytes(buf[last_sync:end])
+
+                    # Optional: CRC check over first 11 bytes (warn only)
+                    if len(frame) >= 12:
+                        calc_crc = self._crc8_atm(frame[:11])
+                        rx_crc = frame[11]
+                        if calc_crc != rx_crc:
+                            logger.debug(
+                                "TMC: CRC mismatch (got 0x%02X, want 0x%02X) — continuing (lenient).",
+                                rx_crc,
+                                calc_crc,
+                            )
+
+                    # Optional: addr/reg echo checks (lenient)
+                    if expect_addr is not None and len(frame) > 2:
+                        if frame[1] != (expect_addr & 0xFF):
+                            logger.debug(
+                                "TMC: addr echo mismatch (0x%02X vs 0x%02X) — continuing.",
+                                frame[1],
+                                expect_addr & 0xFF,
+                            )
+                    if expect_reg is not None and len(frame) > 3:
+                        reg_echo = frame[2] & 0x7F
+                        if reg_echo != (expect_reg & 0x7F):
+                            logger.debug(
+                                "TMC: reg echo mismatch (0x%02X vs 0x%02X) — continuing.",
+                                reg_echo,
+                                expect_reg & 0x7F,
+                            )
+
+                    return frame
+
+            # not enough yet; small sleep then loop
+            time.sleep(0.0005)
+
+        raise ConnectionFail()
 
     # -------------------- public API --------------------
 
     def read_reg(self, reg):
         """
-        Read a 32-bit register from the TMC driver.
+        Read four raw data bytes from a TMC register.
 
         Args:
-            reg (int): Register address.
+            reg (int): Register address (0x00..0x7F).
         Returns:
-            bytes: 4 data bytes from the register.
+            bytes: 4 bytes of register payload (big-endian order).
         Raises:
-            ConnectionFail: If communication fails.
+            ConnectionFail: If the read frame or reply fails.
         """
+        # build+send 4-byte read frame
         self._r_frame[1] = self.mtr_id & 0xFF
         self._r_frame[2] = reg & 0x7F
         self._r_frame[3] = self._crc8_atm(self._r_frame[:3])
@@ -137,25 +212,27 @@ class TMC_UART:
 
         time.sleep(self.communication_pause)
 
-        # return length can vary
-        if self.ser.any():
-            reply = self.ser.read()
+        # read one tolerant reply
+        reply = self._read_reply(
+            expect_addr=self.mtr_id, expect_reg=reg, min_len=self._REPLY_LEN
+        )
 
-        if reply is None:
+        # keep your established payload slice
+        if len(reply) < 11:
             raise ConnectionFail()
         return reply[7:11]
 
     def read_int(self, reg, retries=10):
         """
-        Read a signed 32-bit register value.
+        Read a signed 32-bit value from a register with retry.
 
         Args:
             reg (int): Register address.
-            retries (int): Number of retries on failure.
+            retries (int): Max attempts before failing.
         Returns:
             int: Signed 32-bit value.
         Raises:
-            ConnectionFail: If all retries fail.
+            ConnectionFail: If no valid 4-byte payload is received after retries.
         """
         last_err = None
         for _ in range(retries):
@@ -167,25 +244,20 @@ class TMC_UART:
             except ConnectionFail as e:
                 last_err = e
             time.sleep(self.communication_pause)
-        logger.debug(
-            "TMC: after %d tries no valid answer. Is the stepper PSU on?",
-            retries,
-        )
-        if last_err is None:
-            raise ConnectionFail()
-        raise last_err
+        logger.debug("TMC: no valid answer after %d tries (PSU on?)", retries)
+        raise last_err or ConnectionFail()
 
     def read_u32(self, reg, retries=10):
         """
-        Read an unsigned 32-bit register value.
+        Read an unsigned 32-bit value from a register with retry.
 
         Args:
             reg (int): Register address.
-            retries (int): Number of retries on failure.
+            retries (int): Max attempts before failing.
         Returns:
             int: Unsigned 32-bit value.
         Raises:
-            ConnectionFail: If all retries fail.
+            ConnectionFail: If no valid 4-byte payload is received after retries.
         """
         last_err = None
         for _ in range(retries):
@@ -197,9 +269,7 @@ class TMC_UART:
             except ConnectionFail as e:
                 last_err = e
             time.sleep(self.communication_pause)
-        if last_err is None:
-            raise ConnectionFail()
-        raise last_err
+        raise last_err or ConnectionFail()
 
     def write_reg(self, reg, val):
         """
@@ -232,19 +302,18 @@ class TMC_UART:
         """
         Write a register and verify the update via IFCNT.
 
-        IFCNT is a counter inside the chip that increments every time
-        a valid SPI (or UART) write transaction is received.
+        IFCNT increments on each valid UART/SPI write.
 
         Args:
             reg (int): Register address.
             val (int): 32-bit value to write.
         Returns:
-            bool: True if write was successful, False otherwise.
+            bool: True if IFCNT advanced, False otherwise.
         """
         try:
-            before = self.read_int(self._IFCNT) & 0xFF
+            before = self.read_int(IFCNT) & 0xFF
             self.write_reg(reg, val)
-            after = self.read_int(self._IFCNT) & 0xFF
+            after = self.read_int(IFCNT) & 0xFF
         except ConnectionFail:
             logger.info("TMC: write/ifcnt check failed (no response)")
             return False
@@ -259,19 +328,20 @@ class TMC_UART:
         return True
 
     def read_modify_write(self, reg, mask, value):
-        """Update only bits in `mask` to match `value`."""
+        """Read-modify-write helper: only bits in `mask` are updated to match `value`."""
         cur = self.read_u32(reg)
         new_val = (cur & ~mask) | (value & mask)
         self.write_reg_check(reg, new_val)
 
     def probe(self):
         """
-        Quick check if the TMC responds over UART.
-        Returns a dict with IFCNT and GSTAT, or False on failure.
+        Quick UART liveness check.
+
+        Returns:
+            dict|bool: {'ifcnt': int, 'gstat': int} on success; False on failure.
         """
-        GSTAT = 0x01
         try:
-            ifcnt = self.read_u32(self._IFCNT)
+            ifcnt = self.read_u32(IFCNT)
             gstat = self.read_u32(GSTAT)
             return {"ifcnt": ifcnt, "gstat": gstat}
         except ConnectionFail:
@@ -281,16 +351,16 @@ class TMC_UART:
 
     @staticmethod
     def set_bit(value, mask):
-        """Set bits in value according to mask."""
+        """Return value with bits in mask set."""
         return value | mask
 
     @staticmethod
     def clear_bit(value, mask):
-        """Clear bits in value according to mask."""
+        """Return value with bits in mask cleared."""
         return value & (~mask)
 
     def flushSerialBuffer(self):
-        """Drain any pending bytes from UART RX."""
+        """Drain any pending bytes from UART RX; ignore errors."""
         try:
             while True:
                 data = self.ser.read()

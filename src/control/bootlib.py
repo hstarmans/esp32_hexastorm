@@ -1,6 +1,5 @@
 import asyncio
 from time import sleep, localtime, time
-import sys
 
 try:
     from mrequests import urequests as requests
