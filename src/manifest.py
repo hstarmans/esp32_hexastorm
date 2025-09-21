@@ -87,6 +87,7 @@ if called_by_make:
     module("hexastorm/config.py")
     module("hexastorm/fpga_host/__init__.py")
     module("hexastorm/fpga_host/interface.py")
+    module("hexastorm/fpga_host/syncwrap.py")
     module("hexastorm/fpga_host/micropython.py")
     module("hexastorm/tests/__init__.py")
     module("hexastorm/tests/test_mpy.py")
