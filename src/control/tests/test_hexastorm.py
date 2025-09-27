@@ -1,16 +1,16 @@
 import io
 import sys
+import logging
 
 from hexastorm.tests import test_mpy
 
 
-def run_test(class_name, function_name, *args, **kwargs):
-    """executes test in hexastorm.tests.test_electrical
+logger = logging.getLogger(__name__)
 
-    Hexastorm uses yield syntax due to Amaranth HDL and that's why test are
-    executed in this elaborated way.
-    """
-    print(f"Executing class {class_name} in test_mpy")
+
+def run_test(class_name, function_name, *args, **kwargs):
+    """executes test in hexastorm.tests.test_electrical"""
+    logger.info(f"Executing class {class_name} in test_mpy")
     try:
         # Get the class and function *directly*
         test_class = getattr(test_mpy, class_name)
@@ -22,21 +22,21 @@ def run_test(class_name, function_name, *args, **kwargs):
         )  # Get the function
 
         if args or kwargs:
-            print(f"Got positional arguments: {args}")
-            print(f"Got keyword arguments: {kwargs}")
+            logger.info(f"Got positional arguments: {args}")
+            logger.info(f"Got keyword arguments: {kwargs}")
             test_function(*args, **kwargs)  # Call the function directly
         else:
             test_function()  # Call without variable
     except KeyboardInterrupt:
-        test_instance.tearDownClass()
+        pass
     except Exception as e:
         # print exception in red
         s = io.StringIO()
         sys.print_exception(e, s)
         error_message = s.getvalue()
-        print(f"\033[91m{error_message}\033[0m")
-        # reset after exception
-        test_instance.tearDownClass()
+        logger.error(f"\033[91m{error_message}\033[0m")
+    # reset after exception
+    test_instance.tearDownClass()
 
 
 if __name__ == "__main__":
