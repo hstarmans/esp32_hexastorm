@@ -23,11 +23,11 @@ dependencies = [
     "websocket-client>=1.8.0",
 ]
 
-[tool.black]
-line-length = 79
-
 [tool.ruff]
-line-length = 79
+line-length = 88
+
+[tool.ruff.format]
+quote-style = "double"
 
 [dependency-groups]
 dev = [
