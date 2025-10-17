@@ -1,6 +1,7 @@
 import logging
 import asyncio
 import struct
+import zlib
 from time import time
 from random import randint
 
@@ -74,9 +75,7 @@ class Laserhead:
         laser1   -- True enables laser channel 1
         polygon  -- False enables polygon motor
         """
-        logger.debug(
-            f"laser0, laser1, polygon set to {laser0, laser1, polygon}"
-        )
+        logger.debug(f"laser0, laser1, polygon set to {laser0, laser1, polygon}")
         self.state["components"]["laser"] = laser0 or laser1
         self.state["components"]["rotating"] = polygon
         self.state["job"]["singlefacet"] = singlefacet
@@ -145,15 +144,11 @@ class Laserhead:
                 await asyncio.sleep(timeout)
                 await self.host.enable_comp(laser1=False, polygon=False)
                 fpga_state = await self.host.fpga_state
-                self.state["components"]["diodetest"] = fpga_state[
-                    "photodiode_trigger"
-                ]
+                self.state["components"]["diodetest"] = fpga_state["photodiode_trigger"]
                 if fpga_state == 0:
                     logger.error("Diode not triggered.")
                 else:
-                    logger.debug(
-                        "Diode test passed. Stable test requires 15 seconds."
-                    )
+                    logger.debug("Diode test passed. Stable test requires 15 seconds.")
                     await self.enable_comp(synchronize=True)
                     await asyncio.sleep(15)
                     await self.enable_comp(synchronize=False)
@@ -176,12 +171,8 @@ class Laserhead:
         self.state["printing"] = True
         self.state["job"]["filename"] = fname
         self.state["job"]["laserpower"] = CONFIG["defaultprint"]["laserpower"]
-        self.state["job"]["exposureperline"] = CONFIG["defaultprint"][
-            "exposureperline"
-        ]
-        self.state["job"]["singlefacet"] = CONFIG["defaultprint"][
-            "singlefacet"
-        ]
+        self.state["job"]["exposureperline"] = CONFIG["defaultprint"]["exposureperline"]
+        self.state["job"]["singlefacet"] = CONFIG["defaultprint"]["singlefacet"]
         basestring = (
             f"Printing with laserpower {self.state['job']['laserpower']}"
             f" and {self.state['job']['exposureperline']} exposures."
@@ -220,13 +211,12 @@ class Laserhead:
                 cmd_lst = host.byte_to_cmd_list(line)
                 commands[direction] = cmd_lst[0]
 
-            with open(
-                CONFIG["webserver"]["job_folder"] + f"/{fname}", "rb"
-            ) as f:
+            with open(CONFIG["webserver"]["job_folder"] + f"/{fname}", "rb") as f:
+                f_decomp = zlib.DecompIO(f, wbits=15)
                 # 1. Header
-                lane_width = struct.unpack("<f", f.read(4))[0]
-                facets_lane = struct.unpack("<I", f.read(4))[0]
-                lanes = struct.unpack("<I", f.read(4))[0]
+                lane_width = struct.unpack("<f", f_decomp.read(4))[0]
+                facets_lane = struct.unpack("<I", f_decomp.read(4))[0]
+                lanes = struct.unpack("<I", f_decomp.read(4))[0]
                 self.state["job"]["totallines"] = int(facets_lane * lanes)
                 start_time = time()
                 await asyncio.sleep(2)
@@ -251,18 +241,14 @@ class Laserhead:
                     if await handle_pausing_and_stopping():
                         break
                     self.state["job"]["currentline"] = int(lane * facets_lane)
-                    self.state["job"]["printingtime"] = round(
-                        time() - start_time
-                    )
+                    self.state["job"]["printingtime"] = round(time() - start_time)
                     await asyncio.sleep(1)
                     # time for propagation, update pushed via SSE
                     # end checks communication front-end
                     logger.info(f"Exposing lane {lane + 1} from {lanes}.")
                     if lane > 0:
                         logger.info("Moving in x-direction for next lane.")
-                        await host.gotopoint(
-                            [lane_width, 0, 0], absolute=False
-                        )
+                        await host.gotopoint([lane_width, 0, 0], absolute=False)
                     if lane % 2 == 1:
                         logger.info("Start exposing forward lane.")
                     else:
@@ -286,23 +272,19 @@ class Laserhead:
                             if await handle_pausing_and_stopping():
                                 break
                         # Read the entire line's data into a buffer
-                        line_data = f.read(words_scanline * 9)
+                        line_data = f_decomp.read(words_scanline * 9)
                         for _ in range(self.state["job"]["exposureperline"]):
                             # sendline
                             for word_index in range(words_scanline):
                                 start_index = word_index * 9
-                                cmd_data = line_data[
-                                    start_index : start_index + 9
-                                ]
+                                cmd_data = line_data[start_index : start_index + 9]
                                 # the header is adapted
                                 if word_index == 0:
                                     if lane % 2 == 1:
                                         cmd_data = commands[0]
                                     else:
                                         cmd_data = commands[1]
-                                await host.send_command(
-                                    cmd_data, blocking=True
-                                )
+                                await host.send_command(cmd_data, blocking=True)
                     # send stopline
                     await host.write_line([])
             # disable scanhead

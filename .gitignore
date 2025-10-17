@@ -1,6 +1,7 @@
 .vscode*
 secret.json
 todo.md
+.DS_Store
 
 # frozen root
 src/control/frozen_root.py
