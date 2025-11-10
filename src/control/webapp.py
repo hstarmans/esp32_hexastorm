@@ -267,9 +267,10 @@ async def static(request, path):
 
 
 if __name__ == "__main__":
-    logging.basicConfig()
+    from control.bootlib import set_log_level
+
     LASERHEAD.debug = True
-    logger.setLevel(logging.DEBUG)
+    set_log_level(logging.DEBUG)
     logger.info("Started logging")
     python_files = [f for f in os.listdir(temp_dir) if ".py" in f]
     for f in python_files:

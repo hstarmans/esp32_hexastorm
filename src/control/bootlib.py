@@ -22,6 +22,7 @@ if constants.ESP32:
     from hexastorm.config import PlatformConfig
 
 _logging_configured = False
+logger = logging.getLogger(__name__)
 
 
 def wrapper_esp32(res=None):
@@ -53,9 +54,9 @@ def disk_usage():
     free_mb = (statvfs[3] * statvfs[0]) / (1024 * 1024)
     used_mb = total_mb - free_mb
     # Print the results in a user-friendly format
-    print(f"Total space: {total_mb:.2f} MB")
-    print(f"Used space: {used_mb:.2f} MB")
-    print(f"Free space: {free_mb:.2f} MB")
+    logger.info(f"Total space: {total_mb:.2f} MB")
+    logger.info(f"Used space: {used_mb:.2f} MB")
+    logger.info(f"Free space: {free_mb:.2f} MB")
     return total_mb, used_mb, free_mb
 
 
@@ -75,9 +76,9 @@ def start_webrepl():
 @wrapper_esp32()
 async def set_time(tries=3):
     """Update local time."""
-    logging.info(f"Local time before synchronization {localtime()}")
+    logger.info(f"Local time before synchronization {localtime()}")
     if not is_connected():
-        logging.info("Trying to connect to wifi connection")
+        logger.info("Trying to connect to wifi connection")
         if not connect_wifi():
             return
     for trial in range(tries):
@@ -86,12 +87,12 @@ async def set_time(tries=3):
             ntptime.settime()
             break
         except OSError:
-            logging.info(f"Trial {trial + 1} out of {tries}")
-            logging.info("Error syncing time, probably not connected")
+            logger.info(f"Trial {trial + 1} out of {tries}")
+            logger.info("Error syncing time, probably not connected")
             await asyncio.sleep(5)
     if localtime()[0] < 2024:
-        logging.error("Failed updating time")
-    logging.info(f"Local time after synchronization {localtime()}")
+        logger.error("Failed updating time")
+    logger.info(f"Local time after synchronization {localtime()}")
 
 
 def set_log_level(level):
@@ -102,7 +103,10 @@ def set_log_level(level):
 
     root_logger = logging.getLogger()
     root_logger.setLevel(level)
+
     if not _logging_configured:
+        if root_logger.hasHandlers():
+            root_logger.handlers.clear()
         # Create a handler to direct logs (usually to the console/stdout)
         handler = logging.StreamHandler()
         # streamhandler does not support filename and lineno
@@ -147,24 +151,22 @@ def get_firmware_dct(require_new=True):
     try:
         r = requests.get(url, headers=head)
     except OSError:
-        logging.error("Cannot retrieve firmware url, probably wifi connection")
+        logger.error("Cannot retrieve firmware url, probably wifi connection")
         return {}
 
     if r.status_code == 200:
         release_dct = json.loads(r.text)
     else:
-        logging.error("Response for firmware url is invalid")
+        logger.error("Response for firmware url is invalid")
         return {}
 
     def clean(code):
         return int(code.replace(".", "").replace("v", ""))
 
-    if (not require_new) or (
-        clean(release_dct["tag_name"]) > clean(gh["version"])
-    ):
+    if (not require_new) or (clean(release_dct["tag_name"]) > clean(gh["version"])):
         return release_dct
     else:
-        logging.info("No new firmware")
+        logger.info("No new firmware")
         return {}
 
 
@@ -182,19 +184,15 @@ def update_firmware(force=False, download=True):
         if len(gh["token"]) > 0:
             head["Authorization"] = f"token {gh['token']}"
 
-        with requests.get(
-            release_dct["assets"][0]["url"], headers=head
-        ) as resp:
+        with requests.get(release_dct["assets"][0]["url"], headers=head) as resp:
             if resp.status_code != 200:
-                logging.error("Download firmware binary failed")
+                logger.error("Download firmware binary failed")
                 return False
             else:
-                with open(
-                    f"{gh['storagefolder']}/{gh['bin_name']}", mode="wb"
-                ) as file:
+                with open(f"{gh['storagefolder']}/{gh['bin_name']}", mode="wb") as file:
                     for chunk in resp.iter_content(chunk_size=1024):
                         file.write(chunk)
-        logging.info(f"Downloaded file {gh['bin_name']}")
+        logger.info(f"Downloaded file {gh['bin_name']}")
 
     if constants.ESP32:
         # purge templates and static folder
@@ -298,13 +296,11 @@ def connect_wifi(force=False):
         made_connection = True
         ap.active(False)
     if made_connection:
-        logging.info(f"Network config {wlan.ifconfig()}")
+        logger.info(f"Network config {wlan.ifconfig()}")
     else:
         wlan.active(False)
-        logging.error("Cannot connect to wifi, creating access point!")
-        logging.error(
-            f"Used ssid {wifi_login['ssid']} and {wifi_login['password']}."
-        )
+        logger.error("Cannot connect to wifi, creating access point!")
+        logger.error(f"Used ssid {wifi_login['ssid']} and {wifi_login['password']}.")
         ap.active(True)
         ap.config(
             essid=f"sensor_serial{constants.CONFIG['serial']}",
@@ -328,9 +324,9 @@ def mount_sd():
         os.mount(sd, "/sd")
         from . import frozen_root
 
-        logging.info(f"executing {frozen_root}")
+        logger.info(f"executing {frozen_root}")
     except OSError:
-        logging.error(
+        logger.error(
             """Cannot connect to sdcard.\n"""
             """Hard reboot is required, not mounted"""
         )

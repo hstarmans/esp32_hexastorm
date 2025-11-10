@@ -92,7 +92,9 @@ if called_by_make:
     module("hexastorm/fpga_host/tools.py")
     module("hexastorm/tests/__init__.py")
     module("hexastorm/tests/test_mpy.py")
+    module("tools.py")
+    module("boot.py")
+    require("time")  # add strftime
     require("pyjwt")
     require("logging")
     require("unittest")
-    module("boot.py")

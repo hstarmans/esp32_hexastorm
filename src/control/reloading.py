@@ -40,6 +40,9 @@ Notes & limitations:
 """
 
 import sys
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def reload(module_or_name):
@@ -49,9 +52,7 @@ def reload(module_or_name):
     Returns the reloaded root module.
     """
     root_name = (
-        module_or_name
-        if isinstance(module_or_name, str)
-        else module_or_name.__name__
+        module_or_name if isinstance(module_or_name, str) else module_or_name.__name__
     )
 
     # Ensure root is importable at least once
@@ -60,9 +61,7 @@ def reload(module_or_name):
 
     # Snapshot names to touch
     to_reload = [
-        n
-        for n in list(sys.modules)
-        if n == root_name or n.startswith(root_name + ".")
+        n for n in list(sys.modules) if n == root_name or n.startswith(root_name + ".")
     ]
 
     if not to_reload:
@@ -80,7 +79,7 @@ def reload(module_or_name):
             for i in range(len(parts)):
                 __import__(".".join(parts[: i + 1]))
         except Exception as e:
-            print("Error re-importing {}: {}".format(name, e))
+            logger.error("Error re-importing {}: {}".format(name, e))
 
     return sys.modules.get(root_name)
 
