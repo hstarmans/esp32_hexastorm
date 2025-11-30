@@ -35,6 +35,10 @@ logger = logging.getLogger(__name__)
 
 
 def is_authorized(session):
+    """Determine wether micropython session is authorized.
+
+    Return boolean
+    """
     pwd = session.get("password")
     if pass_to_sha(pwd) == constants.CONFIG["webserver"]["password"]:
         return True
