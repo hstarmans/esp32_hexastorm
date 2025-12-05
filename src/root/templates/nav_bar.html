@@ -1,53 +1,24 @@
 <!-- Navbar -->
-<nav class="navbar bg-dark" data-bs-theme="dark">
+<nav class="navbar bg-dark" data-bs-theme="dark" x-data="commands">
     <!-- Container wrapper -->
     <div class="container-fluid">
         <a href="/" class="navbar-brand">
             <img src="static/hexastormlogo.webp"
                  alt="hexastorm"
-                 height="25%"
-                 width="25%">
+                 style="height: 30px; width: auto;">
         </a>
         <!-- Icons -->
         <ul class="nav justify-content-end">
             <li class="nav-item me-3 me-lg-0">
-                <a class="btn btn-dark" data-bs-toggle="modal" href="#terminalModal"><i class="bi bi-terminal"></i> Terminal</a>
-            </li>
-            <li class="nav-item me-3 me-lg-0">
                 <a class="btn btn-dark" href="/logout"><i class="bi bi-box-arrow-right"></i> Logout</a>
             </li>
-            <li class="nav-item me-3 me-lg-0">
-                <a class="btn btn-dark" href="/reset"><i class="bi bi-bootstrap-reboot"></i> Reboot</a>
+            <li class="nav-item me-3">
+                <button class="btn btn-dark" @click="reboot()">
+                    <i class="bi bi-bootstrap-reboot"></i> Reboot
+                </button>
             </li>
         </ul>
     </div>
     <!-- Container wrapper -->
 </nav>
-<br>
-<!-- Launch terminal modal -->
-<div class="modal fade"
-     id="terminalModal"
-     tabindex="-1"
-     aria-labelledby="terminalModalLabel"
-     aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h1 class="modal-title fs-5" id="terminalModalLabel">Webrepl</h1>
-                <button type="button"
-                        class="btn-close"
-                        data-bs-dismiss="modal"
-                        aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <form>
-                    <p>WARNING: webserver disabled & micropython webrepl launched</p>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                <button id="startwebreplbutton" type="button" class="btn btn-success">Launch</button>
-            </div>
-        </div>
-    </div>
-</div>
+<!-- Navbar end -->

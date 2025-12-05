@@ -1,250 +1,240 @@
-var commandSocket;
-
-// function initializecommandSocket() {
-//     commandSocket = new WebSocket('ws://' + location.host + '/command');
-//     commandSocket.onclose = oncommandClose;
-//     commandSocket.onmessage = onMessage;
-//   }
-
-// maintaining a long connection is a challenge
-// microdot does not yet support socket
-function oncommandClose(event) {
-  setTimeout(initializeSocket, 2000);
-}
-
-document.addEventListener("alpine:init", () => {
-  Alpine.data("movement", () => ({
-    step: 10,
-    init() {
-      this.$watch("step", (value) => console.log("Step changed to", value));
-      this.$el.addEventListener("step-change", (e) => {
-        this.step = e.detail.step;
-      });
-    },
-    handleClick(e) {
-      const button = e.target.closest("[data-vector]");
-      if (!button) return;
-
-      const vector = JSON.parse(button.dataset.vector);
-      const steps = this.step;
-
-      fetch("/move", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          vector: vector,
-          steps: steps,
-        }),
-      });
-    },
-  }));
-});
-
-// enables one to select stepsize from 0.1 --> 1
-stepsize.addEventListener("click", function (e) {
-  stepsize.querySelector(".active").classList.remove("active");
-  e.target.classList.add("active");
-});
+// @ts-check
 
 /**
- * Proceses click in the laserhead tab
- * @param {String} command Command that is executed
- * @returns function
+ * TYPE DEFINITIONS
+ * These help VS Code understand your data structures.
  */
-function laserheadCLick(command) {
-  return function () {
-    commandSocket.send(JSON.stringify({ command: String(command) }));
-  };
-}
-laser.addEventListener("click", laserheadCLick("togglelaser"));
-motor.addEventListener("click", laserheadCLick("toggleprism"));
-diode.addEventListener("click", laserheadCLick("diodetest"));
 
-// delete file button
-deletebutton.addEventListener("click", function (e) {
-  fname = filetodelete[filetodelete.selectedIndex].text;
-  commandSocket.send(JSON.stringify({ command: "deletefile", file: fname }));
-  window.location.href = "/";
+/**
+ * @typedef {Object} PrintJob
+ * @property {string} filename - The name of the file being printed
+ * @property {number} currentline - Current line number
+ * @property {number} totallines - Total lines in file
+ * @property {number} printingtime - Elapsed time in seconds
+ * @property {number} exposureperline - Exposure count
+ * @property {number} laserpower - Laser power level
+ * @property {boolean} singlefacet - Whether single facet mode is on
+ */
+
+/**
+ * @typedef {Object} Components
+ * @property {boolean} rotating - Is the motor turning?
+ * @property {boolean} laser - Is the laser on?
+ * @property {boolean|null} diodetest - null=not run, true=pass, false=fail
+ */
+
+/**
+ * @typedef {Object} MachineState
+ * @property {boolean} printing - Is the machine currently printing?
+ * @property {boolean} paused - Is the print paused?
+ * @property {PrintJob} job - The current job details
+ * @property {Components} components - Hardware status
+ */
+
+// --- MAIN LOGIC ---
+
+document.addEventListener("alpine:init", () => {
+    
+    // 1. GLOBAL STORE
+    // We explicitly type 'this' in comments so VS Code knows what 'this' refers to.
+    Alpine.store('machine', {
+        printing: false,
+        paused: false,
+        /** @type {PrintJob} */
+        job: {
+            filename: '',
+            currentline: 0,
+            totallines: 0,
+            printingtime: 0,
+            exposureperline: 0,
+            laserpower: 0,
+            singlefacet: false
+        },
+        /** @type {Components} */
+        components: {
+            rotating: false,
+            laser: false,
+            diodetest: null
+        },
+
+        /**
+         * Updates the store with data from the server
+         * @param {MachineState} data - The JSON object from the backend
+         */
+        update(data) {
+            // VS Code will now validate that 'data' has the right properties
+            this.printing = data.printing;
+            this.paused = data.paused || false;
+            
+            if (data.job) this.job = data.job;
+            if (data.components) this.components = data.components;
+        },
+
+        /**
+         * Calculates percentage for the progress bar
+         * @returns {number} 0-100
+         */
+        get progressPercent() {
+            if (!this.job || this.job.totallines === 0) return 0;
+            return Math.round((this.job.currentline / this.job.totallines) * 100);
+        }
+    });
+
+    // 2. MOVEMENT LOGIC
+    Alpine.data("movement", () => ({
+        step: 10,
+
+        init() {
+            // @ts-ignore - Custom events sometimes confuse TS, ignore is safe here
+            this.$el.addEventListener("step-change", (e) => {
+                // @ts-ignore
+                this.step = e.detail.step;
+            });
+        },
+
+        /**
+         * Handles clicking the arrow buttons
+         * @param {Event} e 
+         */
+        async handleClick(e) {
+            // @ts-ignore - closest is valid on target
+            const button = e.target.closest("[data-vector]");
+            if (!button || button.disabled) return;
+
+            const vector = JSON.parse(button.dataset.vector);
+            
+            try {
+                await fetch("/move", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ vector: vector, steps: this.step }),
+                });
+            } catch (err) {
+                console.error("Move failed", err);
+            }
+        }
+    }));
+
+    // 3. COMMANDS LOGIC
+    Alpine.data("commands", () => ({
+        
+        /**
+         * Generic sender for commands
+         * @param {string} commandName 
+         * @param {Object} payload 
+         */
+        async send(commandName, payload = {}) {
+            try {
+                await fetch("/command", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ command: commandName, ...payload }),
+                });
+
+                // Reload on file operations to refresh the list
+                if (commandName === 'deletefile' || commandName === 'startprint') {
+                    window.location.reload();
+                }
+            } catch (err) {
+                alert("Command failed: " + err);
+            }
+        },
+
+        // Helper wrappers
+        toggleLaser() { this.send('togglelaser'); },
+        togglePrism() { this.send('toggleprism'); },
+        diodeTest() { this.send('diodetest'); },
+        stopPrint() { this.send('stopprint'); },
+        pausePrint() { this.send('pauseprint'); },
+
+        startPrint() {
+            /** @type {HTMLSelectElement} */
+            // @ts-ignore
+            const fileSelect = document.getElementById('printjobfilename');
+            /** @type {HTMLInputElement} */
+            // @ts-ignore
+            const power = document.getElementById('laserpower');
+            /** @type {HTMLInputElement} */
+            // @ts-ignore
+            const exposure = document.getElementById('exposureperline');
+            /** @type {HTMLInputElement} */
+            // @ts-ignore
+            const facet = document.getElementById('singlefacet');
+
+            if (!fileSelect || !power) return;
+
+            this.send('startprint', {
+                file: fileSelect.value,
+                laserpower: power.value,
+                exposureperline: exposure.value,
+                singlefacet: facet.checked
+            });
+        },
+
+        deleteFile() {
+             /** @type {HTMLSelectElement} */
+             // @ts-ignore
+             const select = document.getElementById('filetodelete');
+             if(!select) return;
+
+             const fname = select.options[select.selectedIndex].text;
+             this.send('deletefile', { file: fname });
+        },
+        async reboot() {
+            if(!confirm("Are you sure you want to reboot the system?")) return;
+
+            try {
+                await fetch("/reset", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" }
+                });
+                
+                alert("System is rebooting. Page will reload in 10 seconds.");
+                
+                setTimeout(() => {
+                    window.location.reload();
+                }, 10000);
+
+            } catch (err) {
+                alert("Reboot command failed: " + err);
+            }
+        },
+        startWebRepl() {
+            this.send('startwebrepl');
+            alert("Please connect to webrepl port 8266.");
+            setTimeout(() => {
+                const url = `http://${window.location.hostname}:8266`;
+                window.location.href = url;
+            }, 2000);
+        }
+    }));
 });
 
-// start print button
-startprintbutton.addEventListener("click", function (e) {
-  commandSocket.send(
-    JSON.stringify({
-      command: "startprint",
-      file: printjobfilename.value,
-      laserpower: laserpower.value,
-      exposureperline: exposureperline.value,
-      singlefacet: singlefacet.checked,
-    })
-  );
-  window.location.href = "/";
-});
 
-stopprintbutton.addEventListener("click", laserheadCLick("stopprint"));
-pauseprintbutton.addEventListener("click", laserheadCLick("pauseprint"));
 
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-startwebreplbutton.addEventListener("click", async function (e) {
-  commandSocket.send(
-    JSON.stringify({
-      command: "startwebrepl",
-    })
-  );
-  window.alert("Please connect to webrepl port 8266.");
-  await sleep(2000);
-  if (window.location.href.indexOf("http://") == 0) {
-    window.location =
-      "http://" +
-      window.location.hostname +
-      ":8266" +
-      window.location.pathname +
-      window.location.search;
-  }
-});
+// --- SERVER SENT EVENTS (SSE) ---
 
-// a state is propagated from backend to the frontend
-// on basis of the state either the printing or non printing
-// options are displayed
-// if printing, the current print state is updated
-// if not printing, the laserhead tab is updated
-
-var stateSocket;
-window.addEventListener("load", onLoad);
-
-function onLoad() {
-  console.log("fix this function");
-  // initializeSocket();
-  // initializecommandSocket();
-}
+/** @type {EventSource | null} */
+let stateSocket = null;
 
 function initializeSocket() {
-  stateSocket = new EventSource(`/state`);
-  stateSocket.onclose = onClose;
-  stateSocket.onmessage = onMessage;
+    if (stateSocket && stateSocket.readyState !== EventSource.CLOSED) return;
+
+    stateSocket = new EventSource('/state');
+    
+    stateSocket.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        // @ts-ignore - Alpine isn't globally typed in window, so we ignore
+        Alpine.store('machine').update(data);
+    };
+
+    stateSocket.onerror = (_err) => {
+        console.log("SSE connection lost, retrying in 2s...");
+        if(stateSocket) stateSocket.close();
+        setTimeout(initializeSocket, 2000);
+    };
 }
 
-function onClose(event) {
-  console.log("Closing connection to server..");
-  setTimeout(initializeSocket, 2000);
-}
-
-function updatemain(jsonData) {
-  if (jsonData["printing"]) {
-    printingstate.style.display = "";
-    controlstate.style.display = "none";
-    filename.innerHTML = "Filename is " + String(jsonData["job"]["filename"]);
-    lines.innerHTML =
-      String(jsonData["job"]["currentline"]) +
-      " of " +
-      String(jsonData["job"]["totallines"]);
-    printingtime.innerHTML =
-      String(jsonData["job"]["printingtime"]) + " seconds elapsed";
-    if (jsonData["paused"]) {
-      printingtime.innerHTML =
-        "Printing paused after; " + printingtime.innerHTML;
-    }
-    exposure.innerHTML =
-      "Line is exposed " +
-      String(jsonData["job"]["exposureperline"]) +
-      " times with a laser power of " +
-      String(jsonData["job"]["laserpower"]) +
-      " [a.u.]";
-    if (jsonData["job"]["singlefacet"]) {
-      exposure.innerHTML += " using a single facet";
-    } else {
-      exposure.innerHTML += " without using a single facet";
-    }
-    fraction = Math.round(
-      (parseInt(jsonData["job"]["currentline"]) /
-        parseInt(jsonData["job"]["totallines"])) *
-        100
-    );
-    progressbar.setAttribute("aria-valuenow", String(fraction));
-    progressbar.setAttribute("style", "width: " + String(fraction) + "%" + ";");
-    progressbar.innerHTML = String(fraction) + " %";
-  } else {
-    printingstate.style.display = "none";
-    controlstate.style.display = "";
-
-    if (jsonData["components"]["rotating"]) {
-      motor.innerHTML = "Turn motor off";
-    } else {
-      motor.innerHTML = "Turn motor on";
-    }
-    if (jsonData["components"]["laser"]) {
-      laser.innerHTML = "Turn laser off";
-    } else {
-      laser.innerHTML = "Turn laser on";
-    }
-    if (jsonData["components"]["diodetest"]) {
-      testresult.innerHTML =
-        "Diode test successfull. Laser synchronized for 15 seconds, " +
-        "verify it's stable and does not blink.";
-    } else if (jsonData["components"]["diodetest"] == false) {
-      testresult.innerHTML = "Diode test failed.";
-    } else {
-      testresult.innerHTML = "Diode test not run.";
-    }
-  }
-}
-
-function onMessage(event) {
-  let jsonData = JSON.parse(event.data);
-  updatemain(jsonData);
-}
-
-async function upload(ev) {
-  ev.preventDefault();
-  const file = uploadformFile.files[0];
-  if (!file) {
-    window.alert("No file selected");
-    return;
-  }
-
-  uploadcancel.style.display = "";
-  uploadprogressbar.style.display = "";
-  uploadbutton.style.display = "none";
-  uploadform.style.display = "none";
-
-  const req = new XMLHttpRequest();
-  req.open("POST", "/upload");
-  req.setRequestHeader(
-    "Content-Disposition",
-    `attachment; filename="${file.name}"`
-  );
-  req.upload.addEventListener("progress", function (e) {
-    const fraction = Math.round((e.loaded / e.total) * 100);
-    uploadprogressbar.setAttribute("aria-valuenow", String(fraction));
-    uploadprogressbar.style.width = fraction + "%"; // Simplified style
-    uploadprogressbar.innerHTML = fraction + " %";
-  });
-
-  req.addEventListener("load", function (e) {
-    if (req.status === 200) {
-      console.log("Upload accepted");
-      console.log("File size after upload:", file.size); // Check file size
-    } else {
-      window.alert(`Upload failed with status ${req.status}`); // More informative error
-    }
-    window.location.href = "/"; // Redirect regardless of success/failure
-  });
-
-  req.addEventListener("error", function (e) {
-    window.alert("Upload request received error");
-    window.location.href = "/";
-  });
-  // Ideally you would use FormData but this doesnt work with the backend
-  // files get corrupted
-  req.send(file);
-
-  uploadcancel.addEventListener("click", function () {
-    req.abort();
-    window.location.href = "/";
-  });
-}
-
-uploadbutton.addEventListener("click", upload);
+// Start SSE on load
+// window.addEventListener("load", initializeSocket);

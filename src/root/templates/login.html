@@ -5,17 +5,24 @@
     {% include 'base_header.html' %}
     <link href="static/sign-in.css" rel="stylesheet">
   </head>
-  <body class="d-flex align-items-center py-4 bg-body-tertiary">
-    <main class="form-signin m-auto">
+  <body class="d-flex align-items-center py-4 bg-body-tertiary min-vh-100">
+    <main class="form-signin w-100 m-auto">
       <h3 class="h3 mb-3 fw-normal">Please sign in</h3>
-      {% if login_fail %}<p>Not logged in, wrong password.</p>{% endif %}
+      {% if login_fail %}
+      <div class="alert alert-danger d-flex align-items-center" role="alert">
+           <i class="bi bi-exclamation-triangle-fill flex-shrink-0 me-2"></i>
+        <div>Incorrect password</div>
+      </div>
+      {% endif %}
       <form method="post">
         <div class="form-floating">
           <input name="password"
                  type="password"
                  class="form-control"
                  id="floatingPassword"
-                 placeholder="Password">
+                 placeholder="Password"
+                 autocomplete="current-password"
+                 required>
           <label for="floatingPassword">Password</label>
         </div>
         <button class="btn btn-success w-100 py-2" type="submit">Sign in</button>

@@ -16,6 +16,8 @@ import machine
 from . import bootlib, constants
 from .laserhead import LASERHEAD
 
+logger = logging.getLogger(__name__)
+
 # Template & static paths
 if not constants.ESP32:
     static_dir = "src/root/static"
@@ -24,30 +26,32 @@ if not constants.ESP32:
 else:
     static_dir = "static/"
 
-# App setup
-app = Microdot()
-Session(app, secret_key=constants.CONFIG["webserver"]["salt"])
-Response.default_content_type = "text/html"
-Request.max_content_length = (
-    constants.CONFIG["webserver"]["max_content_length"] * 1024 * 1024
-)
-logger = logging.getLogger(__name__)
-
 
 def is_authorized(session):
-    """Determine wether micropython session is authorized.
+    """
+    Check whether a Microdot session is authorized.
 
-    Return boolean
+    A session is considered authorized if it contains a ``"password"`` key,
+    whose value—after hashing via :func:`pass_to_sha`—matches the configured
+    password hash.
+
+    :param dict session: Microdot session object (dict-like).
+    :return bool: ``True`` if the session is authorized, otherwise ``False``.
     """
     pwd = session.get("password")
-    if pass_to_sha(pwd) == constants.CONFIG["webserver"]["password"]:
-        return True
-    else:
-        return False
+    return pass_to_sha(pwd) == constants.CONFIG["webserver"]["password"]
 
 
 def pass_to_sha(password):
-    """Hash password with salt using SHA256 (hex output)."""
+    """
+    Return the salted SHA-256 hash of a password.
+
+    The password is hashed together with the configured salt using SHA-256.
+    If ``password`` is ``None`` or an empty string, an empty string is returned.
+
+    :param str password: Plain-text password to hash.
+    :return str: Hex-encoded salted SHA-256 hash.
+    """
     if not password:
         return ""
     h = hashlib.sha256()
@@ -56,55 +60,64 @@ def pass_to_sha(password):
     return binascii.hexlify(h.digest()).decode()
 
 
-class Webstate:
-    """Web-facing application state."""
+class DeviceState:
+    """Aggregates the total state of the machine for the UI."""
 
-    def __init__(self):
-        self.state = {}
+    def __init__(self, laserhead):
+        self.laserhead = laserhead
+        self.data = {}
         self.update()
 
-    def partial_update(self):
-        self.state.update(LASERHEAD.state)
+    def laserhead_update(self):
+        self.data.update(self.laserhead.state)
 
     def update(self):
-        self.partial_update()
+        """
+        Updates wifi, file list and laserhead state information.
+        """
+        self.laserhead_update()
         try:
             files = os.listdir(constants.CONFIG["webserver"]["job_folder"])
         except OSError:
-            files = ""
+            files = []
+
         dct = {
             "files": files,
             "wifi": {
                 "connected": bootlib.is_connected(),
-                "available": bootlib.list_wlans(),
+                "available": bootlib.list_wlans(),  # <--- This is the slow part
                 "ssid": constants.CONFIG["wifi_login"]["ssid"],
                 "password": constants.CONFIG["wifi_login"]["password"],
             },
         }
-        self.state.update(dct)
+        self.data.update(dct)
 
 
-webstate = Webstate()
+# Configure Microdot
+app = Microdot()
+Session(app, secret_key=constants.CONFIG["webserver"]["salt"])
+Response.default_content_type = "text/html"
+Request.max_content_length = (
+    constants.CONFIG["webserver"]["max_content_length"] * 1024 * 1024
+)
+devicestate = DeviceState(LASERHEAD)
 
 
 @app.route("/", methods=["GET", "POST"])
 @with_session
 async def index(req, session):
-    authorized = is_authorized(session)
     if req.method == "POST":
         session["password"] = req.form.get("password")
-        session.save()
+        if is_authorized(session):
+            session.save()
         return redirect("/")
-    if authorized:
+    if is_authorized(session):
         logger.info("User logged in")
-        webstate.update()
-        return Template("home.html").generate_async(state=webstate.state)
+        devicestate.update()
+        return Template("home.html").generate_async(state=devicestate.data)
     else:
         login_fail = "password" in session
-        return (
-            Template("login.html").generate_async(login_fail=login_fail),
-            401,
-        )
+        return Template("login.html").generate_async(login_fail=login_fail)
 
 
 # @app.post("/upload")
@@ -152,31 +165,37 @@ async def logout(req, session):
     return redirect("/")
 
 
-@app.get("/reset")
+@app.post("/reset")
 @with_session
 async def reset(req, session):
     if not is_authorized(session):
         return redirect("/")
 
-    logger.info("reset machine")
-    machine.reset()
+    logger.debug("Scheduling reset...")
+
+    async def delayed_reset():
+        await asyncio.sleep(1)
+
+        logger.info("Rebooting ESP32S3")
+        machine.reset()
+
+    asyncio.create_task(delayed_reset())
+
+    return {"status": "success", "message": "Rebooting in 1s..."}
 
 
 @app.post("/move")
 @with_session
 async def move(request, session):
     if not is_authorized(session):
-        return redirect("/")
+        return {"error": "Unauthorized"}, 401
 
     data = request.json
     steps = float(data.get("steps", 1))
     vector = [int(x) * steps for x in data.get("vector", [0, 0, 0])]
     await LASERHEAD.move(vector)
 
-    # Return updated partial state to update Alpine or HTMX
-    return Response(
-        json.dumps(webstate.state), headers={"Content-Type": "application/json"}
-    )
+    return devicestate.data
 
 
 # @app.route("/command")
@@ -257,17 +276,12 @@ async def move(request, session):
 #         await sse.send({"notauthorized": 0}, event="message")
 
 
-# @app.route("/favicon.ico")
-# async def favicon(request):
-#     return send_file(f"{static_dir}/favicon.webp", max_age=86400)
-
-
 @app.route("/static/<path:path>")
 async def static(request, path):
     if ".." in path:
         # directory traversal is not allowed
         return "Not found", 404
-    return send_file(f"{static_dir}/" + path, max_age=86400)
+    return send_file(f"{static_dir}/" + path, max_age=86400)  # cache for 1 day
 
 
 if __name__ == "__main__":
