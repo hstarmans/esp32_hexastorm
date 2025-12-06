@@ -1,26 +1,141 @@
-<div class="d-grid gap-1 col-12 mx-auto">
-    <p class="text-center">Laserhead</p>
-    <hr style="margin-top:-10px"/>
-    <button id="laser" class="btn btn-success" type="button" id="laser">Turn laser on</button>
-    <button id="motor" class="btn btn-success" type="button" id="motor">Turn motor on</button>
-    <button id="diode" class="btn btn-success" type="button" data-bs-toggle="modal" data-bs-target="#diodemodal">Test diode</button>
-</div>
+<div x-data="commands">
 
+    <div id="lasercontrols" class="d-grid gap-1 col-12 mx-auto">
+        <p class="text-center mb-0">
+            Laserhead <i class="bi bi-cpu"></i>
+        </p>
+        <hr class="mt-0 mb-0" />
 
-<!-- Diode test modal -->
-<div class="modal fade" id="diodemodal" tabindex="-1" aria-labelledby="diodeModal" aria-hidden="true">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h1 class="modal-title fs-5" id="exampleModalLabel">Result diode test</h1>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-            </div>
-            <div class="modal-body">
-                <p id="testresult">Diode test not run.</p>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        <div class="btn-group gap-1 w-100" role="group">
+            
+            <button type="button" 
+                    class="btn w-50"
+                    :class="$store.machine.components.laser ? 'btn-warning' : 'btn-success'"
+                    @click="toggleLaser()">
+                <i class="bi" 
+                   :class="$store.machine.components.laser ? 'bi-brightness-high-fill' : 'bi-brightness-high'"></i>
+                <span x-text="$store.machine.components.laser ? 'Laser LIVE' : 'Laser OFF'"></span>
+            </button>
+
+            <button type="button" 
+                    class="btn w-50"
+                    :class="$store.machine.components.rotating ? 'btn-warning' : 'btn-success'"
+                    @click="togglePrism()">
+                <i class="bi" 
+                   :class="$store.machine.components.rotating ? 'bi-fan' : 'bi-circle'"></i>
+                <span x-text="$store.machine.components.rotating ? 'Motor ON' : 'Motor OFF'"></span>
+            </button>
+        </div>
+
+        <button class="btn btn-outline-light w-100" 
+                type="button" 
+                data-bs-toggle="modal" 
+                data-bs-target="#diodemodal">
+            <i class="bi bi-activity"></i> Test Diode
+        </button>
+    </div>
+
+    <div class="modal fade" 
+         id="diodemodal" 
+         tabindex="-1" 
+         aria-hidden="true"
+         x-data="{ 
+             isTesting: false,
+             
+             startDiagnostics() {
+                 this.isTesting = true;
+                 // Call the parent 'diodeTest' function from the 'commands' scope
+                 this.diodeTest(); 
+             },
+
+             init() {
+                 // Watch the global store variable for changes from the SSE
+                 this.$watch('$store.machine.components.diodetest', (value) => {
+                     // If we are in 'testing' mode, and the value changes to a generic Boolean
+                     // (meaning the 15s test has finished and backend updated the state), stop loading.
+                     if (this.isTesting && value !== null) {
+                         this.isTesting = false;
+                     }
+                 });
+             }
+         }">
+     
+        <div class="modal-dialog">
+            <div class="modal-content text-dark">
+                <div class="modal-header">
+                    <h1 class="modal-title fs-5">Diode Diagnostic</h1>
+                    <button type="button" class="btn-close" :disabled="isTesting" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                
+                <div class="modal-body text-center p-4">
+                    
+                    <div x-show="isTesting" class="py-3">
+                        <div class="spinner-border text-primary" role="status"></div>
+                        <h5 class="mt-3">Testing in progress...</h5>
+                        <p class="text-muted small">
+                            Please wait. This process takes approximately 15 seconds.<br>
+                            Do not open the laser enclosure.
+                        </p>
+                    </div>
+
+                    <div x-show="!isTesting">
+                        
+                        <template x-if="$store.machine.components.diodetest === null">
+                            <div>
+                                <i class="bi bi-question-circle display-4 text-muted"></i>
+                                <p class="mt-2">Ready to perform diagnostic.</p>
+                                <button class="btn btn-primary w-100" 
+                                        @click="startDiagnostics()">
+                                    Run Test Sequence
+                                </button>
+                            </div>
+                        </template>
+
+                        <template x-if="$store.machine.components.diodetest === true">
+                            <div>
+                                <i class="bi bi-check-circle-fill display-1 text-success"></i>
+                                <h4 class="mt-2 text-success">Passed</h4>
+                                <p class="text-muted small">Diode functionality verified.</p>
+                            </div>
+                        </template>
+
+                        <template x-if="$store.machine.components.diodetest === false">
+                            <div>
+                                <i class="bi bi-exclamation-triangle-fill display-1 text-danger"></i>
+                                <h4 class="mt-2 text-danger">Failed</h4>
+                                <p class="text-muted small">Error detected in diode circuit.</p>
+                            </div>
+                        </template>
+
+                    </div>
+                </div>
+
+                <div class="modal-footer">
+                    <button x-show="!isTesting && $store.machine.components.diodetest !== null" 
+                            type="button" 
+                            class="btn btn-link text-decoration-none"
+                            @click="startDiagnostics()">
+                        Retest
+                    </button>
+                    
+                    <button type="button" 
+                            class="btn btn-secondary" 
+                            :disabled="isTesting" 
+                            data-bs-dismiss="modal">
+                        Close
+                    </button>
+                </div>
             </div>
         </div>
+
     </div>
-</div>
+ </div>
+
+<style>
+    .bi-fan {
+        animation: spin 1s linear infinite;
+        display: inline-block;
+        transform-origin: center; 
+    }
+    @keyframes spin { 100% { transform: rotate(360deg); } }
+</style>

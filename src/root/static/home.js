@@ -119,33 +119,38 @@ document.addEventListener("alpine:init", () => {
     Alpine.data("commands", () => ({
         
         /**
-         * Generic sender for commands
-         * @param {string} commandName 
-         * @param {Object} payload 
+         * Sends a generic POST request to the backend.
+         * @param {string} url - The endpoint path (e.g., '/control/laser')
+         * @param {Object} [payload] - Optional JSON body to send
+         * @returns {Promise<void>}
          */
-        async send(commandName, payload = {}) {
-            try {
-                await fetch("/command", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ command: commandName, ...payload }),
-                });
-
-                // Reload on file operations to refresh the list
-                if (commandName === 'deletefile' || commandName === 'startprint') {
-                    window.location.reload();
-                }
-            } catch (err) {
-                alert("Command failed: " + err);
-            }
+        async post(url, payload = {}) {
+          try {
+              const res = await fetch(url, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(payload),
+              });
+              
+              if (!res.ok) throw new Error(res.statusText);
+              
+              // UI flicker is possible if the SSE event is delayed
+              const data = await res.json();
+              Alpine.store('machine').update(data);
+              
+          } catch (err) {
+              console.error(url, err);
+              alert("Command failed: " + err);
+          }
         },
 
-        // Helper wrappers
-        toggleLaser() { this.send('togglelaser'); },
-        togglePrism() { this.send('toggleprism'); },
-        diodeTest() { this.send('diodetest'); },
-        stopPrint() { this.send('stopprint'); },
-        pausePrint() { this.send('pauseprint'); },
+        // Point to the new specific URLs
+        toggleLaser() { this.post('/control/laser'); },
+        togglePrism() { this.post('/control/prism'); },
+        diodeTest()   { this.post('/control/diodetest'); },
+        
+        stopPrint()   { this.post('/print/control', { action: 'stop' }); },
+        pausePrint()  { this.post('/print/control', { action: 'pause' }); },
 
         startPrint() {
             /** @type {HTMLSelectElement} */
@@ -162,24 +167,27 @@ document.addEventListener("alpine:init", () => {
             const facet = document.getElementById('singlefacet');
 
             if (!fileSelect || !power) return;
-
-            this.send('startprint', {
+            this.post('/print/control', {
+                action: 'start',
                 file: fileSelect.value,
                 laserpower: power.value,
                 exposureperline: exposure.value,
                 singlefacet: facet.checked
             });
+            // Reload is actually not needed if you rely on SSE to switch the view!
+            // But if you want to be safe:
+            setTimeout(() => window.location.reload(), 500);
         },
 
-        deleteFile() {
-             /** @type {HTMLSelectElement} */
-             // @ts-ignore
-             const select = document.getElementById('filetodelete');
-             if(!select) return;
+        // deleteFile() {
+        //      /** @type {HTMLSelectElement} */
+        //      // @ts-ignore
+        //      const select = document.getElementById('filetodelete');
+        //      if(!select) return;
 
-             const fname = select.options[select.selectedIndex].text;
-             this.send('deletefile', { file: fname });
-        },
+        //      const fname = select.options[select.selectedIndex].text;
+        //      this.send('deletefile', { file: fname });
+        // },
         async reboot() {
             if(!confirm("Are you sure you want to reboot the system?")) return;
 
@@ -199,14 +207,6 @@ document.addEventListener("alpine:init", () => {
                 alert("Reboot command failed: " + err);
             }
         },
-        startWebRepl() {
-            this.send('startwebrepl');
-            alert("Please connect to webrepl port 8266.");
-            setTimeout(() => {
-                const url = `http://${window.location.hostname}:8266`;
-                window.location.href = url;
-            }, 2000);
-        }
     }));
 });
 
@@ -237,4 +237,4 @@ function initializeSocket() {
 }
 
 // Start SSE on load
-// window.addEventListener("load", initializeSocket);
+window.addEventListener("load", initializeSocket);

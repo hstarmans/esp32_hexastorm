@@ -70,8 +70,10 @@ class Laserhead(BaseLaserhead, ESP32Host):
     async def test_diode(self, timeout=3):
         logger.debug("Starting diode test.")
         self.state["components"]["diodetest"] = None
+        await self.notify_listeners()
         await asyncio.sleep(timeout)
         self.state["components"]["diodetest"] = True if randint(0, 10) > 5 else False
+        await self.notify_listeners()
 
     async def print_loop(self, fname):
         super().print_loop_prep(fname)

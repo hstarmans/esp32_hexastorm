@@ -198,82 +198,108 @@ async def move(request, session):
     return devicestate.data
 
 
-# @app.route("/command")
-# @with_websocket
-# @with_session
-# async def command(request, session, ws):
-#     authorized = is_authorized(session)
-#     if not authorized:
-#         return redirect("/")
-#     while authorized:
-#         data = await ws.receive()
-#         try:
-#             jsondata = json.loads(data)
-#             logger.debug(jsondata)
-#             command = jsondata["command"]
-#             if LASERHEAD.state["printing"]:
-#                 if command == "stopprint":
-#                     LASERHEAD.stop_print()
-#                 elif command == "pauseprint":
-#                     LASERHEAD.pause_print()
-#             else:
-#                 if command == "toggleprism":
-#                     await LASERHEAD.toggle_prism()
-#                 elif command == "togglelaser":
-#                     await LASERHEAD.toggle_laser()
-#                 elif command == "diodetest":
-#                     webstate.state["components"]["diodetest"] = None
-#                     await ws.send(json.dumps(webstate.state))
-#                     await LASERHEAD.test_diode()
-#                 elif command == "move":
-#                     steps = float(jsondata["steps"])
-#                     vector = [int(x) * steps for x in jsondata["vector"]]
-#                     await LASERHEAD.move(vector)
-#                 elif command == "deletefile":
-#                     filename = jsondata["file"].replace("/", "_")
-#                     logger.info(f"Deleting {filename}")
-#                     os.remove(
-#                         constants.CONFIG["webserver"]["job_folder"] + "/" + filename
-#                     )
-#                     webstate.update()
-#                 elif command == "startwebrepl":
-#                     bootlib.start_webrepl()
-#                     request.app.shutdown()
-#                 elif command == "startprint":
-#                     filename = jsondata["file"].replace("/", "_")
-#                     constants.CONFIG["defaultprint"]["laserpower"] = int(
-#                         jsondata["laserpower"]
-#                     )
-#                     constants.CONFIG["defaultprint"]["exposureperline"] = int(
-#                         jsondata["exposureperline"]
-#                     )
-#                     constants.CONFIG["defaultprint"]["singlefacet"] = bool(
-#                         jsondata["singlefacet"]
-#                     )
-#                     constants.update_config()
+@app.post("/control/laser")
+@with_session
+async def toggle_laser(request, session):
+    if not is_authorized(session):
+        return {"error": "Unauthorized"}, 401
 
-#                     # actual update is pushed via /state, i.e. SSE not websocket
-#                     async def task_wrapper():
-#                         await LASERHEAD.print_loop(filename)
-#                         webstate.partial_update()
-
-#                     # start the print loop
-#                     asyncio.create_task(task_wrapper())
-#             webstate.partial_update()
-#         except Exception as e:
-#             logger.error(f"Error in command {e}")
-#         await ws.send(json.dumps(webstate.state))
+    # Safety check: Don't toggle hardware while printing
+    if LASERHEAD.state["printing"]:
+        return {"error": "Cannot toggle laser while printing"}, 409
+    await LASERHEAD.toggle_laser()
+    # Return the new state immediately so the button updates color instantly
+    return devicestate.data
 
 
-# @app.route("/state")
-# @with_sse
-# @with_session
-# async def state(request, session, sse):
-#     authorized = is_authorized(session)
-#     if authorized:
-#         await sse.send(webstate.state, event="message")
-#     else:
-#         await sse.send({"notauthorized": 0}, event="message")
+@app.post("/control/prism")
+@with_session
+async def toggle_prism(request, session):
+    if not is_authorized(session):
+        return {"error": "Unauthorized"}, 401
+    if LASERHEAD.state["printing"]:
+        return {"error": "Cannot toggle prism while printing"}, 409
+    await LASERHEAD.toggle_prism()
+    return devicestate.data
+
+
+@app.post("/control/diodetest")
+@with_session
+async def diode_test(request, session):
+    if not is_authorized(session):
+        return {"error": "Unauthorized"}, 401
+
+    if LASERHEAD.state["printing"]:
+        return {"error": "Busy printing"}, 409
+
+    # state to "Running" (null)
+    devicestate.data["components"]["diodetest"] = None
+
+    async def run_test_background():
+        await LASERHEAD.test_diode()  # Runs for 15s
+
+    asyncio.create_task(run_test_background())
+    # Result diode test retrieved via SSE
+    return devicestate.data
+
+
+@app.post("/print/control")
+@with_session
+async def print_control(request, session):
+    if not is_authorized(session):
+        return {"error": "Unauthorized"}, 401
+
+    data = request.json
+    action = data.get("action")
+
+    if action == "start":
+        if LASERHEAD.state["printing"]:
+            return {"error": "Already printing"}, 409
+        # Parse settings
+        filename = data["file"].replace("/", "_")
+        constants.CONFIG["defaultprint"]["laserpower"] = int(data["laserpower"])
+        constants.CONFIG["defaultprint"]["exposureperline"] = int(
+            data["exposureperline"]
+        )
+        constants.CONFIG["defaultprint"]["singlefacet"] = bool(data["singlefacet"])
+        constants.update_config()
+
+        # Start background print task
+        async def print_task():
+            await LASERHEAD.print_loop(filename)
+            devicestate.partial_update()
+
+        asyncio.create_task(print_task())
+    elif action == "stop":
+        LASERHEAD.stop_print()
+    elif action == "pause":
+        LASERHEAD.pause_print()
+    return devicestate.data
+
+
+@app.route("/state")
+@with_sse
+@with_session
+async def state(request, session, sse):
+    if not is_authorized(session):
+        await sse.send({"notauthorized": 0}, event="message")
+        return
+
+    # Send initial state immediately upon connection
+    await sse.send(devicestate.data)
+
+    while True:
+        try:
+            # WAIT here forever until update_event.set() is called
+            # This uses 0 CPU.
+            await LASERHEAD.statechange.wait()
+            devicestate.laserhead_update()
+            # We woke up! Send the data.
+            await sse.send(devicestate.data, event="message")
+            # YIELD to ensure the data actually goes out before we wait again
+            await asyncio.sleep(0)
+        except Exception:
+            break
 
 
 @app.route("/static/<path:path>")

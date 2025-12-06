@@ -14,6 +14,7 @@ class BaseLaserhead:
         self._stop = asyncio.Event()
         self._pause = asyncio.Event()
         self._start = asyncio.Event()
+        self.statechange = asyncio.Event()
         self._debug = False
         self.reset_state()
 
@@ -101,11 +102,20 @@ class BaseLaserhead:
         else:
             logger.setLevel(logging.NOTSET)
 
+    async def notify_listeners(self):
+        self.statechange.set()
+        # Yield CPU for 1 cycle to let all web clients wake up and process the 'set' state
+        await asyncio.sleep(0)
+        # Now clear it so they wait for the next one
+        self.statechange.clear()
+
     async def test_diode(self, timeout=3):
         logger.debug("Starting diode test.")
         self.state["components"]["diodetest"] = None
+        await self.notify_listeners()
         await asyncio.sleep(timeout)
         self.state["components"]["diodetest"] = True if randint(0, 10) > 5 else False
+        await self.notify_listeners()
 
     async def handle_pausing_and_stopping(self):
         if self._pause.is_set():
