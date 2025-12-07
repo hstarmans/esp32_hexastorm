@@ -1,37 +1,39 @@
-<div x-data="commands">
+<div class="card h-100 bg-dark border-secondary" x-data="commands">
+    
+    <div class="card-header border-secondary">
+        <i class="bi bi-cpu"></i> Laser Head
+    </div>
 
-    <div id="lasercontrols" class="d-grid gap-1 col-12 mx-auto">
-        <p class="text-center mb-0">
-            Laserhead <i class="bi bi-cpu"></i>
-        </p>
-        <hr class="mt-0 mb-0" />
-
-        <div class="btn-group gap-1 w-100" role="group">
+    <div class="card-body d-flex flex-column gap-3 justify-content-center">
+        
+        <div class="d-grid gap-3">
             
             <button type="button" 
-                    class="btn w-50"
-                    :class="$store.machine.components.laser ? 'btn-warning' : 'btn-success'"
+                    class="btn p-3 d-flex align-items-center justify-content-center gap-2"
+                    :class="$store.machine.components.laser ? 'btn-danger' : 'btn-outline-secondary'"
                     @click="toggleLaser()">
                 <i class="bi" 
                    :class="$store.machine.components.laser ? 'bi-brightness-high-fill' : 'bi-brightness-high'"></i>
-                <span x-text="$store.machine.components.laser ? 'Laser LIVE' : 'Laser OFF'"></span>
+                <span x-text="$store.machine.components.laser ? 'Laser ARMED' : 'Laser OFF'"></span>
             </button>
 
             <button type="button" 
-                    class="btn w-50"
-                    :class="$store.machine.components.rotating ? 'btn-warning' : 'btn-success'"
+                    class="btn p-3 d-flex align-items-center justify-content-center gap-2"
+                    :class="$store.machine.components.rotating ? 'btn-success' : 'btn-outline-secondary'"
                     @click="togglePrism()">
                 <i class="bi" 
                    :class="$store.machine.components.rotating ? 'bi-fan' : 'bi-circle'"></i>
-                <span x-text="$store.machine.components.rotating ? 'Motor ON' : 'Motor OFF'"></span>
+                <span x-text="$store.machine.components.rotating ? 'Motor SPINNING' : 'Motor OFF'"></span>
             </button>
         </div>
 
-        <button class="btn btn-outline-light w-100" 
+        <hr class="border-secondary opacity-50 my-1">
+
+        <button class="btn btn-outline-warning w-100 py-2" 
                 type="button" 
                 data-bs-toggle="modal" 
                 data-bs-target="#diodemodal">
-            <i class="bi bi-activity"></i> Test Diode
+            <i class="bi bi-activity"></i> Run Diode Diagnostic
         </button>
     </div>
 
@@ -41,18 +43,9 @@
          aria-hidden="true"
          x-data="{ 
              isTesting: false,
-             
-             startDiagnostics() {
-                 this.isTesting = true;
-                 // Call the parent 'diodeTest' function from the 'commands' scope
-                 this.diodeTest(); 
-             },
-
              init() {
-                 // Watch the global store variable for changes from the SSE
+                 // Watch the global store. When the backend finishes (value becomes true/false), stop loading.
                  this.$watch('$store.machine.components.diodetest', (value) => {
-                     // If we are in 'testing' mode, and the value changes to a generic Boolean
-                     // (meaning the 15s test has finished and backend updated the state), stop loading.
                      if (this.isTesting && value !== null) {
                          this.isTesting = false;
                      }
@@ -61,10 +54,10 @@
          }">
      
         <div class="modal-dialog">
-            <div class="modal-content text-dark">
-                <div class="modal-header">
+            <div class="modal-content bg-dark border-secondary text-light">
+                <div class="modal-header border-secondary">
                     <h1 class="modal-title fs-5">Diode Diagnostic</h1>
-                    <button type="button" class="btn-close" :disabled="isTesting" data-bs-dismiss="modal" aria-label="Close"></button>
+                    <button type="button" class="btn-close btn-close-white" :disabled="isTesting" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 
                 <div class="modal-body text-center p-4">
@@ -82,10 +75,10 @@
                         
                         <template x-if="$store.machine.components.diodetest === null">
                             <div>
-                                <i class="bi bi-question-circle display-4 text-muted"></i>
+                                <i class="bi bi-question-circle display-4 text-secondary"></i>
                                 <p class="mt-2">Ready to perform diagnostic.</p>
                                 <button class="btn btn-primary w-100" 
-                                        @click="startDiagnostics()">
+                                        @click="isTesting = true; diodeTest()">
                                     Run Test Sequence
                                 </button>
                             </div>
@@ -110,11 +103,11 @@
                     </div>
                 </div>
 
-                <div class="modal-footer">
+                <div class="modal-footer border-secondary">
                     <button x-show="!isTesting && $store.machine.components.diodetest !== null" 
                             type="button" 
-                            class="btn btn-link text-decoration-none"
-                            @click="startDiagnostics()">
+                            class="btn btn-link text-light text-decoration-none"
+                            @click="isTesting = true; diodeTest()">
                         Retest
                     </button>
                     
@@ -127,9 +120,8 @@
                 </div>
             </div>
         </div>
-
     </div>
- </div>
+</div>
 
 <style>
     .bi-fan {

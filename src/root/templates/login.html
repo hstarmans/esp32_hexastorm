@@ -3,32 +3,54 @@
 <html lang="en" data-bs-theme="dark">
   <head>
     {% include 'base_header.html' %}
-    <link href="static/sign-in.css" rel="stylesheet">
+    <style>
+      html, body { height: 100%; }
+      .form-signin { max-width: 330px; padding: 1rem; }
+      .form-signin .form-floating:focus-within { z-index: 2; }
+      .form-signin input[type="password"] { margin-bottom: 10px; }
+      /* Hexagon pulse animation */
+      .logo-pulse { animation: pulse-opacity 3s infinite ease-in-out; }
+      @keyframes pulse-opacity { 0% { opacity: 0.5; } 50% { opacity: 1; } 100% { opacity: 0.5; } }
+    </style>
   </head>
-  <body class="d-flex align-items-center py-4 bg-body-tertiary min-vh-100">
+  <body class="d-flex align-items-center py-4 bg-body-tertiary">
+    
     <main class="form-signin w-100 m-auto">
-      <h3 class="h3 mb-3 fw-normal">Please sign in</h3>
+      
+      <div class="text-center mb-4">
+          <i class="bi bi-hexagon mb-2 logo-pulse" style="font-size: 3rem; color: var(--bs-body-color);"></i>
+          <h1 class="h3 fw-bold text-uppercase" style="letter-spacing: 2px;">Hexastorm</h1>
+          <p class="text-secondary small">Secure Control System</p>
+      </div>
+
       {% if login_fail %}
-      <div class="alert alert-danger d-flex align-items-center" role="alert">
+      <div class="alert alert-danger d-flex align-items-center p-2" role="alert">
            <i class="bi bi-exclamation-triangle-fill flex-shrink-0 me-2"></i>
-        <div>Incorrect password</div>
+           <div class="small">Incorrect credentials</div>
       </div>
       {% endif %}
+
       <form method="post">
-        <div class="form-floating">
+        <div class="form-floating mb-3">
           <input name="password"
                  type="password"
-                 class="form-control"
+                 class="form-control bg-dark border-secondary text-light"
                  id="floatingPassword"
                  placeholder="Password"
                  autocomplete="current-password"
-                 required>
-          <label for="floatingPassword">Password</label>
+                 required
+                 autofocus>
+          <label for="floatingPassword" class="text-muted">Password</label>
         </div>
-        <button class="btn btn-success w-100 py-2" type="submit">Sign in</button>
-        <p class="mt-5 mb-3 text-body-secondary">© Hexastorm 2025</p>
+
+        <button class="btn btn-light w-100 py-2 fw-bold" type="submit">
+            Enter System <i class="bi bi-arrow-right-short"></i>
+        </button>
+        
+        <p class="mt-5 mb-3 text-body-secondary text-center small">© Hexastorm 2025</p>
       </form>
     </main>
+
     {% include 'base_footer.html' %}
   </body>
 </html>

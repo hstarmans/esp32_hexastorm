@@ -1,105 +1,152 @@
-<div class="d-grid gap-1 col-12 mx-auto">
-    <p class="text-center">General</p>
-    <hr style="margin-top:-10px"/>
-    <button class="btn btn-success" type="button" data-bs-toggle="modal" data-bs-target="#printjobmodal">Start printjob</button>
-    <button class="btn btn-success" type="button" data-bs-toggle="modal" data-bs-target="#uploadfilemodal">Upload printjob</button>
-    <button class="btn btn-success" type="button" data-bs-toggle="modal" data-bs-target="#deletefilemodal">Delete printjob</button>
+<div class="card h-100 bg-dark border-secondary" x-data="commands">
+    <div class="card-header border-secondary">
+        <i class="bi bi-file-earmark-code"></i> Print Job
+    </div>
+    
+    <div class="card-body d-flex flex-column gap-3 justify-content-center">
+        
+        <button class="btn btn-success btn-lg w-100 py-3 shadow-sm" 
+                type="button" 
+                data-bs-toggle="modal" 
+                data-bs-target="#printjobmodal">
+            <i class="bi bi-play-circle-fill me-2"></i> Start Print Job
+        </button>
+
+        <div class="d-flex gap-2">
+            <button class="btn btn-outline-primary w-50" 
+                    type="button" 
+                    data-bs-toggle="modal" 
+                    data-bs-target="#uploadfilemodal">
+                <i class="bi bi-upload"></i> Upload
+            </button>
+            
+            <button class="btn btn-outline-danger w-50" 
+                    type="button" 
+                    data-bs-toggle="modal" 
+                    data-bs-target="#deletefilemodal">
+                <i class="bi bi-trash"></i> Delete
+            </button>
+        </div>
+    </div>
 </div>
 
-
-<!-- printjob modal -->
-<div class="modal fade" id="printjobmodal" tabindex="-1" aria-labelledby="printjobModalLabel" aria-hidden="true">
+<div class="modal fade" id="printjobmodal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h1 class="modal-title fs-5" id="exampleModalLabel">Printjob settings</h1>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        <div class="modal-content bg-dark border-secondary text-light">
+            <div class="modal-header border-secondary">
+                <h1 class="modal-title fs-5">Print Settings</h1>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
                 <form>
                     <div class="mb-3">
-                        <label for="printjobfilename" class="form-label">Filename</label>
-                        <select id="printjobfilename" class="form-select">
+                        <label for="printjobfilename" class="form-label text-muted small">Select File</label>
+                        <select id="printjobfilename" class="form-select bg-dark text-light border-secondary">
                             {% for file in state['files'] %}
                                 <option value="{{file}}">{{file}}</option>
                             {% endfor %}
                         </select>
                     </div>
-                    <div class="mb-3">
-                        <label for="laserpower" class="form-label">Laser power [a.u]</label>
-                        <input id="laserpower" class="form-control" type="number" value="{{state['job']['laserpower']}}" min="50" max="150"/>
+
+                    <div class="row">
+                        <div class="col-6 mb-3">
+                            <label for="laserpower" class="form-label text-muted small">Laser Power (a.u)</label>
+                            <input id="laserpower" class="form-control bg-dark text-light border-secondary" 
+                                   type="number" 
+                                   value="{{state['job']['laserpower']}}" 
+                                   min="50" max="150"/>
+                        </div>
+                        <div class="col-6 mb-3">
+                            <label for="exposureperline" class="form-label text-muted small">Exposure/Line</label>
+                            <input id="exposureperline" class="form-control bg-dark text-light border-secondary" 
+                                   type="number" 
+                                   value="{{state['job']['exposureperline']}}" 
+                                   min="1" max="8"/>
+                        </div>
                     </div>
-                    <div class="mb-3">
-                        <label for="exposureperline" class="form-label">Times a line is exposed</label>
-                        <input id="exposureperline" class="form-control" type="number" value="{{state['job']['exposureperline']}}" min="1" max="8"/>
-                    </div>
-                    <div class="mb-3">
-                        <label for="singlefacet" class="form-check-label">Use one facet per rotation</label>
-                        <input id="singlefacet" class="form-check-input" type="checkbox" {% if state['job']['singlefacet'] %} checked {% endif %}/>
+
+                    <div class="form-check form-switch mt-2">
+                        <input class="form-check-input" type="checkbox" role="switch" id="singlefacet" 
+                               {% if state['job']['singlefacet'] %} checked {% endif %}>
+                        <label class="form-check-label" for="singlefacet">Use single facet per rotation</label>
                     </div>
                 </form>
             </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                <button id="startprintbutton" type="button" class="btn btn-success">Start</button>
+            <div class="modal-footer border-secondary">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button id="startprintbutton" 
+                        type="button" 
+                        class="btn btn-success"
+                        @click="startPrint()"
+                        data-bs-dismiss="modal">
+                    Start Print
+                </button>
             </div>
         </div>
     </div>
 </div>
 
-
-<!-- Upload file modal -->
-<div class="modal fade" id="uploadfilemodal" tabindex="-1" aria-labelledby="uploadfileModalLabel" aria-hidden="true">
+<div class="modal fade" id="uploadfilemodal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
-        <div class="modal-content">
+        <div class="modal-content bg-dark border-secondary text-light">
             <div id="preuploadstate">
-                <div class="modal-header">
-                    <h1 class="modal-title fs-5" id="uploadfileModalLabel">Upload file</h1>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                <div class="modal-header border-secondary">
+                    <h1 class="modal-title fs-5">Upload File</h1>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
                     <form id="uploadform">
                         <div class="mb-3">
-                            <label for="formFile" class="form-label">File to upload</label>
-                            <input class="form-control" type="file" id="uploadformFile">
+                            <label for="uploadformFile" class="form-label text-muted small">Select G-Code File</label>
+                            <input class="form-control bg-dark text-light border-secondary" type="file" id="uploadformFile">
                         </div>
                     </form>
-                    <div id="uploadprogressbar" class="progress-bar progress-bar-striped progress-bar-animated bg-success" role="progressbar" style="width: 25%;display: none" aria-valuenow="25" aria-valuemin="0" aria-valuemax="100">25%</div>
+                    
+                    <div class="progress bg-secondary" style="height: 20px;">
+                        <div id="uploadprogressbar" 
+                             class="progress-bar progress-bar-striped progress-bar-animated bg-success" 
+                             role="progressbar" 
+                             style="width: 0%; display: none" 
+                             aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+                    </div>
                 </div>
-                <div class="modal-footer">
-                    <button id="uploadbutton" type="button"  class="btn btn-success">Upload file</button>
+                <div class="modal-footer border-secondary">
                     <button id="uploadcancel" type="button" class="btn btn-secondary" style="display: none">Cancel</button>
+                    <button id="uploadbutton" type="button" class="btn btn-primary">Upload File</button>
                 </div>
             </div>
         </div>
     </div>
 </div>
 
-
-
-<!-- Delete file modal -->
-<div class="modal fade" id="deletefilemodal" tabindex="-1" aria-labelledby="deletefileModalLabel" aria-hidden="true">
+<div class="modal fade" id="deletefilemodal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h1 class="modal-title fs-5" id="exampleModalLabel">Delete file</h1>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        <div class="modal-content bg-dark border-secondary text-light">
+            <div class="modal-header border-secondary">
+                <h1 class="modal-title fs-5">Delete File</h1>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
                 <form>
                     <div class="mb-3">
-                        <label for="filetodelete" class="form-label">File to delete</label>
-                        <select id="filetodelete" class="form-select">
+                        <label for="filetodelete" class="form-label text-muted small">Select File to Delete</label>
+                        <select id="filetodelete" class="form-select bg-dark text-light border-secondary">
                             {% for file in state['files'] %}
                             <option value="{{file}}">{{file}}</option>
                             {% endfor %}
                         </select>
                     </div>
+                    <div class="alert alert-warning d-flex align-items-center" role="alert">
+                        <i class="bi bi-exclamation-triangle-fill flex-shrink-0 me-2"></i>
+                        <div class="small">
+                            This action cannot be undone.
+                        </div>
+                    </div>
                 </form>
             </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                <button id="deletebutton" type="button" class="btn btn-success">Delete file</button>
+            <div class="modal-footer border-secondary">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button id="deletebutton" type="button" class="btn btn-danger" data-bs-dismiss="modal">Delete File</button>
             </div>
         </div>
     </div>

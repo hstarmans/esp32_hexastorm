@@ -1,24 +1,41 @@
-<!-- Navbar -->
-<nav class="navbar bg-dark" data-bs-theme="dark" x-data="commands">
-    <!-- Container wrapper -->
-    <div class="container-fluid">
-        <a href="/" class="navbar-brand">
-            <img src="static/hexastormlogo.webp"
-                 alt="hexastorm"
-                 style="height: 30px; width: auto;">
+<nav class="navbar navbar-dark bg-dark border-bottom border-secondary mb-4 p-3" 
+     x-data="commands">
+    
+    <div class="container-fluid" style="max-width: 1200px;">
+        
+        <a href="/" class="navbar-brand d-flex align-items-center gap-2">
+            <i class="bi bi-hexagon logo-spin" style="font-size: 1.2rem;"></i>
+            
+            <span class="fw-bold text-uppercase" 
+                  style="letter-spacing: 1.5px; font-family: system-ui, -apple-system, sans-serif;">
+                Hexastorm
+            </span>
         </a>
-        <!-- Icons -->
-        <ul class="nav justify-content-end">
-            <li class="nav-item me-3 me-lg-0">
-                <a class="btn btn-dark" href="/logout"><i class="bi bi-box-arrow-right"></i> Logout</a>
-            </li>
-            <li class="nav-item me-3">
-                <button class="btn btn-dark" @click="reboot()">
-                    <i class="bi bi-bootstrap-reboot"></i> Reboot
-                </button>
-            </li>
-        </ul>
+
+        <div class="d-flex align-items-center gap-2">
+            <span class="navbar-text me-3 d-none d-sm-inline small">
+                <i class="bi bi-circle-fill text-success" style="font-size: 0.6em; vertical-align: middle;"></i> 
+                System Online
+            </span>
+            <button type="button" class="btn btn-sm btn-outline-light" @click="reboot()">
+                <i class="bi bi-arrow-counterclockwise"></i> Reboot
+            </button>
+            <a href="/logout" class="btn btn-sm btn-outline-danger">
+                <i class="bi bi-box-arrow-right"></i> Logout
+            </a>
+        </div>
     </div>
-    <!-- Container wrapper -->
 </nav>
-<!-- Navbar end -->
+
+<style>
+    /* 20 seconds for a full rotation = very subtle */
+    .logo-spin {
+        animation: rotate-center 20s linear infinite;
+        transform-origin: center;
+    }
+
+    @keyframes rotate-center {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+    }
+</style>

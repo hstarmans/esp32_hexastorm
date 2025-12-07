@@ -5,22 +5,46 @@
     <body>
         {% include 'nav_bar.html' %}
         {% include 'printingstate.html' %}
+        
         <div id="controlstate"
-             class="container justify-content-center"
+             class="container-fluid" style="max-width: 1200px;"
              x-data="movement"
              {% if state['printing'] %}style="display: none"{% endif %}>
-            <div class="row justify-content-center">
-                <div class="col-3">{% include 'XYmovement.html' %}</div>
-                <div class="col-1">{% include 'Zmovement.html' %}</div>
-                <div class="col-2">{% include 'laserhead.html' %}</div>
-                <div class="col-2">{% include 'general.html' %}</div>
-            </div>
-            <div class="row align-items-start">
-                <div class="col-2"></div>
-                <div class="col-4">{% include 'steps.html' %}</div>
+             
+            <div class="row g-4 justify-content-center">
+                
+                <div class="col-12 col-lg-5">
+                    <div class="card h-100 bg-dark border-secondary">
+                        <div class="card-header border-secondary">
+                            <i class="bi bi-arrows-move"></i> Motion Control
+                        </div>
+                        <div class="card-body">
+                            <div class="d-flex justify-content-center gap-3 mb-4">
+                                <div style="width: 180px;">
+                                    {% include 'XYmovement.html' %}
+                                </div>
+                                <div style="width: 60px;">
+                                    {% include 'Zmovement.html' %}
+                                </div>
+                            </div>
+                            
+                            <hr class="border-secondary opacity-50">
+                            {% include 'steps.html' %}
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-12 col-lg-4">
+                    {% include 'laserhead.html' %}
+                </div>
+
+                <div class="col-12 col-lg-3">
+                    {% include 'general.html' %}
+                </div>
+                
             </div>
         </div>
-        <!-- Script for interactivity -->
+
         <script src="static/home.js"></script>
         {% include 'base_footer.html' %}
     </body>
