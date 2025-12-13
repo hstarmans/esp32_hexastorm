@@ -101,8 +101,7 @@ class Laserhead(BaseLaserhead, ESP32Host):
                 lanes = struct.unpack("<I", d.read(4))[0]
                 self.state["job"]["totallines"] = int(facets_lane * lanes)
                 start_time = time()
-                await asyncio.sleep(2)
-                # time for propagation, update is pushed via SSE
+                await self.notify_listeners()
                 # z is not homed as it should be already in
                 # position so laser is in focus
                 self.enable_steppers = True
@@ -124,9 +123,7 @@ class Laserhead(BaseLaserhead, ESP32Host):
                         break
                     self.state["job"]["currentline"] = int(lane * facets_lane)
                     self.state["job"]["printingtime"] = round(time() - start_time)
-                    await asyncio.sleep(1)
-                    # time for propagation, update pushed via SSE
-                    # end checks communication front-end
+                    await self.notify_listeners()
                     logger.info(f"Exposing lane {lane + 1} from {lanes}.")
                     if lane > 0:
                         logger.info("Moving in x-direction for next lane.")
@@ -171,7 +168,7 @@ class Laserhead(BaseLaserhead, ESP32Host):
                                 self.state["job"]["printingtime"] = round(
                                     time() - start_time
                                 )
-                                await asyncio.sleep(1)
+                                await self.notify_listeners()
                                 if await self.handle_pausing_and_stopping():
                                     break
                             # Read the entire line's data into a buffer
@@ -190,7 +187,7 @@ class Laserhead(BaseLaserhead, ESP32Host):
                     # send stopline
                     await self.write_line([])
         # disable scanhead
-        await asyncio.sleep(1)  # time for propagation
+        await self.notify_listeners()
         logger.info("Waiting for stopline to execute.")
         await self.enable_comp(synchronize=False)
         self.enable_steppers = False
@@ -200,3 +197,4 @@ class Laserhead(BaseLaserhead, ESP32Host):
             f"Finished exposure. Total printing time {self.state['job']['printingtime']}"
         )
         self.state["printing"] = False
+        await self.notify_listeners()

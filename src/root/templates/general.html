@@ -31,17 +31,29 @@
 </div>
 
 <div class="modal fade" id="printjobmodal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog">
+    
+    <div class="modal-dialog" 
+         x-data="printLauncher"
+         x-init="
+            laserPower = {{ state['job']['laserpower'] }};
+            exposure = {{ state['job']['exposureperline'] }};
+            singleFacet = {{ 'true' if state['job']['singlefacet'] else 'false' }};
+         ">
+         
         <div class="modal-content bg-dark border-secondary text-light">
             <div class="modal-header border-secondary">
                 <h1 class="modal-title fs-5">Print Settings</h1>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
+            
             <div class="modal-body">
                 <form>
                     <div class="mb-3">
                         <label for="printjobfilename" class="form-label text-muted small">Select File</label>
-                        <select id="printjobfilename" class="form-select bg-dark text-light border-secondary">
+                        <select id="printjobfilename" 
+                                class="form-select bg-dark text-light border-secondary"
+                                x-model="selectedFile"
+                                x-ref="fileSelect">
                             {% for file in state['files'] %}
                                 <option value="{{file}}">{{file}}</option>
                             {% endfor %}
@@ -51,35 +63,44 @@
                     <div class="row">
                         <div class="col-6 mb-3">
                             <label for="laserpower" class="form-label text-muted small">Laser Power (a.u)</label>
-                            <input id="laserpower" class="form-control bg-dark text-light border-secondary" 
+                            <input id="laserpower" 
+                                   class="form-control bg-dark text-light border-secondary" 
                                    type="number" 
-                                   value="{{state['job']['laserpower']}}" 
+                                   x-model="laserPower"
                                    min="50" max="150"/>
                         </div>
                         <div class="col-6 mb-3">
                             <label for="exposureperline" class="form-label text-muted small">Exposure/Line</label>
-                            <input id="exposureperline" class="form-control bg-dark text-light border-secondary" 
+                            <input id="exposureperline" 
+                                   class="form-control bg-dark text-light border-secondary" 
                                    type="number" 
-                                   value="{{state['job']['exposureperline']}}" 
+                                   x-model="exposure"
                                    min="1" max="8"/>
                         </div>
                     </div>
 
                     <div class="form-check form-switch mt-2">
-                        <input class="form-check-input" type="checkbox" role="switch" id="singlefacet" 
-                               {% if state['job']['singlefacet'] %} checked {% endif %}>
+                        <input class="form-check-input" 
+                               type="checkbox" 
+                               role="switch" 
+                               id="singlefacet" 
+                               x-model="singleFacet">
                         <label class="form-check-label" for="singlefacet">Use single facet per rotation</label>
                     </div>
                 </form>
             </div>
+            
             <div class="modal-footer border-secondary">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                
                 <button id="startprintbutton" 
                         type="button" 
                         class="btn btn-success"
                         @click="startPrint()"
+                        :disabled="isStarting"
                         data-bs-dismiss="modal">
-                    Start Print
+                    <span x-show="!isStarting">Start Print</span>
+                    <span x-show="isStarting">Starting...</span>
                 </button>
             </div>
         </div>
@@ -87,55 +108,93 @@
 </div>
 
 <div class="modal fade" id="uploadfilemodal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog">
+    <div class="modal-dialog" x-data="fileUploader">
         <div class="modal-content bg-dark border-secondary text-light">
-            <div id="preuploadstate">
-                <div class="modal-header border-secondary">
-                    <h1 class="modal-title fs-5">Upload File</h1>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <form id="uploadform">
-                        <div class="mb-3">
-                            <label for="uploadformFile" class="form-label text-muted small">Select G-Code File</label>
-                            <input class="form-control bg-dark text-light border-secondary" type="file" id="uploadformFile">
-                        </div>
-                    </form>
-                    
-                    <div class="progress bg-secondary" style="height: 20px;">
-                        <div id="uploadprogressbar" 
-                             class="progress-bar progress-bar-striped progress-bar-animated bg-success" 
+            
+            <div class="modal-header border-secondary">
+                <h1 class="modal-title fs-5">Upload File</h1>
+                <button type="button" 
+                        class="btn-close btn-close-white" 
+                        data-bs-dismiss="modal" 
+                        aria-label="Close"
+                        :disabled="isUploading"></button>
+            </div>
+
+            <div class="modal-body">
+                
+                <div x-show="errorMessage" class="alert alert-danger p-2 mb-3" x-text="errorMessage"></div>
+
+                <form x-show="!isUploading">
+                    <div class="mb-3">
+                        <label for="uploadformFile" class="form-label text-muted small">Select Pattern File</label>
+                        <input class="form-control bg-dark text-light border-secondary" 
+                               type="file" 
+                               id="uploadformFile"
+                               @change="handleFileSelect">
+                    </div>
+                </form>
+                
+                <div x-show="isUploading" class="text-center">
+                    <p class="mb-2">Uploading <span x-text="file ? file.name : ''"></span>...</p>
+                    <div class="progress bg-secondary" style="height: 25px;">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated bg-success" 
                              role="progressbar" 
-                             style="width: 0%; display: none" 
-                             aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+                             :style="`width: ${progress}%`" 
+                             :aria-valuenow="progress" 
+                             aria-valuemin="0" 
+                             aria-valuemax="100"
+                             x-text="progress + '%'">
+                        </div>
                     </div>
                 </div>
-                <div class="modal-footer border-secondary">
-                    <button id="uploadcancel" type="button" class="btn btn-secondary" style="display: none">Cancel</button>
-                    <button id="uploadbutton" type="button" class="btn btn-primary">Upload File</button>
-                </div>
+
+            </div>
+
+            <div class="modal-footer border-secondary">
+                
+                <button type="button" 
+                        class="btn btn-secondary" 
+                        @click="isUploading ? cancel() : null" 
+                        :data-bs-dismiss="!isUploading ? 'modal' : ''">
+                    <span x-text="isUploading ? 'Abort Upload' : 'Cancel'"></span>
+                </button>
+                
+                <button type="button" 
+                        class="btn btn-primary"
+                        x-show="!isUploading"
+                        :disabled="!file"
+                        @click="upload()">
+                    <i class="bi bi-cloud-upload"></i> Upload File
+                </button>
+
             </div>
         </div>
     </div>
 </div>
 
 <div class="modal fade" id="deletefilemodal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog">
+    <div class="modal-dialog" x-data="fileDeleter">
         <div class="modal-content bg-dark border-secondary text-light">
+            
             <div class="modal-header border-secondary">
                 <h1 class="modal-title fs-5">Delete File</h1>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
+            
             <div class="modal-body">
                 <form>
                     <div class="mb-3">
                         <label for="filetodelete" class="form-label text-muted small">Select File to Delete</label>
-                        <select id="filetodelete" class="form-select bg-dark text-light border-secondary">
+                        
+                        <select id="filetodelete" 
+                                class="form-select bg-dark text-light border-secondary"
+                                x-ref="fileSelector">
                             {% for file in state['files'] %}
                             <option value="{{file}}">{{file}}</option>
                             {% endfor %}
                         </select>
                     </div>
+                    
                     <div class="alert alert-warning d-flex align-items-center" role="alert">
                         <i class="bi bi-exclamation-triangle-fill flex-shrink-0 me-2"></i>
                         <div class="small">
@@ -144,10 +203,19 @@
                     </div>
                 </form>
             </div>
+            
             <div class="modal-footer border-secondary">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button id="deletebutton" type="button" class="btn btn-danger" data-bs-dismiss="modal">Delete File</button>
+                
+                <button type="button" 
+                        class="btn btn-danger" 
+                        @click="deleteFile"
+                        :disabled="isDeleting">
+                    <span x-show="!isDeleting">Delete File</span>
+                    <span x-show="isDeleting" class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                </button>
             </div>
+            
         </div>
     </div>
 </div>

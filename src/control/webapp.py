@@ -1,15 +1,14 @@
 import asyncio
 import binascii
 import hashlib
-import json
 import logging
 import os
+import re
 
 from microdot import Microdot, Request, Response, redirect, send_file
 from microdot.session import Session, with_session
 from microdot.sse import with_sse
 from microdot.utemplate import Template
-from microdot.websocket import with_websocket
 
 import machine
 
@@ -120,42 +119,128 @@ async def index(req, session):
         return Template("login.html").generate_async(login_fail=login_fail)
 
 
-# @app.post("/upload")
-# @with_session
-# async def upload(request, session):
-#     authorized = is_authorized(session)
-#     folder = constants.CONFIG["webserver"]["job_folder"]
-#     if authorized:
-#         files = os.listdir(folder)
-#         if (len(files) > 0) & (
-#             sum(os.stat(folder + "/" + f)[6] for f in files) / (1024 * 1024)
-#             > constants.CONFIG["webserver"]["max_content_length"]
-#         ):
-#             return {"error": "resource not found"}, 413
+SAFE_FILENAME_PATTERN = re.compile(r"[^a-zA-Z0-9_.-]")
 
-#         # obtain the filename and size from request headers
-#         filename = (
-#             request.headers["Content-Disposition"]
-#             .split("filename=")[1]
-#             .strip('"')
-#         )
-#         size = int(request.headers["Content-Length"])
 
-#         # sanitize the filename
-#         filename = filename.replace("/", "_")
+@app.post("/upload")
+@with_session
+async def upload(request, session):
+    if not is_authorized(session):
+        # Fail fast: Return 401 immediately
+        return {"unauthorized": "please login"}, 401
 
-#         # write the file to the files directory in 1K chunks
-#         with open(folder + "/" + filename, "wb") as f:
-#             while size > 0:
-#                 chunk = await request.stream.read(min(size, 1024))
-#                 f.write(chunk)
-#                 size -= len(chunk)
-#                 logger.info(f"processed {size}")
-#         res = {"success": "upload succeeded"}, 200
-#     else:
-#         res = {"unauthorized": "please login"}, 401
-#     webstate.update()
-#     return res
+    folder = constants.CONFIG["webserver"]["job_folder"]
+
+    # Header Parsing: Safely get Content-Length
+    try:
+        content_len = int(request.headers.get("Content-Length", 0))
+    except ValueError:
+        return {"error": "Invalid Content-Length"}, 400
+
+    if content_len == 0:
+        return {"error": "Empty file"}, 400
+
+    # Note: iterating os.stat is still slow, but unavoidable without a cached counter.
+    try:
+        files = os.listdir(folder)
+        current_usage_mb = sum(os.stat(f"{folder}/{f}")[6] for f in files) / (
+            1024 * 1024
+        )
+
+        # Check if adding this file exceeds the limit
+        if (current_usage_mb + (content_len / 1024 / 1024)) > constants.CONFIG[
+            "webserver"
+        ]["max_content_length"]:
+            return {"error": "Storage quota exceeded"}, 413
+    except OSError:
+        # Handle case where folder doesn't exist
+        return {"error": "Upload folder missing"}, 500
+
+    # Try to extract filename, fallback to a default if parsing fails
+    disposition = request.headers.get("Content-Disposition", "")
+    match = re.search(r'filename="?([^";]+)"?', disposition)
+    if match:
+        filename = match.group(1)
+        # Strip any path info (keep only basename)
+        filename = filename.split("/")[-1].split("\\")[-1]
+        # Remove unsafe characters
+        filename = SAFE_FILENAME_PATTERN.sub("_", filename)
+    else:
+        return {"error": "Missing filename in Content-Disposition"}, 400
+
+    filepath = f"{folder}/{filename}"
+
+    try:
+        with open(filepath, "wb") as f:
+            bytes_remaining = content_len
+            chunk_size = 4096
+
+            while bytes_remaining > 0:
+                chunk = await request.stream.read(min(bytes_remaining, chunk_size))
+
+                if not chunk:
+                    raise OSError("Incomplete upload / Connection closed")
+
+                f.write(chunk)
+                bytes_remaining -= len(chunk)
+
+        logger.info(f"Upload complete: {filename} ({content_len} bytes)")
+
+    except Exception as e:
+        logger.error(f"Upload failed: {e}")
+        # Clean up: delete the partial file so it doesn't waste space
+        try:
+            os.remove(filepath)
+        except:
+            pass
+        return {"error": "Upload failed", "details": str(e)}, 500
+
+    devicestate.update()
+    return {"success": "upload succeeded"}, 200
+
+
+@app.post("/deletefile")
+@with_session
+async def delete_file(request, session):
+    if not is_authorized(session):
+        return {"unauthorized": "please login"}, 401
+
+    try:
+        jsondata = request.json
+        if not jsondata or "file" not in jsondata:
+            return {"error": "Missing 'file' parameter"}, 400
+
+        raw_filename = jsondata["file"]
+
+        # This turns "bad/path/../file.gcode" into "bad_path_.._file.gcode"
+        # forcing it to stay in the job folder.
+        filename = SAFE_FILENAME_PATTERN.sub("_", raw_filename)
+
+        # Extra safety: ensure we strip any remaining path separators just in case
+        filename = filename.split("/")[-1].split("\\")[-1]
+
+        if not filename:
+            return {"error": "Invalid filename"}, 400
+
+        folder = constants.CONFIG["webserver"]["job_folder"]
+        filepath = f"{folder}/{filename}"
+
+        # We use os.stat to check existence first, or just try remove
+        try:
+            os.remove(filepath)
+            logger.info(f"Deleted file: {filename}")
+        except OSError:
+            # Error 2 usually means No Such File
+            return {"error": "File not found"}, 404
+
+        # Updates the file list for other connected clients)
+        devicestate.update()
+
+        return {"success": "File deleted"}, 200
+
+    except Exception as e:
+        logger.error(f"Delete failed: {e}")
+        return {"error": "Server error processing delete"}, 500
 
 
 @app.get("/logout")
@@ -267,7 +352,7 @@ async def print_control(request, session):
         # Start background print task
         async def print_task():
             await LASERHEAD.print_loop(filename)
-            devicestate.partial_update()
+            devicestate.laserhead_update()
 
         asyncio.create_task(print_task())
     elif action == "stop":

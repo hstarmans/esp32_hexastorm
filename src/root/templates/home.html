@@ -7,9 +7,9 @@
         {% include 'printingstate.html' %}
         
         <div id="controlstate"
-             class="container-fluid" style="max-width: 1200px;"
-             x-data="movement"
-             {% if state['printing'] %}style="display: none"{% endif %}>
+            class="container-fluid" style="max-width: 1200px;"
+            x-data="movement"
+            x-show="!$store.machine.printing">
              
             <div class="row g-4 justify-content-center">
                 

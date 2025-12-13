@@ -161,5 +161,7 @@ class BaseLaserhead:
                 break
             self.state["job"]["currentline"] = line + 1
             self.state["job"]["printingtime"] = round(time() - start_time)
+            await self.notify_listeners()
             await asyncio.sleep(5)
         self.state["printing"] = False
+        await self.notify_listeners()

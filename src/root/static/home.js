@@ -151,43 +151,6 @@ document.addEventListener("alpine:init", () => {
         
         stopPrint()   { this.post('/print/control', { action: 'stop' }); },
         pausePrint()  { this.post('/print/control', { action: 'pause' }); },
-
-        startPrint() {
-            /** @type {HTMLSelectElement} */
-            // @ts-ignore
-            const fileSelect = document.getElementById('printjobfilename');
-            /** @type {HTMLInputElement} */
-            // @ts-ignore
-            const power = document.getElementById('laserpower');
-            /** @type {HTMLInputElement} */
-            // @ts-ignore
-            const exposure = document.getElementById('exposureperline');
-            /** @type {HTMLInputElement} */
-            // @ts-ignore
-            const facet = document.getElementById('singlefacet');
-
-            if (!fileSelect || !power) return;
-            this.post('/print/control', {
-                action: 'start',
-                file: fileSelect.value,
-                laserpower: power.value,
-                exposureperline: exposure.value,
-                singlefacet: facet.checked
-            });
-            // Reload is actually not needed if you rely on SSE to switch the view!
-            // But if you want to be safe:
-            setTimeout(() => window.location.reload(), 500);
-        },
-
-        // deleteFile() {
-        //      /** @type {HTMLSelectElement} */
-        //      // @ts-ignore
-        //      const select = document.getElementById('filetodelete');
-        //      if(!select) return;
-
-        //      const fname = select.options[select.selectedIndex].text;
-        //      this.send('deletefile', { file: fname });
-        // },
         async reboot() {
             if(!confirm("Are you sure you want to reboot the system?")) return;
 
@@ -207,6 +170,237 @@ document.addEventListener("alpine:init", () => {
                 alert("Reboot command failed: " + err);
             }
         },
+    }));
+    // 4. UPLOAD LOGIC
+    /**
+     * @typedef {Object} FileUploader
+     * @property {File | null} file - The file object selected by the user
+     * @property {boolean} isUploading - UI state for showing progress bar vs input
+     * @property {number} progress - Upload percentage (0-100)
+     * @property {string} errorMessage - Error text to display
+     * @property {XMLHttpRequest | null} xhr - The active XHR request object
+     * @property {(e: Event) => void} handleFileSelect - Input change handler
+     * @property {() => void} upload - Starts the binary upload
+     * @property {() => void} cancel - Aborts the active upload
+     * @property {(msg: string) => void} handleError - Helper to set error state
+     */
+
+    Alpine.data("fileUploader", () => ({
+        /** @type {File | null} */
+        file: null,
+        isUploading: false,
+        progress: 0,
+        errorMessage: '',
+        /** @type {XMLHttpRequest | null} */
+        xhr: null,
+
+        /**
+         * Triggered when file input changes
+         * @param {Event} e 
+         */
+        handleFileSelect(e) {
+            const target = /** @type {HTMLInputElement} */ (e.target);
+            if (target.files && target.files.length > 0) {
+                this.file = target.files[0];
+            } else {
+                this.file = null;
+            }
+            this.errorMessage = '';
+            this.progress = 0;
+        },
+
+        /**
+         * Performs the raw binary upload
+         */
+        upload() {
+            if (!this.file) return;
+
+            this.isUploading = true;
+            this.progress = 0;
+            this.errorMessage = '';
+
+            // We use XHR because fetch() doesn't support upload progress streams easily
+            this.xhr = new XMLHttpRequest();
+            
+            // Setup listeners
+            if (this.xhr.upload) {
+                this.xhr.upload.addEventListener("progress", (e) => {
+                    if (e.lengthComputable) {
+                        this.progress = Math.round((e.loaded / e.total) * 100);
+                    }
+                });
+            }
+
+            this.xhr.addEventListener("load", () => {
+                // We check for 'this.xhr' existence to satisfy strict null checks, 
+                // though logically it exists here.
+                if (!this.xhr) return;
+
+                if (this.xhr.status === 200) {
+                    alert("Upload successful!");
+                    window.location.reload(); 
+                } else {
+                    this.handleError(`Server Error: ${this.xhr.status} - ${this.xhr.statusText}`);
+                }
+                this.isUploading = false;
+            });
+
+            this.xhr.addEventListener("error", () => {
+                this.handleError("Network Error during upload");
+            });
+
+            this.xhr.addEventListener("abort", () => {
+                this.isUploading = false;
+                this.progress = 0;
+                this.errorMessage = "Upload cancelled";
+            });
+
+            // Open Connection
+            this.xhr.open("POST", "/upload");
+
+            // CRITICAL: Matches your Python backend expectation
+            this.xhr.setRequestHeader("Content-Disposition", `attachment; filename="${this.file.name}"`);
+            this.xhr.setRequestHeader("Content-Type", "application/octet-stream");
+
+            // Send raw file bytes
+            this.xhr.send(this.file);
+        },
+
+        cancel() {
+            if (this.xhr) {
+                this.xhr.abort();
+            }
+            this.isUploading = false;
+        },
+
+        /**
+         * @param {string} msg 
+         */
+        handleError(msg) {
+            this.errorMessage = msg;
+            this.isUploading = false;
+            this.progress = 0;
+        }
+    }));
+    // 5. DELETE FILE LOGIC
+    Alpine.data("fileDeleter", () => ({
+        isDeleting: false,
+
+        async deleteFile() {
+            /** @type {HTMLSelectElement} */
+            // @ts-ignore
+            const select = this.$refs.fileSelector;
+            
+            if (!select || !select.value) {
+                alert("Please select a file first.");
+                return;
+            }
+
+            const filename = select.value;
+
+            // Double confirmation usually good for deletions
+            if (!confirm(`Are you sure you want to permanently delete "${filename}"?`)) {
+                return;
+            }
+
+            this.isDeleting = true;
+
+            try {
+                const res = await fetch('/deletefile', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ file: filename })
+                });
+
+                if (res.ok) {
+                    // Success: Reload page to update the Jinja file list
+                    window.location.reload();
+                } else {
+                    const err = await res.json();
+                    alert("Error: " + (err.error || res.statusText));
+                }
+            } catch (e) {
+                alert("Network error: " + e);
+            } finally {
+                this.isDeleting = false;
+            }
+        }
+    }));
+    // 6. PRINT LAUNCHER LOGIC
+    /**
+     * @typedef {Object} PrintLauncher
+     * @property {string} selectedFile
+     * @property {number|string} laserPower
+     * @property {number|string} exposure
+     * @property {boolean} singleFacet
+     * @property {boolean} isStarting
+     * @property {() => void} init
+     * @property {() => Promise<void>} startPrint
+     * * // Add Alpine Magic Properties here so TS knows they exist:
+     * @property {(callback: Function) => void} $nextTick
+     * @property {Object.<string, HTMLElement>} $refs
+     */
+
+    Alpine.data("printLauncher", () => ({
+        /** @type {string} */
+        selectedFile: '',
+        /** @type {number|string} */
+        laserPower: 100,
+        /** @type {number|string} */
+        exposure: 1,
+        singleFacet: false,
+        isStarting: false,
+
+        /**
+         * Initialize default values
+         */
+        init() {
+            // We cast 'this' to the Type defined above so VS Code sees $nextTick
+            const self = /** @type {PrintLauncher} */ (/** @type {unknown} */ (this));
+
+            self.$nextTick(() => {
+                const select = /** @type {HTMLSelectElement} */ (self.$refs.fileSelect);
+                
+                if (select && select.options.length > 0) {
+                    self.selectedFile = select.options[0].value;
+                }
+            });
+        },
+
+        async startPrint() {
+            if (!this.selectedFile) {
+                alert("Please select a file.");
+                return;
+            }
+
+            this.isStarting = true;
+
+            try {
+                const payload = {
+                    action: 'start',
+                    file: this.selectedFile,
+                    laserpower: Number(this.laserPower),
+                    exposureperline: Number(this.exposure),
+                    singlefacet: this.singleFacet
+                };
+
+                const res = await fetch('/print/control', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!res.ok) throw new Error(res.statusText);
+
+                setTimeout(() => window.location.reload(), 500);
+
+            } catch (err) {
+                const message = err instanceof Error ? err.message : String(err);
+                alert("Failed to start print: " + message);
+            } finally {
+                this.isStarting = false;
+            }
+        }
     }));
 });
 

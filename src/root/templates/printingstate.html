@@ -1,30 +1,87 @@
+<div id="printingstate" 
+     class="container-fluid mb-4" 
+     style="max-width: 800px;"
+     x-data="commands"
+     x-show="$store.machine.printing"
+     x-transition.opacity.duration.500ms
+     style="display: none;"> <div class="card bg-dark border-secondary shadow-lg">
+        <div class="card-header border-secondary d-flex justify-content-between align-items-center">
+            <span>
+                <i class="bi bi-printer-fill me-2"></i> 
+                <span x-text="$store.machine.paused ? 'Printing Paused' : 'Printing in Progress'"></span>
+            </span>
+            <i class="bi bi-gear-wide-connected" 
+               :class="$store.machine.paused ? '' : 'fa-spin'" 
+               style="font-size: 1.2rem;"></i>
+        </div>
 
-{% if state['printing'] %}
-<div id="printingstate" class="container justify-content-center">
-{% else %}
-<div id="printingstate" style="display: none" class="container justify-content-center">
-{% endif %}
-  <div class="row justify-content-center">
-    <div class="col-8">
-      <p class="text-center">Printing progress</p>
-        <hr />
-        <ul class="list-unstyled">
-          <li id="filename">Filename is filename</li>
-          <li id="lines">Line of lines</li>
-          <li id="printingtime">Time elapsed</li>
-          <li id="exposure">Exposures per line at laser power in [a.u]</li>
-        </ul>
-      <div class="progress">
-          <div id="progressbar" class="progress-bar progress-bar-striped progress-bar-animated bg-success" role="progressbar" style="width: 25%;" aria-valuenow="25" aria-valuemin="0" aria-valuemax="100">25%</div>
-      </div>
-      <br>
-      <button id="pauseprintbutton" type="button" class="btn btn-success">
-          <i class="bi bi-pause"></i>
-      </button>
-      <button id="stopprintbutton" type="button" class="btn btn-success">
-          <i class="bi bi-stop"></i>
-      </button>
+        <div class="card-body">
+            
+            <div class="row mb-4 text-light">
+                <div class="col-md-6">
+                    <h5 class="text-muted small text-uppercase">File</h5>
+                    <p class="fs-5 fw-bold text-break" x-text="$store.machine.job.filename"></p>
+                </div>
+                <div class="col-6 col-md-3">
+                    <h5 class="text-muted small text-uppercase">Time Elapsed</h5>
+                    <p class="fs-5 font-monospace">
+                        <span x-text="new Date($store.machine.job.printingtime * 1000).toISOString().substr(14, 5)"></span>
+                    </p>
+                </div>
+                <div class="col-6 col-md-3">
+                    <h5 class="text-muted small text-uppercase">Lines</h5>
+                    <p class="fs-5 font-monospace">
+                        <span x-text="$store.machine.job.currentline"></span> / 
+                        <span x-text="$store.machine.job.totallines"></span>
+                    </p>
+                </div>
+            </div>
+
+            <div class="d-flex gap-2 mb-3">
+                <span class="badge rounded-pill text-bg-secondary border border-secondary">
+                    Power: <span x-text="$store.machine.job.laserpower"></span>
+                </span>
+                
+                <span class="badge rounded-pill text-bg-secondary border border-secondary">
+                    Exposure: <span x-text="$store.machine.job.exposureperline"></span>
+                </span>
+
+                <span class="badge rounded-pill border"
+                      :class="$store.machine.job.singlefacet ? 'text-bg-info border-info' : 'text-bg-secondary border-secondary'">
+                    <i class="bi" :class="$store.machine.job.singlefacet ? 'bi-bullseye' : 'bi-grid-3x3'"></i>
+                    <span x-text="$store.machine.job.singlefacet ? 'Single Facet' : 'Multi Facet'"></span>
+                </span>
+            </div>
+
+            <div class="progress bg-secondary mb-4" style="height: 30px;">
+                <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                     role="progressbar" 
+                     :class="$store.machine.paused ? 'bg-warning' : 'bg-success'"
+                     :style="`width: ${$store.machine.progressPercent}%`" 
+                     :aria-valuenow="$store.machine.progressPercent" 
+                     aria-valuemin="0" 
+                     aria-valuemax="100">
+                     <span class="fw-bold" x-text="`${$store.machine.progressPercent}%`"></span>
+                </div>
+            </div>
+
+            <div class="d-flex justify-content-center gap-3">
+                
+                <button type="button" 
+                        class="btn btn-lg w-25"
+                        :class="$store.machine.paused ? 'btn-success' : 'btn-warning'"
+                        @click="pausePrint()">
+                    <i class="bi" :class="$store.machine.paused ? 'bi-play-fill' : 'bi-pause-fill'"></i>
+                    <span x-text="$store.machine.paused ? 'Resume' : 'Pause'"></span>
+                </button>
+
+                <button type="button" 
+                        class="btn btn-danger btn-lg w-25"
+                        @click="if(confirm('Are you sure you want to cancel this print?')) stopPrint()">
+                    <i class="bi bi-stop-fill"></i> Stop
+                </button>
+
+            </div>
+        </div>
     </div>
-  </div>
 </div>
-
