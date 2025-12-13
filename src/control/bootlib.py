@@ -1,5 +1,5 @@
 import asyncio
-from time import sleep, localtime, time
+from time import localtime, time
 
 try:
     from mrequests import urequests as requests
@@ -257,7 +257,7 @@ async def status_loop(loop=False):
 
 
 @wrapper_esp32(res=True)
-def connect_wifi(force=False):
+async def connect_wifi(force=False):
     """tries to connect to wifi
 
     If connection fails access point is created
@@ -290,7 +290,7 @@ def connect_wifi(force=False):
                 break
             else:
                 max_wait -= 1
-                sleep(1)
+                await asyncio.sleep(1)
         ap.active(False)
     else:
         made_connection = True

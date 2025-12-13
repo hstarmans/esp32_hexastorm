@@ -1,4 +1,5 @@
 .vscode*
+!.vscode/settings.json
 secret.json
 todo.md
 .DS_Store

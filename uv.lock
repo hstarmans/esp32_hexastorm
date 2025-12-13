@@ -139,6 +139,7 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "black" },
+    { name = "micropython-esp32-stubs" },
     { name = "nbqa" },
     { name = "ruff" },
 ]
@@ -158,6 +159,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "black", specifier = ">=25.1.0" },
+    { name = "micropython-esp32-stubs", specifier = ">=1.26.0.post1" },
     { name = "nbqa", specifier = ">=1.9.1" },
     { name = "ruff", specifier = ">=0.11.5" },
 ]
@@ -252,6 +254,26 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/99/5b/a36a337438a14116b16480db471ad061c36c3694df7c2084a0da7ba538b7/matplotlib_inline-0.1.7.tar.gz", hash = "sha256:8423b23ec666be3d16e16b60bdd8ac4e86e840ebd1dd11a30b9f117f2fa0ab90", size = 8159 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/8f/8e/9ad090d3553c280a8060fbf6e24dc1c0c29704ee7d1c372f0c174aa59285/matplotlib_inline-0.1.7-py3-none-any.whl", hash = "sha256:df192d39a4ff8f21b1895d72e6a13f5fcc5099f00fa84384e0ea28c2cc0653ca", size = 9899 },
+]
+
+[[package]]
+name = "micropython-esp32-stubs"
+version = "1.26.0.post1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "micropython-stdlib-stubs" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/52/2f/813b78049ed7fd84eea457fb66d21420e68790300d5e86418d59b93f4103/micropython_esp32_stubs-1.26.0.post1.tar.gz", hash = "sha256:e4f31edb2b4a9a6b152adce8115f8256937ee97601c386d499aff369a3a78fe5", size = 94356 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0d/f7/d44a28971ed7c21de417b31a056c44e3cae34c0bd4bd5da7aa2d1381cc85/micropython_esp32_stubs-1.26.0.post1-py2.py3-none-any.whl", hash = "sha256:930349d4711e4727c5fcb0062d86a59246a1b616bdb66a033dd1db3410d43029", size = 120420 },
+]
+
+[[package]]
+name = "micropython-stdlib-stubs"
+version = "1.26.0.post3"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4f/2e/38a03713acf949c571e54de7c64fb48a519521c4ff0c1645d5213316637e/micropython_stdlib_stubs-1.26.0.post3-py3-none-any.whl", hash = "sha256:98a35a1faffeca605a0d38988dd0d98a117c32193db758436c87a08ca278339d", size = 147944 },
 ]
 
 [[package]]
@@ -405,11 +427,11 @@ wheels = [
 
 [[package]]
 name = "pyclean"
-version = "3.1.0"
+version = "3.4.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/04/6c/a7c0cfd4013405408aa894ee2dace6fdbad58f379344aba2396dfea85d46/pyclean-3.1.0.tar.gz", hash = "sha256:d23fa900558696e08c79401c79f242fe6f7f38fd58ccd035f875a01c5bc7a6fc", size = 46150 }
+sdist = { url = "https://files.pythonhosted.org/packages/ce/9d/7a34b7e563bb2bc19721a23fc50b57bf01c28b663f103e75d073b4f1a8e8/pyclean-3.4.0.tar.gz", hash = "sha256:e4c25c343c6b4a42d9cb177256415a6c539f2f6ad1fa1f1763f911e465136d35", size = 26682 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/cf/6d/a0d36ecfe8849d029f0dfbac5733e8b74732ff3f86fa75a501107903c54b/pyclean-3.1.0-py3-none-any.whl", hash = "sha256:46652f7416816924cab565cd045d0c341237aced0368a3727d66b5192c16728c", size = 21588 },
+    { url = "https://files.pythonhosted.org/packages/6f/60/632062055018530b1f00dcfbbbfdc8d9e3df8209eb6e1e8856a79af04a61/pyclean-3.4.0-py3-none-any.whl", hash = "sha256:a58dd5d15ed77f021855a651ba21f83ffc178e12ca1e32d23faf3258676c3ac7", size = 27046 },
 ]
 
 [[package]]
@@ -441,22 +463,23 @@ wheels = [
 
 [[package]]
 name = "pytest"
-version = "8.3.5"
+version = "9.0.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "colorama", marker = "sys_platform == 'win32'" },
     { name = "iniconfig" },
     { name = "packaging" },
     { name = "pluggy" },
+    { name = "pygments" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ae/3c/c9d525a414d506893f0cd8a8d0de7706446213181570cdbd766691164e40/pytest-8.3.5.tar.gz", hash = "sha256:f4efe70cc14e511565ac476b57c279e12a855b11f48f212af1080ef2263d3845", size = 1450891 }
+sdist = { url = "https://files.pythonhosted.org/packages/d1/db/7ef3487e0fb0049ddb5ce41d3a49c235bf9ad299b6a25d5780a89f19230f/pytest-9.0.2.tar.gz", hash = "sha256:75186651a92bd89611d1d9fc20f0b4345fd827c41ccd5c299a868a05d70edf11", size = 1568901 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/30/3d/64ad57c803f1fa1e963a7946b6e0fea4a70df53c1a7fed304586539c2bac/pytest-8.3.5-py3-none-any.whl", hash = "sha256:c69214aa47deac29fad6c2a4f590b9c4a9fdb16a403176fe154b79c0b4d4d820", size = 343634 },
+    { url = "https://files.pythonhosted.org/packages/3b/ab/b3226f0bd7cdcf710fbede2b3548584366da3b19b5021e74f5bde2a8fa3f/pytest-9.0.2-py3-none-any.whl", hash = "sha256:711ffd45bf766d5264d487b917733b453d917afd2b0ad65223959f59089f875b", size = 374801 },
 ]
 
 [[package]]
 name = "requests"
-version = "2.32.3"
+version = "2.32.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "certifi" },
@@ -464,9 +487,9 @@ dependencies = [
     { name = "idna" },
     { name = "urllib3" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/63/70/2bf7780ad2d390a8d301ad0b550f1581eadbd9a20f896afe06353c2a2913/requests-2.32.3.tar.gz", hash = "sha256:55365417734eb18255590a9ff9eb97e9e1da868d4ccd6402399eaf68af20a760", size = 131218 }
+sdist = { url = "https://files.pythonhosted.org/packages/c9/74/b3ff8e6c8446842c3f5c837e9c3dfcfe2018ea6ecef224c710c85ef728f4/requests-2.32.5.tar.gz", hash = "sha256:dbba0bac56e100853db0ea71b82b4dfd5fe2bf6d3754a8893c3af500cec7d7cf", size = 134517 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f9/9b/335f9764261e915ed497fcdeb11df5dfd6f7bf257d4a6a2a686d80da4d54/requests-2.32.3-py3-none-any.whl", hash = "sha256:70761cfe03c773ceb22aa2f671b4757976145175cdfca038c02654d061d6dcc6", size = 64928 },
+    { url = "https://files.pythonhosted.org/packages/1e/db/4254e3eabe8020b458f1a747140d32277ec7a271daf1d235b70dc0b4e6e3/requests-2.32.5-py3-none-any.whl", hash = "sha256:2462f94637a34fd532264295e186976db0f5d453d1cdd31473c85a6a161affb6", size = 64738 },
 ]
 
 [[package]]
@@ -584,9 +607,9 @@ wheels = [
 
 [[package]]
 name = "websocket-client"
-version = "1.8.0"
+version = "1.9.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/e6/30/fba0d96b4b5fbf5948ed3f4681f7da2f9f64512e1d303f94b4cc174c24a5/websocket_client-1.8.0.tar.gz", hash = "sha256:3239df9f44da632f96012472805d40a23281a991027ce11d2f45a6f24ac4c3da", size = 54648 }
+sdist = { url = "https://files.pythonhosted.org/packages/2c/41/aa4bf9664e4cda14c3b39865b12251e8e7d239f4cd0e3cc1b6c2ccde25c1/websocket_client-1.9.0.tar.gz", hash = "sha256:9e813624b6eb619999a97dc7958469217c3176312b3a16a4bd1bc7e08a46ec98", size = 70576 }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/5a/84/44687a29792a70e111c5c477230a72c4b957d88d16141199bf9acb7537a3/websocket_client-1.8.0-py3-none-any.whl", hash = "sha256:17b44cc997f5c498e809b22cdf2d9c7a9e71c02c8cc2b6c56e7c2d1239bfa526", size = 58826 },
+    { url = "https://files.pythonhosted.org/packages/34/db/b10e48aa8fff7407e67470363eac595018441cf32d5e1001567a7aeba5d2/websocket_client-1.9.0-py3-none-any.whl", hash = "sha256:af248a825037ef591efbf6ed20cc5faa03d3b47b9e5a2230a529eeee1c1fc3ef", size = 82616 },
 ]
