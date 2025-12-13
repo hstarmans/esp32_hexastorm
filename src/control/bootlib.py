@@ -1,4 +1,5 @@
 import asyncio
+import sys
 from time import localtime, time
 
 try:
@@ -79,7 +80,7 @@ async def set_time(tries=3):
     logger.info(f"Local time before synchronization {localtime()}")
     if not is_connected():
         logger.info("Trying to connect to wifi connection")
-        if not connect_wifi():
+        if not await connect_wifi():
             return
     for trial in range(tries):
         try:
@@ -251,7 +252,7 @@ async def status_loop(loop=False):
             wifi_connected = is_connected()
             current_time = time()
             if not wifi_connected:
-                connect_wifi()
+                await connect_wifi()
         if not loop:
             break
 
@@ -311,14 +312,79 @@ async def connect_wifi(force=False):
     return made_connection
 
 
+def deploy_assets():
+    """Extracts frozen assets only if a sentinel file is missing.
+
+    Checks for '/templates/index.html' to skip redundant extraction on
+    subsequent boots, preventing overwrite errors and reducing startup time.
+    """
+
+    # Import the module (now it does nothing but load definitions)
+    from . import frozen_root
+
+    # Pick a file that SHOULD exist if deployment worked
+    try:
+        os.stat("/templates/home.html")
+        # If we get here, file exists. Skip extraction.
+        logging.info("Assets already deployed. Skipping extraction.")
+        return
+    except OSError:
+        # File doesn't exist (First boot or wipe)
+        pass
+
+    # Extract if missing
+    logging.info("First boot detected. Extracting static files...")
+
+    # We set overwrite=True here to ensure clean deployment
+    # frozen_root.extract(target_path, overwrite=bool)
+    frozen_root.extract("/", overwrite=True)
+
+    logging.info("Asset deployment complete.")
+
+
+def check_crash_loop_rtc():
+    """Prevents boot loops by tracking crashes in RTC memory (survives soft resets).
+
+    If the crash count exceeds 3, the device enters a Safe Mode infinite loop
+    instead of booting, allowing USB recovery. To reset manually, power cycle
+    the device.
+    """
+    MAX_CRASHES = 3
+    rtc = machine.RTC()
+
+    # Read RTC memory (it returns bytes)
+    data = rtc.memory()
+
+    try:
+        count = int(data)
+    # If it's empty or garbage (first boot after power loss), reset to 0
+    except (ValueError, TypeError):
+        count = 0
+
+    logger.info(f"Boot count (RTC): {count}")
+
+    # Check Safety Limit
+    if count >= MAX_CRASHES:
+        logger.info("!!! DETECTED CRASH LOOP (RTC) !!!")
+        logger.info("Stopping boot process to protect device.")
+        logger.info("You can now connect via WebREPL or Serial.")
+        logger.info("To clear this state: UNPLUG the device power.")
+        sys.exit()
+
+    # Increment and Save back to RTC (No flash write!)
+    rtc.memory(str(count + 1).encode())
+
+
+async def mark_boot_successful():
+    """If we stay alive for 10 seconds, clear the crash counter"""
+    await asyncio.sleep(10)
+    print("System stable. Clearing RTC crash counter.")
+    machine.RTC().memory(b"")  # Clear the memory
+
+
 @wrapper_esp32()
 def mount_sd():
     """Mounts SDCard and change working directory."""
-    # removed as I use old esp32 for testing
-    # try:
-    #     os.listdir("sd")
-    # except OSError:
-    #     # directory does not exist try mounting
     try:
         sd = machine.SDCard(slot=2)
         os.mount(sd, "/sd")
