@@ -321,7 +321,7 @@ async def diode_test(request, session):
     devicestate.data["components"]["diodetest"] = None
 
     async def run_test_background():
-        await LASERHEAD.test_diode()  # Runs for 15s
+        await LASERHEAD.test_diode()
 
     asyncio.create_task(run_test_background())
     # Result diode test retrieved via SSE

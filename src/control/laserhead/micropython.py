@@ -69,12 +69,11 @@ class Laserhead(BaseLaserhead, ESP32Host):
         await super().gotopoint(vector, absolute=False)
         self.enable_steppers = False
 
-    async def test_diode(self, timeout=3):
+    async def test_diode(self):
         logger.debug("Starting diode test.")
         self.state["components"]["diodetest"] = None
         await self.notify_listeners()
-        await asyncio.sleep(timeout)
-        self.state["components"]["diodetest"] = True if randint(0, 10) > 5 else False
+        self.state["components"]["diodetest"] = await super().test_laserhead()
         await self.notify_listeners()
 
     async def print_loop(self, fname):
