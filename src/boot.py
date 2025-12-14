@@ -30,7 +30,7 @@ if constants.ESP32 and False:
         pass
 
 
-async def hardware_init():
+def hardware_init():
     """Fast hardware fixes run immediately on boot"""
     # UART RX and TX connected via resistor
     # and TMC2209, which results in endless
@@ -54,15 +54,23 @@ async def network_manager():
 
 
 async def main():
-    await hardware_init()
-    asyncio.create_task(bootlib.mark_boot_successful())
+    tasks = []
+
+    hardware_init()
     bootlib.deploy_assets()
-    # wlan needs to be on before starting webserver
+
+    # We need the interface ON for the Webserver/WebREPL to bind ports.
     wlan = network.WLAN(network.STA_IF)
     wlan.active(True)
 
+    # CRITICAL: Immediately stop the background auto-connect process.
+    # This prevents the "Wifi Internal Error" race condition later.
+    wlan.disconnect()
+
     # Start the Background Network Manager (LEDs, WiFi connection, Time)
+
     network_task = asyncio.create_task(network_manager())
+    tasks.append(network_task)
 
     # start webrepl if configured
     if constants.CONFIG["webrepl"]["start"]:
@@ -73,7 +81,11 @@ async def main():
     if constants.CONFIG["webserver"]["start"]:
         logging.info("Main: Starting Webserver NOW...")
         # We gather the webserver (foreground) and network (background)
-        await asyncio.gather(app.start_server(port=5000, debug=False), network_task)
+        tasks.append(app.start_server(port=5000, debug=False))
+
+    if tasks:
+        await asyncio.gather(*tasks)
+    bootlib.mark_boot_successfull()
 
 
 if constants.ESP32:

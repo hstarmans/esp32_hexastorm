@@ -1,5 +1,4 @@
 import asyncio
-import sys
 from time import localtime, time
 
 try:
@@ -243,7 +242,9 @@ async def status_loop(loop=False):
         # check year is greater than 2024
         if (localtime()[0] < 2024) and wifi_connected:
             await set_time(1)
-        if led_on:
+        if not loop:
+            pass
+        elif led_on:
             await asyncio.sleep(on_time)
         else:
             await asyncio.sleep(off_time)
@@ -282,8 +283,13 @@ async def connect_wifi(force=False):
                     wifi_login["primary_dns"],
                 )
             )
+        wlan.disconnect()
+        await asyncio.sleep(0.5)  # Give the driver a moment to reset
         # method can fail due to power supply issues
-        wlan.connect(wifi_login["ssid"], wifi_login["password"])
+        try:
+            wlan.connect(wifi_login["ssid"], wifi_login["password"])
+        except OSError as e:
+            logger.error(f"WLAN Connect failed with error: {e}")
         max_wait = 10
         while max_wait > 0:
             if wlan.isconnected():
@@ -312,34 +318,30 @@ async def connect_wifi(force=False):
     return made_connection
 
 
-def deploy_assets():
-    """Extracts frozen assets only if a sentinel file is missing.
+def deploy_assets(overwrite=False):
+    """Extracts frozen assets only if a sentinel file is missing."""
 
-    Checks for '/templates/index.html' to skip redundant extraction on
-    subsequent boots, preventing overwrite errors and reducing startup time.
-    """
+    # Check for sentinel file (fastest check)
+    if not overwrite:
+        try:
+            os.stat("/templates/home.html")
+            logging.info("Assets already deployed. Skipping extraction.")
+            return
+        except OSError:
+            pass  # File missing, proceed to extract
 
-    # Import the module (now it does nothing but load definitions)
-    from . import frozen_root
+    logging.info("First boot detected. Initializing asset extraction...")
 
-    # Pick a file that SHOULD exist if deployment worked
+    # Once you import frozen_root, the on-import hooks will run
+    # files get extracted and overwrite
     try:
-        os.stat("/templates/home.html")
-        # If we get here, file exists. Skip extraction.
-        logging.info("Assets already deployed. Skipping extraction.")
+        from . import frozen_root
+    except ImportError:
+        logging.error("Could not import frozen_root. Is the build correct?")
         return
-    except OSError:
-        # File doesn't exist (First boot or wipe)
-        pass
 
-    # Extract if missing
-    logging.info("First boot detected. Extracting static files...")
-
-    # We set overwrite=True here to ensure clean deployment
-    # frozen_root.extract(target_path, overwrite=bool)
-    frozen_root.extract("/", overwrite=True)
-
-    logging.info("Asset deployment complete.")
+    # Perform the extraction
+    logging.info("Extracting static files to filesystem...")
 
 
 def check_crash_loop_rtc():
@@ -365,20 +367,18 @@ def check_crash_loop_rtc():
 
     # Check Safety Limit
     if count >= MAX_CRASHES:
-        logger.info("!!! DETECTED CRASH LOOP (RTC) !!!")
-        logger.info("Stopping boot process to protect device.")
-        logger.info("You can now connect via WebREPL or Serial.")
-        logger.info("To clear this state: UNPLUG the device power.")
-        sys.exit()
+        logger.error("!!! DETECTED CRASH LOOP (RTC) !!!")
+        logger.error("Stopping boot process to protect device.")
+        logger.info("Connect via WebREPL or Serial (Ctrl+C to bypass if stuck).")
+        RuntimeError("SAFE MODE ACTIVATED: Boot halted due to crash loop.")
 
     # Increment and Save back to RTC (No flash write!)
     rtc.memory(str(count + 1).encode())
 
 
-async def mark_boot_successful():
-    """If we stay alive for 10 seconds, clear the crash counter"""
-    await asyncio.sleep(10)
-    print("System stable. Clearing RTC crash counter.")
+def mark_boot_successfull():
+    """Clear the crash counter"""
+    logging.info("System stable. Clearing RTC crash counter.")
     machine.RTC().memory(b"")  # Clear the memory
 
 
@@ -388,9 +388,6 @@ def mount_sd():
     try:
         sd = machine.SDCard(slot=2)
         os.mount(sd, "/sd")
-        from . import frozen_root
-
-        logger.info(f"executing {frozen_root}")
     except OSError:
         logger.error(
             """Cannot connect to sdcard.\n"""

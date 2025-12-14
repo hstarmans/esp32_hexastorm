@@ -17,8 +17,8 @@ logger = logging.getLogger(__name__)
 
 class Laserhead(BaseLaserhead, ESP32Host):
     def __init__(self):
-        BaseLaserhead.__init__()
-        ESP32Host.__init__()
+        BaseLaserhead.__init__(self)
+        ESP32Host.__init__(self)
 
     async def flash_fpga(self, filename):
         fname = CONFIG["fpga"]["storagefolder"] + f"/{filename}"
@@ -38,14 +38,16 @@ class Laserhead(BaseLaserhead, ESP32Host):
         laser1   -- True enables laser channel 1
         polygon  -- False enables polygon motor
         """
-        BaseLaserhead.enable_comp(
+        await BaseLaserhead.enable_comp(
+            self,
             laser0=laser0,
             laser1=laser1,
             polygon=polygon,
             synchronize=synchronize,
             singlefacet=singlefacet,
         )
-        ESP32Host.enable_comp(
+        await ESP32Host.enable_comp(
+            self,
             laser0=laser0,
             laser1=laser1,
             polygon=polygon,
@@ -54,15 +56,15 @@ class Laserhead(BaseLaserhead, ESP32Host):
         )
 
     async def toggle_laser(self):
-        super().toggle_laser()
-        await super().enable_comp(laser0=self.state["components"]["laser"])
+        await super().toggle_laser()
+        await self.enable_comp(laser0=self.state["components"]["laser"])
 
     async def toggle_prism(self):
-        super().toggle_prism()
-        await super().enable_comp(polygon=self.state["components"]["rotating"])
+        await super().toggle_prism()
+        await self.enable_comp(polygon=self.state["components"]["rotating"])
 
     async def move(self, vector):
-        BaseLaserhead.move(vector)
+        await super().move(vector)
         self.enable_steppers = True
         await super().gotopoint(vector, absolute=False)
         self.enable_steppers = False

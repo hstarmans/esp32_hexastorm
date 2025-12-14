@@ -43,11 +43,11 @@ class BaseLaserhead:
         self._state = state
 
     def stop_print(self):
-        logger.debug("Print is stopped.")
+        logger.info("Print is stopped.")
         self._stop.set()
 
     def pause_print(self):
-        logger.debug("Print is paused.")
+        logger.info("Print is paused.")
         if self._pause.is_set():
             self._pause.clear()
         else:
@@ -76,15 +76,15 @@ class BaseLaserhead:
     async def toggle_laser(self):
         laser = self.state["components"]["laser"]
         self.state["components"]["laser"] = laser = not laser
-        logger.debug(f"Laser on is {laser}")
+        logger.info(f"Laser on is {laser}")
 
     async def toggle_prism(self):
         prism = self.state["components"]["rotating"]
         self.state["components"]["rotating"] = prism = not prism
-        logger.debug(f"Change rotation state prism to {prism}.")
+        logger.info(f"Change rotation state prism to {prism}.")
 
     async def move(self, vector):
-        logger.debug(f"Moving vector {vector}.")
+        logger.info(f"Moving vector {vector}.")
 
     @property
     def state(self):

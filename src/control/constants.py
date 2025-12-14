@@ -5,11 +5,6 @@ import sys
 ESP32 = False if sys.platform in ["linux", "win32", "darwin"] else True
 logger = logging.getLogger(__name__)
 
-if ESP32:
-    import control.frozen_root
-
-    logger.info(f"Executing {control.frozen_root}")
-
 
 def recurse_dct(dct, target, replace):
     for key, val in dct.items():

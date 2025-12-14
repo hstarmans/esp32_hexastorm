@@ -51,8 +51,8 @@ try:
             str(root_assets),  # Source
             str(frozen_output),  # Destination
             "--target=/",
-            # REMOVE: "--on-import=extract"  <-- This was the culprit
-            # REMOVE: "--overwrite=never"    <-- We handle this manually now
+            "--on-import=extract",
+            "--overwrite=always",
             "--compress",
         ],
         cwd=base_dir,
