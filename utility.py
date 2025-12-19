@@ -1,72 +1,107 @@
-"""Shell script for the final configuration of the ESP32S3
-after the correct firmware has been flashed.
+"""
+ESP32S3 Configuration Utility
 
-This script automates post-flashing configuration tasks for the ESP32S3.
-It assumes the device has already been flashed with the appropriate binary
-and is ready for setup. Use this script to perform actions such as
-setting Wi-Fi credentials, configuring network settings, or initializing
-application-specific parameters directly on the ESP32S3.
+This script automates the final provisioning step for ESP32S3 devices running MicroPython.
+It specifically looks for a local 'secret.json' file and securely transfers it to the
+device filesystem as 'config.json'.
+
+Workflow:
+    1. Scans the local directory for 'secret.json'.
+    2. Connects to the ESP32S3 via 'mpremote'.
+    3. Uploads the file to the root directory as ':config.json'.
+    4. Issues a hardware reset to the device to initialize the new configuration.
+
+Usage:
+    uv run utility.py --device <PORT> [--debug]
+
+Prerequisites:
+    - mpremote (pip install mpremote)
+    - ESP32S3 with MicroPython firmware already flashed.
 """
 
 import argparse
 import subprocess
-from time import sleep
-
+import sys
+import logging
 from pathlib import Path
 
+# Configure logging: Time - Level - Message
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%H:%M:%S",
+)
+logger = logging.getLogger(__name__)
 
-def run(cmd, timeout=1):
-    """Older ESP32 require timeout after shell command."""
-    subprocess.run(cmd)
-    sleep(timeout)
 
-
-def install(device=None, debug=None, **kwargs):
-    base = ["mpremote", "resume"]
-    libraries = []
-    files = []
-    folders = []
-
+def run_mpremote(args, device=None):
+    """Constructs and runs an mpremote command with error capturing."""
+    cmd = ["mpremote"]
     if device:
-        base += ["connect", f"{device}"]
+        cmd += ["connect", device]
 
-    # allows you keep keys in a different file
-    if Path("secret.json").is_file():
-        print("picked up secret.json")
-        files = [Path("secret.json")]
+    cmd += ["resume"] + args
+
+    try:
+        logger.debug(f"Running command: {' '.join(cmd)}")
+        # capture_output keeps the terminal clean unless an error occurs
+        subprocess.run(cmd, check=True, capture_output=True, text=True)
+    except subprocess.CalledProcessError as e:
+        logger.error(f"mpremote failed (Exit {e.returncode})")
+        if e.stderr:
+            logger.error(f"Stderr: {e.stderr.strip()}")
+        sys.exit(1)
+    except FileNotFoundError:
+        logger.critical("mpremote not found. Is it installed in your environment?")
+        sys.exit(1)
+
+
+def configure_device(device=None, debug=False):
+    """Handles the file discovery and upload process."""
+    if debug:
+        logger.setLevel(logging.DEBUG)
+        logger.debug("Debug mode enabled. Verbose output active.")
+
+    secret_file = Path("secret.json")
+
+    if not secret_file.is_file():
+        logger.warning(f"File '{secret_file}' not found. No configuration to upload.")
+        return
+
+    logger.info(f"Source file found: {secret_file}")
 
     if not debug:
-        input("Copying boot, CTRL+C to abort")
-        files += ["src/boot.py"]
+        try:
+            input(
+                "Ready to upload to ESP32S3. Press Enter to continue (Ctrl+C to abort)... "
+            )
+        except KeyboardInterrupt:
+            logger.info("Operation cancelled by user.")
+            sys.exit(0)
 
-    for lib in libraries:
-        run(base + ["mip", "install", lib])
+    # Copy secret.json -> :config.json
+    logger.info("Uploading secret.json as config.json...")
+    run_mpremote(["fs", "cp", str(secret_file), ":config.json"], device)
 
-    folders = [Path(f) for f in folders]
-    for folder in folders:
-        run(base + ["fs", "cp", "-r", folder.as_posix(), ":"])
-
-    files = [Path(f) for f in files]
-    for file in files:
-        if file.name == "secret.json":
-            run(base + ["fs", "cp", f"{file}", ":config.json"])
-        else:
-            run(base + ["fs", "cp", f"{file}", f":{file.name}"])
-
-    run(base + ["reset"])
+    # Reset the device
+    logger.info("Upload complete. Performing hardware reset...")
+    run_mpremote(["reset"], device)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Utility to automate install ESP32"
+        description="Provision ESP32S3 with config.json using mpremote."
     )
     parser.add_argument(
         "--device",
         type=str,
-        nargs="?",
-        help="Give device name, e.g. COM8 or ttyS8 for Windows and linux, respectively.",
+        help="Serial port (e.g., COM3 or /dev/ttyACM0). If omitted, mpremote attempts auto-detect.",
     )
-    parser.add_argument("--debug", action="store_true")
-    args = parser.parse_args()
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Show verbose debug logs and skip confirmation prompts.",
+    )
 
-    install(**vars(args))
+    args = parser.parse_args()
+    configure_device(device=args.device, debug=args.debug)
