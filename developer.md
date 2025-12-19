@@ -119,6 +119,22 @@ The process of creating a MicroPython binary for the ESP32 involves using the Es
     uv run python utility.py --device /dev/ttyS8
     ```
 
+## Building on the Raspberry Pi
+
+For optical measurements there is a setup where a camera and base board are connected to a Raspberry pi.
+Copy the following lines in a shell script, named ./raspcopy.sh
+```
+scp build-ESP32_GENERIC_S3-SPIRAM_OCT/firmware.bin pi@raspberrypi.local:~/
+scp build-ESP32_GENERIC_S3-SPIRAM_OCT/bootloader/bootloader.bin pi@raspberrypi.local:~/
+scp build-ESP32_GENERIC_S3-SPIRAM_OCT/micropython.bin pi@raspberrypi.local:~/
+scp build-ESP32_GENERIC_S3-SPIRAM_OCT/partition_table/partition-table.bin pi@raspberrypi.local:~/
+scp build-ESP32_GENERIC_S3-SPIRAM_OCT/ota_data_initial.bin pi@raspberrypi.local:~/
+scp build-ESP32_GENERIC_S3-SPIRAM_OCT/micropython.bin pi@raspberrypi.local:~/
+```
+Execute this script after creating the micropython binary, on the raspberry then execute the following. The board size is here 32 MB not 16MB.
+```
+python -m esptool --chip esp32s3 -b 460800 --before default_reset --after hard_reset write_flash --flash_mode dio --flash_size 16MB --flash_freq 80m 0x0 bootloader.bin 0x8000 partition-table.bin 0xd000 ota_data_initial.bin 0x10000 micropython.bin
+```
 
 ## Testing
 

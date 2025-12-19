@@ -318,32 +318,6 @@ async def connect_wifi(force=False):
     return made_connection
 
 
-def deploy_assets(overwrite=False):
-    """Extracts frozen assets only if a sentinel file is missing."""
-
-    # Check for sentinel file (fastest check)
-    if not overwrite:
-        try:
-            os.stat("/templates/home.html")
-            logging.info("Assets already deployed. Skipping extraction.")
-            return
-        except OSError:
-            pass  # File missing, proceed to extract
-
-    logging.info("First boot detected. Initializing asset extraction...")
-
-    # Once you import frozen_root, the on-import hooks will run
-    # files get extracted and overwrite
-    try:
-        from . import frozen_root
-    except ImportError:
-        logging.error("Could not import frozen_root. Is the build correct?")
-        return
-
-    # Perform the extraction
-    logging.info("Extracting static files to filesystem...")
-
-
 def check_crash_loop_rtc():
     """Prevents boot loops by tracking crashes in RTC memory (survives soft resets).
 

@@ -30,16 +30,6 @@ if constants.ESP32 and False:
         pass
 
 
-def hardware_init():
-    """Fast hardware fixes run immediately on boot"""
-    # UART RX and TX connected via resistor
-    # and TMC2209, which results in endless
-    # communication and failure of micropython shell
-    # fix is to set UART1 to zero
-    Pin(43, Pin.OUT).value(0)
-    Pin(44, Pin.OUT).value(0)
-
-
 async def network_manager():
     """
     Connects to WiFi
@@ -55,9 +45,7 @@ async def network_manager():
 
 async def main():
     tasks = []
-
-    hardware_init()
-    bootlib.deploy_assets()
+    constants.CONFIG = constants.load_config()
 
     # We need the interface ON for the Webserver/WebREPL to bind ports.
     wlan = network.WLAN(network.STA_IF)
