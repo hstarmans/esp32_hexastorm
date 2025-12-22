@@ -2,14 +2,13 @@ import logging
 import asyncio
 import struct
 from time import time
-from random import randint
 import deflate
 
 from hexastorm.fpga_host.micropython import ESP32Host
 from hexastorm.config import Spi
 
 from .base import BaseLaserhead
-from ..constants import CONFIG
+from ..constants import CONFIG, update_config
 
 
 logger = logging.getLogger(__name__)
@@ -19,6 +18,17 @@ class Laserhead(BaseLaserhead, ESP32Host):
     def __init__(self):
         BaseLaserhead.__init__(self)
         ESP32Host.__init__(self)
+
+    @property
+    def facet_means(self):
+        "Retrieve period per facet in ms as list"
+        return CONFIG["laserhead"]["facetmeans"]
+
+    @facet_means.setter
+    def facet_means(self, lst_value):
+        "Set period per facet in ms with list"
+        CONFIG["laserhead"]["facetmeans"] = lst_value
+        update_config()
 
     async def flash_fpga(self, filename):
         fname = CONFIG["fpga"]["storagefolder"] + f"/{filename}"
@@ -119,6 +129,7 @@ class Laserhead(BaseLaserhead, ESP32Host):
                     synchronize=True,
                     singlefacet=self.state["job"]["singlefacet"],
                 )
+                await asyncio.sleep(2)  # wait for stabilization
                 for lane in range(lanes):
                     if await self.handle_pausing_and_stopping():
                         break
