@@ -5,10 +5,12 @@ from time import time
 import deflate
 
 from hexastorm.fpga_host.micropython import ESP32Host
+from hexastorm.fpga_host.syncwrap import syncable
+from hexastorm.fpga_host.tools import find_shift
 from hexastorm.config import Spi
 
 from .base import BaseLaserhead
-from ..constants import CONFIG, update_config
+from .. import constants
 
 
 logger = logging.getLogger(__name__)
@@ -22,16 +24,21 @@ class Laserhead(BaseLaserhead, ESP32Host):
     @property
     def facet_means(self):
         "Retrieve period per facet in ms as list"
-        return CONFIG["laserhead"]["facetmeans"]
+        return constants.CONFIG["laserhead"]["facetmeans"]
 
-    @facet_means.setter
-    def facet_means(self, lst_value):
+    async def update_facet_means(self):
         "Set period per facet in ms with list"
-        CONFIG["laserhead"]["facetmeans"] = lst_value
-        update_config()
+        constants.CONFIG["laserhead"]["facetmeans"] = await self.measure_facet_means()
+        constants.update_config()
+
+    async def facet_shift(self):
+        "Retrieve shift of facet mean vector with respect to stored calibration"
+        cur_means = await self.measure_facet_means()
+        stored_means = self.facet_means
+        return find_shift(stored_means, cur_means)[0]
 
     async def flash_fpga(self, filename):
-        fname = CONFIG["fpga"]["storagefolder"] + f"/{filename}"
+        fname = constants.CONFIG["fpga"]["storagefolder"] + f"/{filename}"
         await super().flash_fpga(fname)
 
     async def enable_comp(
@@ -104,7 +111,7 @@ class Laserhead(BaseLaserhead, ESP32Host):
             cmd_lst = self.byte_to_cmd_list(line)
             commands[direction] = cmd_lst[0]
 
-        with open(CONFIG["webserver"]["job_folder"] + f"/{fname}", "rb") as f:
+        with open(constants.CONFIG["webserver"]["job_folder"] + f"/{fname}", "rb") as f:
             with deflate.DeflateIO(f, deflate.ZLIB) as d:
                 # 1. Header
                 lane_width = struct.unpack("<f", d.read(4))[0]
@@ -210,3 +217,9 @@ class Laserhead(BaseLaserhead, ESP32Host):
         )
         self.state["printing"] = False
         await self.notify_listeners()
+
+
+@syncable
+class LaserheadSync(Laserhead):
+    def __init__(self, sync=True):
+        super().__init__()

@@ -13,10 +13,10 @@ Attributes:
         a standard Hexastorm test suite e.g. ("StaticTest","test_memfull")
 """
 
-from hexastorm.fpga_host.micropython import ESP32HostSync
+from control.laserhead.micropython import LaserheadSync
 from control.reloading import hot_reload
 from control.tests.test_hexastorm import run_test
 
-host = ESP32HostSync(sync=True)
+lh = LaserheadSync(sync=True)
 reload = hot_reload
 test = run_test
