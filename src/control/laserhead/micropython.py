@@ -31,11 +31,22 @@ class Laserhead(BaseLaserhead, ESP32Host):
         constants.CONFIG["laserhead"]["facetmeans"] = await self.measure_facet_means()
         constants.update_config()
 
-    async def facet_shift(self):
-        "Retrieve shift of facet mean vector with respect to stored calibration"
+    async def remap(self, facet_id=0):
+        """
+        Maps a calibrated facet ID to its current physical index
+        based on rotational shift.
+        """
         cur_means = await self.measure_facet_means()
         stored_means = self.facet_means
-        return find_shift(stored_means, cur_means)[0]
+
+        # Calculate how many positions the facets have rotated
+        shift = find_shift(cur_means, stored_means)[0]
+
+        # Apply the shift to find the new position
+        num_facets = self.cfg.laser_timing["facets"]
+        current_index = (facet_id + shift) % num_facets
+
+        return current_index
 
     async def flash_fpga(self, filename):
         fname = constants.CONFIG["fpga"]["storagefolder"] + f"/{filename}"
