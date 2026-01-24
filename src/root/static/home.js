@@ -84,7 +84,7 @@ document.addEventListener("alpine:init", () => {
 
             // Since we passed the gatekeeper, we know all these exist.
             this.printing = data.printing;
-            this.paused = data.paused; 
+            this.paused = data.paused || false; 
             
             // We simply overwrite the objects.
             // AlpineJS will detect the changes inside them automatically.
