@@ -131,6 +131,18 @@ async def upload(request, session):
 
     folder = constants.CONFIG["webserver"]["job_folder"]
 
+    # We check if we can stat the folder; if not, we create it.
+    try:
+        os.stat(folder)
+    except OSError:
+        try:
+            os.mkdir(folder)
+            logger.info(f"Created job folder: {folder}")
+        except Exception as e:
+            # If we can't create the folder, we really can't proceed
+            logger.error(f"Failed to create folder: {e}")
+            return {"error": "Cannot create upload folder"}, 500
+
     # Header Parsing: Safely get Content-Length
     try:
         content_len = int(request.headers.get("Content-Length", 0))
@@ -191,7 +203,8 @@ async def upload(request, session):
         # Clean up: delete the partial file so it doesn't waste space
         try:
             os.remove(filepath)
-        except:
+        except Exception as e:
+            logger.error(f"Removal failed: {e}")
             pass
         return {"error": "Upload failed", "details": str(e)}, 500
 

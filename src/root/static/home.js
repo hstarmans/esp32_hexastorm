@@ -29,6 +29,7 @@
  * @property {boolean} paused - Is the print paused?
  * @property {PrintJob} job - The current job details
  * @property {Components} components - Hardware status
+ * @property {number} [notauthorized] - Optional flag if session is invalid
  */
 
 // --- MAIN LOGIC ---
@@ -62,12 +63,33 @@ document.addEventListener("alpine:init", () => {
          * @param {MachineState} data - The JSON object from the backend
          */
         update(data) {
-            // VS Code will now validate that 'data' has the right properties
+            if (data.notauthorized !== undefined) {
+                window.location.reload();
+                return;
+            }
+
+            // We define what a "valid" packet looks like. 
+            // It MUST have 'printing' status AND the 'job'/'components' objects.
+            const isValidPacket = (
+                typeof data.printing !== 'undefined' &&
+                data.job &&             // Checks if job object exists
+                data.components         // Checks if components object exists
+            );
+
+            if (!isValidPacket) {
+                console.warn("Ignored incomplete state packet:", data);
+                // We return immediately. The UI keeps showing the old (valid) state.
+                return;
+            }
+
+            // Since we passed the gatekeeper, we know all these exist.
             this.printing = data.printing;
-            this.paused = data.paused || false;
+            this.paused = data.paused; 
             
-            if (data.job) this.job = data.job;
-            if (data.components) this.components = data.components;
+            // We simply overwrite the objects.
+            // AlpineJS will detect the changes inside them automatically.
+            this.job = data.job;
+            this.components = data.components;
         },
 
         /**
@@ -418,6 +440,9 @@ function initializeSocket() {
     stateSocket = new EventSource('/state');
     
     stateSocket.onmessage = (event) => {
+        // Heartbeat check (ignore "ping" events)
+        if(event.type === 'ping' || event.data === 'ping') return;
+
         const data = JSON.parse(event.data);
         // @ts-ignore - Alpine isn't globally typed in window, so we ignore
         Alpine.store('machine').update(data);

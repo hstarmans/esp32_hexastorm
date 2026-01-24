@@ -105,7 +105,10 @@ class Laserhead(BaseLaserhead, ESP32Host):
         await self.notify_listeners()
 
     async def print_loop(self, fname):
-        super().print_loop_prep(fname)
+        self.reset()  # reset facet counter
+        await super().print_loop_prep(fname)
+        await self.notify_listeners()
+        await asyncio.sleep(0)
         exposures = self.state["job"]["exposureperline"]
         bits_scanline = int(self.cfg.laser_timing["scanline_length"])
         words_scanline = self.cfg.hdl_cfg.words_scanline
@@ -148,6 +151,17 @@ class Laserhead(BaseLaserhead, ESP32Host):
                     singlefacet=self.state["job"]["singlefacet"],
                 )
                 await asyncio.sleep(2)  # wait for stabilization
+                # ensure facet 0 is at the start
+                offset_0 = await self.remap(facet_id=0)
+                # internal facet counter needs to align with calibration table
+                if offset_0 != 0:
+                    logger.info(
+                        f"Rotational offset detected: shifting start by {offset_0} lines."
+                    )
+                    self.enable_steppers = False
+                    for _ in range(offset_0):
+                        await self.write_line(bits_scanline * [0])
+                    self.enable_steppers = True
                 for lane in range(lanes):
                     if await self.handle_pausing_and_stopping():
                         break
@@ -169,18 +183,18 @@ class Laserhead(BaseLaserhead, ESP32Host):
 
                     if exposures == 1:
                         lines_chunk = self.cfg.hdl_cfg.lines_chunk
-                        for facet in range(facets_lane, lines_chunk):
-                            if facet % total_facets == 0:
+                        for facet in range(0, facets_lane, lines_chunk):
+                            if facet % 1000 == 0:
                                 self.state["job"]["currentline"] = (
                                     int(lane * facets_lane) + facet
                                 )
                                 self.state["job"]["printingtime"] = round(
                                     time() - start_time
                                 )
-                                await asyncio.sleep(1)
+                                await self.notify_listeners()
                                 if await self.handle_pausing_and_stopping():
                                     break
-                            last_facet = min(facet + lines_chunk, lines_chunk)
+                            last_facet = min(facet + lines_chunk, facets_lane)
                             to_read = last_facet - facet
                             line_data = d.read(
                                 words_scanline * bytes_command_word * to_read
@@ -221,7 +235,7 @@ class Laserhead(BaseLaserhead, ESP32Host):
         logger.info("Waiting for stopline to execute.")
         await self.enable_comp(synchronize=False)
         self.enable_steppers = False
-        if not await self.host.fpga_state["error"]:
+        if not (await self.fpga_state)["error"]:
             logger.info("Error detected during printing")
         logger.info(
             f"Finished exposure. Total printing time {self.state['job']['printingtime']}"

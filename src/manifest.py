@@ -1,8 +1,12 @@
 import os
 import subprocess
 import sys
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
+
+# Configure logging to standard output
+logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
 # fixes pylance warnings about missing functions
 if TYPE_CHECKING:
@@ -33,6 +37,17 @@ if frozen_output.is_file():
 ## Pack Web Assets (Run inside the base_dir context)
 # We use check=True to stop the build immediately if packing fails
 try:
+    # jobs folder can be created by test server, clean it up first
+    job_folder = root_assets / "sd" / "jobs"
+
+    # Check if folder exists and has files
+    if job_folder.exists():
+        logging.info(f"Cleaning local test files from: {job_folder}")
+        for item in job_folder.iterdir():
+            if item.is_file():
+                # Delete the file
+                item.unlink()
+
     # Clean templates
     subprocess.run(
         ["uv", "run", "pyclean", ".", "--erase", "root/templates/*.py", "--yes"],
@@ -59,7 +74,7 @@ try:
         check=True,
     )
 except subprocess.CalledProcessError as e:
-    print(f"Error during asset packing: {e}")
+    logging.error(f"Error during asset packing: {e}")
     sys.exit(1)
 
 if not frozen_output.is_file():
