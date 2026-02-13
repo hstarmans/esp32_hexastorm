@@ -3,6 +3,7 @@
     "defaultprint": {
         "laserpower": 130,
         "exposureperline": 4,
+        "lanewidth_correction": 0.4,
         "singlefacet": false
     },
     "fpga": {

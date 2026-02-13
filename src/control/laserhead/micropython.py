@@ -20,6 +20,7 @@ class Laserhead(BaseLaserhead, ESP32Host):
     def __init__(self):
         BaseLaserhead.__init__(self)
         ESP32Host.__init__(self)
+        self.cur_facet_means = None
 
     @property
     def facet_means(self):
@@ -31,16 +32,19 @@ class Laserhead(BaseLaserhead, ESP32Host):
         constants.CONFIG["laserhead"]["facetmeans"] = await self.measure_facet_means()
         constants.update_config()
 
-    async def remap(self, facet_id=0):
+    async def remap(self, facet_id=0, measure=True):
         """
         Maps a calibrated facet ID to its current physical index
         based on rotational shift.
+
+        facet_id  -- facet_id to determine internal facet off
+        measure   -- measures facet means before determining shift
         """
-        cur_means = await self.measure_facet_means()
-        stored_means = self.facet_means
+        if measure or (self.cur_facet_means is None):
+            self.cur_facet_means = await self.measure_facet_means()
 
         # Calculate how many positions the facets have rotated
-        shift = find_shift(cur_means, stored_means)[0]
+        shift = find_shift(self.cur_facet_means, self.facet_means)[0]
 
         # Apply the shift to find the new position
         num_facets = self.cfg.laser_timing["facets"]
@@ -128,7 +132,9 @@ class Laserhead(BaseLaserhead, ESP32Host):
         with open(constants.CONFIG["webserver"]["job_folder"] + f"/{fname}", "rb") as f:
             with deflate.DeflateIO(f, deflate.ZLIB) as d:
                 # 1. Header
-                lane_width = struct.unpack("<f", d.read(4))[0]
+                correction = constants.CONFIG["defaultprint"]["lanewidth_correction"]
+                logger.info(f"Lanewdith correction {correction}.")
+                lane_width = struct.unpack("<f", d.read(4))[0] + correction
                 facets_lane = struct.unpack("<I", d.read(4))[0]
                 lanes = struct.unpack("<I", d.read(4))[0]
                 self.state["job"]["totallines"] = int(facets_lane * lanes)
