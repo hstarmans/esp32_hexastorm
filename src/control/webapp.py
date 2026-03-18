@@ -330,15 +330,11 @@ async def diode_test(request, session):
     if LASERHEAD.state["printing"]:
         return {"error": "Busy printing"}, 409
 
-    # state to "Running" (null)
-    devicestate.data["components"]["diodetest"] = None
-
     async def run_test_background():
         await LASERHEAD.test_diode()
 
     asyncio.create_task(run_test_background())
-    # Result diode test retrieved via SSE
-    return devicestate.data
+    return {"status": "started"}
 
 
 @app.post("/print/control")

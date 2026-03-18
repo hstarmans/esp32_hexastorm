@@ -32,17 +32,13 @@ class Laserhead(BaseLaserhead, ESP32Host):
         constants.CONFIG["laserhead"]["facetmeans"] = await self.measure_facet_means()
         constants.update_config()
 
-    async def remap(self, facet_id=0, measure=True):
+    async def remap(self, facet_id=0):
         """
         Maps a calibrated facet ID to its current physical index
         based on rotational shift.
 
         facet_id  -- facet_id to determine internal facet off
-        measure   -- measures facet means before determining shift
         """
-        if measure or (self.cur_facet_means is None):
-            self.cur_facet_means = await self.measure_facet_means()
-
         # Calculate how many positions the facets have rotated
         shift = find_shift(self.cur_facet_means, self.facet_means)[0]
 
@@ -101,12 +97,37 @@ class Laserhead(BaseLaserhead, ESP32Host):
         await super().gotopoint(vector, absolute=False)
         self.enable_steppers = False
 
+    async def synchronize(self, value=True):
+        """Synchronize laser with phodiode.
+
+        Args:
+            value (bool): True to enable synchronization, False to disable.
+        """
+        await super().synchronize(value)
+        if value:
+            self.cur_facet_means = await self.measure_facet_means()
+        else:
+            self.cur_facet_means = None
+
     async def test_diode(self):
         logger.debug("Starting diode test.")
         self.state["components"]["diodetest"] = None
         await self.notify_listeners()
-        self.state["components"]["diodetest"] = await super().test_laserhead()
+        # simulate time needed for measurement
+        await asyncio.sleep(3)
+        cur_sync = (await self.fpga_state)["synchronized"]
+        if not cur_sync:
+            await self.synchronize(True)
+
+        shift = find_shift(self.cur_facet_means, self.facet_means)[0]
+
+        # 2. Pass the shift down to the parent for accurate logging
+        self.state["components"]["diodetest"] = await super().test_laserhead(
+            shift=shift
+        )
         await self.notify_listeners()
+        if not cur_sync:
+            await self.synchronize(False)
 
     async def print_loop(self, fname):
         self.reset()  # reset facet counter

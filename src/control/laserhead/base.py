@@ -109,13 +109,97 @@ class BaseLaserhead:
         # Now clear it so they wait for the next one
         self.statechange.clear()
 
-    async def test_diode(self, timeout=3):
-        logger.debug("Starting diode test.")
+    async def test_diode(self):
+        logger.debug("Starting diode test (Mock - Fixed Reports).")
         self.state["components"]["diodetest"] = None
+        expected_rpm = 3000
+        num_facets = 4
+
+        # Calculate ideal timing
+        exp_facet_ms = 60 / (expected_rpm * num_facets / 1000)
+
         await self.notify_listeners()
-        await asyncio.sleep(timeout)
-        self.state["components"]["diodetest"] = True if randint(0, 10) > 5 else False
+
+        # Fixed "Golden Unit" Pass Report
+        pass_report = {
+            "passed": True,
+            "global_mean_ms": round(exp_facet_ms, 4),
+            "global_deviation_perc": 0.02,
+            "expected_rpm": expected_rpm,
+            "measured_rpm": expected_rpm,
+            "facets": {
+                0: {
+                    "passed": True,
+                    "mean_ms": round(exp_facet_ms + 0.001, 4),
+                    "jitter_perc": 0.0680,
+                    "samples_used": 96,
+                },
+                1: {
+                    "passed": True,
+                    "mean_ms": round(exp_facet_ms + 0.002, 4),
+                    "jitter_perc": 0.0025,
+                    "samples_used": 96,
+                },
+                2: {
+                    "passed": True,
+                    "mean_ms": round(exp_facet_ms - 0.001, 4),
+                    "jitter_perc": 0.0042,
+                    "samples_used": 96,
+                },
+                3: {
+                    "passed": True,
+                    "mean_ms": round(exp_facet_ms - 0.002, 4),
+                    "jitter_perc": 0.1361,
+                    "samples_used": 96,
+                },
+            },
+        }
+
+        # Fixed Fail Report
+        # If RPM is 10 higher, the actual mean_ms goes down slightly.
+        fail_rpm = expected_rpm + 10
+        fail_mean_ms = 60 / (fail_rpm * num_facets / 1000)
+
+        fail_report = {
+            "passed": False,
+            "global_mean_ms": round(fail_mean_ms, 4),
+            "global_deviation_perc": 0.04,
+            "expected_rpm": expected_rpm,
+            "measured_rpm": fail_rpm,
+            "facets": {
+                0: {
+                    "passed": True,
+                    "mean_ms": round(fail_mean_ms + 0.001, 4),
+                    "jitter_perc": 0.0680,
+                    "samples_used": 96,
+                },
+                1: {
+                    "passed": True,
+                    "mean_ms": round(fail_mean_ms + 0.002, 4),
+                    "jitter_perc": 0.0025,
+                    "samples_used": 96,
+                },
+                2: {
+                    "passed": True,
+                    "mean_ms": round(fail_mean_ms - 0.001, 4),
+                    "jitter_perc": 0.0042,
+                    "samples_used": 96,
+                },
+                3: {
+                    "passed": False,
+                    "mean_ms": round(fail_mean_ms - 0.004, 4),
+                    "jitter_perc": 0.2161,  # Failed jitter
+                    "samples_used": 96,
+                },
+            },
+        }
+
+        # 50/50 chance to serve the pass or fail report
+        report = pass_report if randint(0, 1) == 1 else fail_report
+
+        self.state["components"]["diodetest"] = report
         await self.notify_listeners()
+        logger.debug(f"Diode test (Mock) finished. Passed: {report['passed']}")
 
     async def handle_pausing_and_stopping(self):
         if self._pause.is_set():
