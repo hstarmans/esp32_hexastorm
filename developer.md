@@ -59,10 +59,10 @@ Before building the MicroPython firmware, you need to install the necessary Pyth
 The process of creating a MicroPython binary for the ESP32 involves using the Espressif IoT Development Framework (ESP-IDF). The following steps are based on the procedure described in the [MicroPython ESP32 port documentation](https://github.com/micropython/micropython/tree/master/ports/esp32).
 
 1.  **Install and Activate ESP-IDF:**
-    Clone the ESP-IDF repository (version v5.4.0 is specified) recursively and run the installation script. You'll need to source the export script in each new terminal session. Note that Git might not be able to download ESP-IDF directly; ensure you have the necessary permissions and network configuration.
-    IDF version v5.4.1 is not able to communicate with the TMC2209.
+    Clone the ESP-IDF repository (version v5.5.1 is specified) recursively and run the installation script. You'll need to source the export script in each new terminal session. Note that Git might not be able to download ESP-IDF directly; ensure you have the necessary permissions and network configuration.
+    IDF version v5.5.1 is not able to communicate with the TMC2209.
     ```bash
-    git clone -b v5.4.0 --recursive https://github.com/espressif/esp-idf.git
+    git checkout v5.5.1 --recursive https://github.com/espressif/esp-idf.git
     cd esp-idf
     ./install.sh  esp32s3  # (or install.bat on Windows)
     source export.sh       # (or export.bat on Windows)
@@ -79,6 +79,8 @@ The process of creating a MicroPython binary for the ESP32 involves using the Es
     Navigate to the `mpy-cross` directory within the `micropython` repository and build the cross-compiler.
     ```bash
     cd micropython
+    git checkout -f v1.27.0 # latest tested version
+    git submodule update --init --recursive
     cd mpy-cross
     make
     cd ..
