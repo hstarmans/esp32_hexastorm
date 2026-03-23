@@ -236,8 +236,10 @@ class BaseLaserhead:
         await self.print_loop_prep(fname)
         # TODO: this would normally come from a file
         total_lines = 10
-
+        self.laser_current = self.state["job"]["laserpower"]
         self.state["job"]["totallines"] = total_lines
+        logger.info("Homing X- and Y-axis.")
+        logger.info(f"Moving to start position. {self.state['job']['start_position']}")
         start_time = time()
         for line in range(total_lines):
             logger.info(f"Exposing line {line}.")

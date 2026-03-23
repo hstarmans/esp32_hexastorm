@@ -356,6 +356,7 @@ async def print_control(request, session):
             data["exposureperline"]
         )
         constants.CONFIG["defaultprint"]["singlefacet"] = bool(data["singlefacet"])
+        constants.CONFIG["defaultprint"]["start_position"] = data["start_position"]
         constants.update_config()
 
         # Start background print task

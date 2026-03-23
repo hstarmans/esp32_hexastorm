@@ -29,7 +29,8 @@ class Laserhead(BaseLaserhead, ESP32Host):
 
     async def update_facet_means(self):
         "Set period per facet in ms with list"
-        constants.CONFIG["laserhead"]["facetmeans"] = await self.measure_facet_means()
+        self.cur_facet_means = await self.measure_facet_means()
+        constants.CONFIG["laserhead"]["facetmeans"] = self.cur_facet_means
         constants.update_config()
 
     async def remap(self, facet_id=0):
@@ -165,13 +166,15 @@ class Laserhead(BaseLaserhead, ESP32Host):
                 # position so laser is in focus
                 self.enable_steppers = True
                 laserpower = self.state["job"]["laserpower"]
-                if (laserpower > 50) & (laserpower < 151):
+                if 50 < laserpower < 151:
                     self.laser_current = laserpower
                 logger.info("Homing X- and Y-axis.")
                 await self.home_axes([1, 1, 0])
                 logger.info("Moving to start position.")
                 # scanning direction offset is needed to prevent lock with home
-                await self.gotopoint([70, 5, 0], absolute=False)
+                await self.gotopoint(
+                    self.state["job"]["start_position"], absolute=False
+                )
                 # enable scanhead
                 await self.enable_comp(
                     synchronize=True,
@@ -262,7 +265,7 @@ class Laserhead(BaseLaserhead, ESP32Host):
         logger.info("Waiting for stopline to execute.")
         await self.enable_comp(synchronize=False)
         self.enable_steppers = False
-        if not (await self.fpga_state)["error"]:
+        if (await self.fpga_state)["error"]:
             logger.info("Error detected during printing")
         logger.info(
             f"Finished exposure. Total printing time {self.state['job']['printingtime']}"

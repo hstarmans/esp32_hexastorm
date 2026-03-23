@@ -14,6 +14,7 @@
  * @property {number} exposureperline - Exposure count
  * @property {number} laserpower - Laser power level
  * @property {boolean} singlefacet - Whether single facet mode is on
+ * @property {number[]} start_position - The [x, y, z] starting vector
  */
 
 /**
@@ -49,7 +50,8 @@ document.addEventListener("alpine:init", () => {
             printingtime: 0,
             exposureperline: 0,
             laserpower: 0,
-            singlefacet: false
+            singlefacet: false,
+            start_position: [0, 0, 0],
         },
         /** @type {Components} */
         components: {
@@ -354,6 +356,9 @@ document.addEventListener("alpine:init", () => {
      * @property {string} selectedFile
      * @property {number|string} laserPower
      * @property {number|string} exposure
+     * @property {number|string} posX      
+     * @property {number|string} posY      
+     * @property {number|string} posZ      
      * @property {boolean} singleFacet
      * @property {boolean} isStarting
      * @property {() => void} init
@@ -370,6 +375,9 @@ document.addEventListener("alpine:init", () => {
         laserPower: 100,
         /** @type {number|string} */
         exposure: 1,
+        posX: 0,
+        posY: 0,
+        posZ: 0,
         singleFacet: false,
         isStarting: false,
 
@@ -403,7 +411,12 @@ document.addEventListener("alpine:init", () => {
                     file: this.selectedFile,
                     laserpower: Number(this.laserPower),
                     exposureperline: Number(this.exposure),
-                    singlefacet: this.singleFacet
+                    singlefacet: this.singleFacet,
+                    start_position: [
+                        Number(this.posX), 
+                        Number(this.posY), 
+                        Number(this.posZ)
+                    ]
                 };
 
                 const res = await fetch('/print/control', {

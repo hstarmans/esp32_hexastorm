@@ -4,7 +4,12 @@
         "laserpower": 130,
         "exposureperline": 4,
         "lanewidth_correction": 0.4,
-        "singlefacet": false
+        "singlefacet": false,
+        "start_position": [
+            70,
+            5,
+            0
+        ]
     },
     "fpga": {
         "version": "0.1",
