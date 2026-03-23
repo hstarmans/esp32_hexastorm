@@ -71,7 +71,7 @@ The process of creating a MicroPython binary for the ESP32 involves using the Es
 2.  **Clone Additional Libraries:**
     Clone the `ulab` and `micropython` repositories. Ideally, `micropython-ulab` and `micropython` should reside in the same root folder.
     ```bash
-    git clone https://github.com/v923z/micropython-ulab
+    git clone 6.11.0 --depth 1 https://github.com/v923z/micropython-ulab.git
     git clone https://github.com/micropython/micropython.git
     ```
 
