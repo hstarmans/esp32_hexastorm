@@ -37,6 +37,8 @@ def is_authorized(session):
     :param dict session: Microdot session object (dict-like).
     :return bool: ``True`` if the session is authorized, otherwise ``False``.
     """
+    if not session:
+        return False
     pwd = session.get("password")
     return pass_to_sha(pwd) == constants.CONFIG["webserver"]["password"]
 
@@ -84,7 +86,7 @@ class DeviceState:
             "files": files,
             "wifi": {
                 "connected": bootlib.is_connected(),
-                "available": bootlib.list_wlans(),  # <--- This is the slow part
+                "available": bootlib.list_wlans(),  # <-- can be slow
                 "ssid": constants.CONFIG["wifi_login"]["ssid"],
                 "password": constants.CONFIG["wifi_login"]["password"],
             },
@@ -101,6 +103,40 @@ Request.max_content_length = (
 )
 devicestate = DeviceState(LASERHEAD)
 
+# --- AUTHENTICATION MIDDLEWARE ---
+
+
+@app.before_request
+@with_session
+async def authenticate(request, session):
+    """
+    Global authentication check before processing any request.
+    """
+    # 1. Sta toegang toe tot de login pagina en statische bestanden
+    if request.path == "/" or request.path.startswith("/static/"):
+        return
+
+    # 2. Check autorisatie
+    if not is_authorized(session):
+        # Voor AJAX/Fetch/SSE calls sturen we een 401 (Unauthorized)
+        # Voor gewone pagina navigatie (zoals /logout) redirecten we naar de login
+        api_paths = (
+            "/control/",
+            "/print/",
+            "/state",
+            "/move",
+            "/upload",
+            "/deletefile",
+            "/reset",
+        )
+        if request.path.startswith(api_paths):
+            return {"error": "Unauthorized"}, 401
+
+        return redirect("/")
+
+
+# --- ROUTES ---
+
 
 @app.route("/", methods=["GET", "POST"])
 @with_session
@@ -110,6 +146,7 @@ async def index(req, session):
         if is_authorized(session):
             session.save()
         return redirect("/")
+
     if is_authorized(session):
         logger.info("User logged in")
         devicestate.update()
@@ -125,10 +162,6 @@ SAFE_FILENAME_PATTERN = re.compile(r"[^a-zA-Z0-9_.-]")
 @app.post("/upload")
 @with_session
 async def upload(request, session):
-    if not is_authorized(session):
-        # Fail fast: Return 401 immediately
-        return {"unauthorized": "please login"}, 401
-
     folder = constants.CONFIG["webserver"]["job_folder"]
 
     # We check if we can stat the folder; if not, we create it.
@@ -215,9 +248,6 @@ async def upload(request, session):
 @app.post("/deletefile")
 @with_session
 async def delete_file(request, session):
-    if not is_authorized(session):
-        return {"unauthorized": "please login"}, 401
-
     try:
         jsondata = request.json
         if not jsondata or "file" not in jsondata:
@@ -266,9 +296,6 @@ async def logout(req, session):
 @app.post("/reset")
 @with_session
 async def reset(req, session):
-    if not is_authorized(session):
-        return redirect("/")
-
     logger.debug("Scheduling reset...")
 
     async def delayed_reset():
@@ -285,9 +312,6 @@ async def reset(req, session):
 @app.post("/move")
 @with_session
 async def move(request, session):
-    if not is_authorized(session):
-        return {"error": "Unauthorized"}, 401
-
     data = request.json
     steps = float(data.get("steps", 1))
     vector = [int(x) * steps for x in data.get("vector", [0, 0, 0])]
@@ -299,9 +323,6 @@ async def move(request, session):
 @app.post("/control/laser")
 @with_session
 async def toggle_laser(request, session):
-    if not is_authorized(session):
-        return {"error": "Unauthorized"}, 401
-
     # Safety check: Don't toggle hardware while printing
     if LASERHEAD.state["printing"]:
         return {"error": "Cannot toggle laser while printing"}, 409
@@ -313,8 +334,6 @@ async def toggle_laser(request, session):
 @app.post("/control/prism")
 @with_session
 async def toggle_prism(request, session):
-    if not is_authorized(session):
-        return {"error": "Unauthorized"}, 401
     if LASERHEAD.state["printing"]:
         return {"error": "Cannot toggle prism while printing"}, 409
     await LASERHEAD.toggle_prism()
@@ -340,9 +359,6 @@ async def diode_test(request, session):
 @app.post("/print/control")
 @with_session
 async def print_control(request, session):
-    if not is_authorized(session):
-        return {"error": "Unauthorized"}, 401
-
     data = request.json
     action = data.get("action")
 
@@ -376,10 +392,6 @@ async def print_control(request, session):
 @with_sse
 @with_session
 async def state(request, session, sse):
-    if not is_authorized(session):
-        await sse.send({"notauthorized": 0}, event="message")
-        return
-
     # Send initial state immediately upon connection
     await sse.send(devicestate.data)
 
@@ -411,7 +423,9 @@ if __name__ == "__main__":
     LASERHEAD.debug = True
     set_log_level(logging.DEBUG)
     logger.info("Started logging")
+
     python_files = [f for f in os.listdir(temp_dir) if ".py" in f]
     for f in python_files:
         os.remove(temp_dir + "/" + f)
+
     asyncio.run(app.start_server(port=5000, debug=True))

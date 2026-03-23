@@ -5,13 +5,14 @@ microdot
 The ``microdot`` module defines a few classes that help implement HTTP-based
 servers for MicroPython and standard Python.
 """
+
 import asyncio
 import io
 import re
 import time
 
 try:
-    import orjson as json
+    import orjson as json  # type: ignore[import-not-found]
 except ImportError:
     import json
 
@@ -28,11 +29,13 @@ try:
             ret = await handler(*args, **kwargs)
         else:
             ret = await asyncio.get_running_loop().run_in_executor(
-                None, partial(handler, *args, **kwargs))
+                None, partial(handler, *args, **kwargs)
+            )
         return ret
 except ImportError:  # pragma: no cover
-    def iscoroutine(coro):
-        return hasattr(coro, 'send') and hasattr(coro, 'throw')
+
+    def iscoroutine(coro):  # type: ignore[misc]
+        return hasattr(coro, "send") and hasattr(coro, "throw")
 
     async def invoke_handler(handler, *args, **kwargs):
         """Invoke a handler and return the result.
@@ -45,13 +48,15 @@ except ImportError:  # pragma: no cover
             ret = await ret
         return ret
 
+
 try:
-    from sys import print_exception
+    from sys import print_exception  # type: ignore[attr-defined]
 except ImportError:  # pragma: no cover
     import traceback
 
     def print_exception(exc):
         traceback.print_exc()
+
 
 MUTED_SOCKET_ERRORS = [
     32,  # Broken pipe
@@ -64,25 +69,31 @@ MUTED_SOCKET_ERRORS = [
 def urldecode(s):
     if isinstance(s, str):
         s = s.encode()
-    s = s.replace(b'+', b' ')
-    parts = s.split(b'%')
+    s = s.replace(b"+", b" ")
+    parts = s.split(b"%")
     if len(parts) == 1:
         return s.decode()
     result = [parts[0]]
     for item in parts[1:]:
-        if item == b'':
-            result.append(b'%')
+        if item == b"":
+            result.append(b"%")
         else:
             code = item[:2]
             result.append(bytes([int(code, 16)]))
             result.append(item[2:])
-    return b''.join(result).decode()
+    return b"".join(result).decode()
 
 
 def urlencode(s):
-    return s.replace('+', '%2B').replace(' ', '+').replace(
-        '%', '%25').replace('?', '%3F').replace('#', '%23').replace(
-            '&', '%26').replace('=', '%3D')
+    return (
+        s.replace("+", "%2B")
+        .replace(" ", "+")
+        .replace("%", "%25")
+        .replace("?", "%3F")
+        .replace("#", "%23")
+        .replace("&", "%26")
+        .replace("=", "%3D")
+    )
 
 
 class NoCaseDict(dict):
@@ -105,6 +116,7 @@ class NoCaseDict(dict):
         >>> print(d)
         {}
     """
+
     def __init__(self, initial_dict=None):
         super().__init__(initial_dict or {})
         self.keymap = {k.lower(): k for k in self.keys() if k.lower() != k}
@@ -148,7 +160,7 @@ def mro(cls):  # pragma: no cover
     In MicroPython, this function implements a recursive depth-first scanning
     of the class hierarchy.
     """
-    if hasattr(cls, 'mro'):
+    if hasattr(cls, "mro"):
         return cls.__mro__
 
     def _mro(cls):
@@ -188,6 +200,7 @@ class MultiDict(dict):
         >>> print(d.getlist('sort'))
         ['name', 'email']
     """
+
     def __init__(self, initial_dict=None):
         super().__init__()
         if initial_dict:
@@ -263,6 +276,7 @@ class MultiDict(dict):
 
 class AsyncBytesIO:
     """An async wrapper for BytesIO."""
+
     def __init__(self, data):
         self.stream = io.BytesIO(data)
 
@@ -275,7 +289,7 @@ class AsyncBytesIO:
     async def readexactly(self, n):  # pragma: no cover
         return self.stream.read(n)
 
-    async def readuntil(self, separator=b'\n'):  # pragma: no cover
+    async def readuntil(self, separator=b"\n"):  # pragma: no cover
         return self.stream.readuntil(separator=separator)
 
     async def awrite(self, data):  # pragma: no cover
@@ -287,6 +301,7 @@ class AsyncBytesIO:
 
 class Request:
     """An HTTP request."""
+
     #: Specify the maximum payload size that is accepted. Requests with larger
     #: payloads will be rejected with a 413 status code. Applications can
     #: change this maximum as necessary.
@@ -319,16 +334,32 @@ class Request:
     class G:
         pass
 
-    def __init__(self, app, client_addr, method, url, http_version, headers,
-                 body=None, stream=None, sock=None, url_prefix='',
-                 subapp=None):
+    def __init__(
+        self,
+        app,
+        client_addr,
+        method,
+        url,
+        http_version,
+        headers,
+        body=None,
+        stream=None,
+        sock=None,
+        url_prefix="",
+        subapp=None,
+        scheme=None,
+        route=None,
+    ):
         #: The application instance to which this request belongs.
         self.app = app
         #: The address of the client, as a tuple (host, port).
         self.client_addr = client_addr
         #: The HTTP method of the request.
         self.method = method
-        #: The request URL, including the path and query string.
+        #: The scheme of the request, either `http` or `https`.
+        self.scheme = scheme or "http"
+        #: The request URL, including the path and query string, but not the
+        #: scheme or the host, which is available in the ``Host`` header.
         self.url = url
         #: The URL prefix, if the endpoint comes from a mounted
         #: sub-application, or else ''.
@@ -336,6 +367,8 @@ class Request:
         #: The sub-application instance, or `None` if this isn't a mounted
         #: endpoint.
         self.subapp = subapp
+        #: The route function that handles this request.
+        self.route = route
         #: The path portion of the URL.
         self.path = url
         #: The query string portion of the URL.
@@ -356,18 +389,18 @@ class Request:
         self.g = Request.G()
 
         self.http_version = http_version
-        if '?' in self.path:
-            self.path, self.query_string = self.path.split('?', 1)
+        if "?" in self.path:
+            self.path, self.query_string = self.path.split("?", 1)
             self.args = self._parse_urlencoded(self.query_string)
 
-        if 'Content-Length' in self.headers:
-            self.content_length = int(self.headers['Content-Length'])
-        if 'Content-Type' in self.headers:
-            self.content_type = self.headers['Content-Type']
-        if 'Cookie' in self.headers:
-            for cookie in self.headers['Cookie'].split(';'):
-                name, value = cookie.strip().split('=', 1)
-                self.cookies[name] = value
+        if "Content-Length" in self.headers:
+            self.content_length = int(self.headers["Content-Length"])
+        if "Content-Type" in self.headers:
+            self.content_type = self.headers["Content-Type"]
+        if "Cookie" in self.headers:
+            for cookie in self.headers["Cookie"].split(";"):
+                c = cookie.strip().split("=", 1)
+                self.cookies[c[0]] = c[1] if len(c) > 1 else ""
 
         self._body = body
         self.body_used = False
@@ -379,7 +412,7 @@ class Request:
         self.after_request_handlers = []
 
     @staticmethod
-    async def create(app, client_reader, client_writer, client_addr):
+    async def create(app, client_reader, client_writer, client_addr, scheme=None):
         """Create a request object.
 
         :param app: The Microdot application instance.
@@ -388,6 +421,7 @@ class Request:
         :param client_writer: An output stream where the response data can be
                               written.
         :param client_addr: The address of the client, as a tuple.
+        :param scheme: The scheme of the request, either 'http' or 'https'.
 
         This method is a coroutine. It returns a newly created ``Request``
         object.
@@ -397,48 +431,56 @@ class Request:
         if not line:  # pragma: no cover
             return None
         method, url, http_version = line.split()
-        http_version = http_version.split('/', 1)[1]
+        http_version = http_version.split("/", 1)[1]
 
         # headers
         headers = NoCaseDict()
         content_length = 0
         while True:
-            line = (await Request._safe_readline(
-                client_reader)).strip().decode()
-            if line == '':
+            line = (await Request._safe_readline(client_reader)).strip().decode()
+            if line == "":
                 break
-            header, value = line.split(':', 1)
+            header, value = line.split(":", 1)
             value = value.strip()
             headers[header] = value
-            if header.lower() == 'content-length':
+            if header.lower() == "content-length":
                 content_length = int(value)
 
         # body
-        body = b''
+        body = b""
         if content_length and content_length <= Request.max_body_length:
             body = await client_reader.readexactly(content_length)
             stream = None
         else:
-            body = b''
+            body = b""
             stream = client_reader
 
-        return Request(app, client_addr, method, url, http_version, headers,
-                       body=body, stream=stream,
-                       sock=(client_reader, client_writer))
+        return Request(
+            app,
+            client_addr,
+            method,
+            url,
+            http_version,
+            headers,
+            body=body,
+            stream=stream,
+            sock=(client_reader, client_writer),
+            scheme=scheme,
+        )
 
     def _parse_urlencoded(self, urlencoded):
         data = MultiDict()
         if len(urlencoded) > 0:  # pragma: no branch
             if isinstance(urlencoded, str):
-                for kv in [pair.split('=', 1)
-                           for pair in urlencoded.split('&') if pair]:
-                    data[urldecode(kv[0])] = urldecode(kv[1]) \
-                        if len(kv) > 1 else ''
+                for kv in [
+                    pair.split("=", 1) for pair in urlencoded.split("&") if pair
+                ]:
+                    data[urldecode(kv[0])] = urldecode(kv[1]) if len(kv) > 1 else ""
             elif isinstance(urlencoded, bytes):  # pragma: no branch
-                for kv in [pair.split(b'=', 1)
-                           for pair in urlencoded.split(b'&') if pair]:
-                    data[urldecode(kv[0])] = urldecode(kv[1]) \
-                        if len(kv) > 1 else b''
+                for kv in [
+                    pair.split(b"=", 1) for pair in urlencoded.split(b"&") if pair
+                ]:
+                    data[urldecode(kv[0])] = urldecode(kv[1]) if len(kv) > 1 else b""
         return data
 
     @property
@@ -460,8 +502,8 @@ class Request:
         if self._json is None:
             if self.content_type is None:
                 return None
-            mime_type = self.content_type.split(';')[0]
-            if mime_type != 'application/json':
+            mime_type = self.content_type.split(";")[0]
+            if mime_type != "application/json":
                 return None
             self._json = json.loads(self.body.decode())
         return self._json
@@ -480,8 +522,8 @@ class Request:
         if self._form is None:
             if self.content_type is None:
                 return None
-            mime_type = self.content_type.split(';')[0]
-            if mime_type != 'application/x-www-form-urlencoded':
+            mime_type = self.content_type.split(";")[0]
+            if mime_type != "application/x-www-form-urlencoded":
                 return None
             self._form = self._parse_urlencoded(self.body)
         return self._form
@@ -524,9 +566,9 @@ class Request:
 
     @staticmethod
     async def _safe_readline(stream):
-        line = (await stream.readline())
+        line = await stream.readline()
         if len(line) > Request.max_readline:
-            raise ValueError('line too long')
+            raise ValueError("line too long")
         return line
 
 
@@ -545,22 +587,24 @@ class Response:
                    default is "OK" for responses with a 200 status code and
                    "N/A" for any other status codes.
     """
+
     types_map = {
-        'css': 'text/css',
-        'gif': 'image/gif',
-        'html': 'text/html',
-        'jpg': 'image/jpeg',
-        'js': 'application/javascript',
-        'json': 'application/json',
-        'png': 'image/png',
-        'txt': 'text/plain',
+        "css": "text/css",
+        "gif": "image/gif",
+        "html": "text/html",
+        "jpg": "image/jpeg",
+        "js": "application/javascript",
+        "json": "application/json",
+        "png": "image/png",
+        "txt": "text/plain",
+        "svg": "image/svg+xml",
     }
 
     send_file_buffer_size = 1024
 
     #: The content type to use for responses that do not explicitly define a
     #: ``Content-Type`` header.
-    default_content_type = 'text/plain'
+    default_content_type = "text/plain"
 
     #: The default cache control max age used by :meth:`send_file`. A value
     #: of ``None`` means that no ``Cache-Control`` header is added.
@@ -570,16 +614,16 @@ class Response:
     #: written to the client. Used to exit WebSocket connections cleanly.
     already_handled = None
 
-    def __init__(self, body='', status_code=200, headers=None, reason=None):
+    def __init__(self, body=b"", status_code=200, headers=None, reason=None):
         if body is None and status_code == 200:
-            body = ''
+            body = ""
             status_code = 204
         self.status_code = status_code
         self.headers = NoCaseDict(headers or {})
         self.reason = reason
         if isinstance(body, (dict, list)):
             body = json.dumps(body)
-            self.headers['Content-Type'] = 'application/json; charset=UTF-8'
+            self.headers["Content-Type"] = "application/json; charset=UTF-8"
         if isinstance(body, str):
             self.body = body.encode()
         else:
@@ -587,9 +631,18 @@ class Response:
             self.body = body
         self.is_head = False
 
-    def set_cookie(self, cookie, value, path=None, domain=None, expires=None,
-                   max_age=None, secure=False, http_only=False,
-                   partitioned=False):
+    def set_cookie(
+        self,
+        cookie,
+        value,
+        path=None,
+        domain=None,
+        expires=None,
+        max_age=None,
+        secure=False,
+        http_only=False,
+        partitioned=False,
+    ):
         """Add a cookie to the response.
 
         :param cookie: The cookie's name.
@@ -603,66 +656,80 @@ class Response:
         :param http_only: The cookie's ``HttpOnly`` flag.
         :param partitioned: Whether the cookie is partitioned.
         """
-        http_cookie = '{cookie}={value}'.format(cookie=cookie, value=value)
+        http_cookie = "{cookie}={value}".format(cookie=cookie, value=value)
         if path:
-            http_cookie += '; Path=' + path
+            http_cookie += "; Path=" + path
         if domain:
-            http_cookie += '; Domain=' + domain
+            http_cookie += "; Domain=" + domain
         if expires:
             if isinstance(expires, str):
-                http_cookie += '; Expires=' + expires
+                http_cookie += "; Expires=" + expires
             else:  # pragma: no cover
-                http_cookie += '; Expires=' + time.strftime(
-                    '%a, %d %b %Y %H:%M:%S GMT', expires.timetuple())
+                http_cookie += "; Expires=" + time.strftime(
+                    "%a, %d %b %Y %H:%M:%S GMT", expires.timetuple()
+                )
         if max_age is not None:
-            http_cookie += '; Max-Age=' + str(max_age)
+            http_cookie += "; Max-Age=" + str(max_age)
         if secure:
-            http_cookie += '; Secure'
+            http_cookie += "; Secure"
         if http_only:
-            http_cookie += '; HttpOnly'
+            http_cookie += "; HttpOnly"
         if partitioned:
-            http_cookie += '; Partitioned'
-        if 'Set-Cookie' in self.headers:
-            self.headers['Set-Cookie'].append(http_cookie)
+            http_cookie += "; Partitioned"
+        if "Set-Cookie" in self.headers:
+            self.headers["Set-Cookie"].append(http_cookie)
         else:
-            self.headers['Set-Cookie'] = [http_cookie]
+            self.headers["Set-Cookie"] = [http_cookie]
 
     def delete_cookie(self, cookie, **kwargs):
         """Delete a cookie.
 
         :param cookie: The cookie's name.
-        :param kwargs: Any cookie opens and flags supported by
-                       ``set_cookie()`` except ``expires`` and ``max_age``.
+        :param kwargs: Any cookie options and flags supported by
+                       :meth:`set_cookie() <microdot.Response.set_cookie>`.
+                       Values given for ``expires`` and ``max_age`` are
+                       ignored.
         """
-        self.set_cookie(cookie, '', expires='Thu, 01 Jan 1970 00:00:01 GMT',
-                        max_age=0, **kwargs)
+        kwargs.pop("expires", None)
+        kwargs.pop("max_age", None)
+        self.set_cookie(
+            cookie, "", expires="Thu, 01 Jan 1970 00:00:01 GMT", max_age=0, **kwargs
+        )
 
     def complete(self):
-        if isinstance(self.body, bytes) and \
-                'Content-Length' not in self.headers:
-            self.headers['Content-Length'] = str(len(self.body))
-        if 'Content-Type' not in self.headers:
-            self.headers['Content-Type'] = self.default_content_type
-            if 'charset=' not in self.headers['Content-Type']:
-                self.headers['Content-Type'] += '; charset=UTF-8'
+        if isinstance(self.body, bytes) and "Content-Length" not in self.headers:
+            self.headers["Content-Length"] = str(len(self.body))
+        if "Content-Type" not in self.headers:
+            self.headers["Content-Type"] = self.default_content_type
+            if "charset=" not in self.headers["Content-Type"]:
+                self.headers["Content-Type"] += "; charset=UTF-8"
 
     async def write(self, stream):
         self.complete()
 
         try:
             # status code
-            reason = self.reason if self.reason is not None else \
-                ('OK' if self.status_code == 200 else 'N/A')
-            await stream.awrite('HTTP/1.0 {status_code} {reason}\r\n'.format(
-                status_code=self.status_code, reason=reason).encode())
+            reason = (
+                self.reason
+                if self.reason is not None
+                else ("OK" if self.status_code == 200 else "N/A")
+            )
+            await stream.awrite(
+                "HTTP/1.0 {status_code} {reason}\r\n".format(
+                    status_code=self.status_code, reason=reason
+                ).encode()
+            )
 
             # headers
             for header, value in self.headers.items():
                 values = value if isinstance(value, list) else [value]
                 for value in values:
-                    await stream.awrite('{header}: {value}\r\n'.format(
-                        header=header, value=value).encode())
-            await stream.awrite(b'\r\n')
+                    await stream.awrite(
+                        "{header}: {value}\r\n".format(
+                            header=header, value=value
+                        ).encode()
+                    )
+            await stream.awrite(b"\r\n")
 
             # body
             if not self.is_head:
@@ -673,23 +740,24 @@ class Response:
                     try:
                         await stream.awrite(body)
                     except OSError as exc:  # pragma: no cover
-                        if exc.errno in MUTED_SOCKET_ERRORS or \
-                                exc.args[0] == 'Connection lost':
-                            if hasattr(iter, 'aclose'):
+                        if (
+                            exc.errno in MUTED_SOCKET_ERRORS
+                            or exc.args[0] == "Connection lost"
+                        ):
+                            if hasattr(iter, "aclose"):
                                 await iter.aclose()
                         raise
-                if hasattr(iter, 'aclose'):  # pragma: no branch
+                if hasattr(iter, "aclose"):  # pragma: no branch
                     await iter.aclose()
 
         except OSError as exc:  # pragma: no cover
-            if exc.errno in MUTED_SOCKET_ERRORS or \
-                    exc.args[0] == 'Connection lost':
+            if exc.errno in MUTED_SOCKET_ERRORS or exc.args[0] == "Connection lost":
                 pass
             else:
                 raise
 
     def body_iter(self):
-        if hasattr(self.body, '__anext__'):
+        if hasattr(self.body, "__anext__"):
             # response body is an async generator
             return self.body
 
@@ -713,9 +781,9 @@ class Response:
                     await self.aclose()
                     raise StopAsyncIteration
                 if self.i == self.ITER_UNKNOWN:
-                    if hasattr(response.body, 'read'):
+                    if hasattr(response.body, "read"):
                         self.i = self.ITER_FILE_OBJ
-                    elif hasattr(response.body, '__next__'):
+                    elif hasattr(response.body, "__next__"):
                         self.i = self.ITER_SYNC_GEN
                         return next(response.body)
                     else:
@@ -735,7 +803,7 @@ class Response:
                 return buf
 
             async def aclose(self):
-                if hasattr(response.body, 'close'):
+                if hasattr(response.body, "close"):
                     result = response.body.close()
                     if iscoroutine(result):  # pragma: no cover
                         await result
@@ -750,19 +818,26 @@ class Response:
         :param status_code: The 3xx status code to use for the redirect. The
                             default is 302.
         """
-        if '\x0d' in location or '\x0a' in location:
-            raise ValueError('invalid redirect URL')
-        return cls(status_code=status_code, headers={'Location': location})
+        if "\x0d" in location or "\x0a" in location:
+            raise ValueError("invalid redirect URL")
+        return cls(status_code=status_code, headers={"Location": location})
 
     @classmethod
-    def send_file(cls, filename, status_code=200, content_type=None,
-                  stream=None, max_age=None, compressed=False,
-                  file_extension=''):
+    def send_file(
+        cls,
+        filename,
+        status_code=200,
+        content_type=None,
+        stream=None,
+        max_age=None,
+        compressed=False,
+        file_extension="",
+    ):
         """Send file contents in a response.
 
         :param filename: The filename of the file.
         :param status_code: The 3xx status code to use for the redirect. The
-                            default is 302.
+                            default is 200.
         :param content_type: The ``Content-Type`` header to use in the
                              response. If omitted, it is generated
                              automatically from the file extension of the
@@ -790,38 +865,65 @@ class Response:
         first.
         """
         if content_type is None:
-            if compressed and filename.endswith('.gz'):
-                ext = filename[:-3].split('.')[-1]
+            if compressed and filename.endswith(".gz"):
+                ext = filename[:-3].split(".")[-1]
             else:
-                ext = filename.split('.')[-1]
+                ext = filename.split(".")[-1]
             if ext in Response.types_map:
                 content_type = Response.types_map[ext]
             else:
-                content_type = 'application/octet-stream'
-        headers = {'Content-Type': content_type}
+                content_type = "application/octet-stream"
+        headers = {"Content-Type": content_type}
 
         if max_age is None:
             max_age = cls.default_send_file_max_age
         if max_age is not None:
-            headers['Cache-Control'] = 'max-age={}'.format(max_age)
+            headers["Cache-Control"] = "max-age={}".format(max_age)
 
         if compressed:
-            headers['Content-Encoding'] = compressed \
-                if isinstance(compressed, str) else 'gzip'
+            headers["Content-Encoding"] = (
+                compressed if isinstance(compressed, str) else "gzip"
+            )
 
-        f = stream or open(filename + file_extension, 'rb')
+        f = stream or open(filename + file_extension, "rb")
         return cls(body=f, status_code=status_code, headers=headers)
 
 
-class URLPattern():
+class URLPattern:
+    """A class that represents the URL pattern for a route.
+
+    :param url_pattern: The route URL pattern, which can include static and
+                        dynamic path segments. Dynamic segments are enclosed in
+                        ``<`` and ``>``. The type of the segment can be given
+                        as a prefix, separated from the name with a colon.
+                        Supported types are ``string`` (the default),
+                        ``int`` and ``path``. Custom types can be registered
+                        using the :meth:`URLPattern.register_type` method.
+    """
+
     segment_patterns = {
-        'string': '/([^/]+)',
-        'int': '/(-?\\d+)',
-        'path': '/(.+)',
+        "string": "/([^/]+)",
+        "int": "/(-?\\d+)",
+        "path": "/(.+)",
     }
     segment_parsers = {
-        'int': lambda value: int(value),
+        "int": lambda value: int(value),
     }
+
+    @classmethod
+    def register_type(cls, type_name, pattern="[^/]+", parser=None):
+        """Register a new URL segment type.
+
+        :param type_name: The name of the segment type to register.
+        :param pattern: The regular expression pattern to use when matching
+                        this segment type. If not given, a default matcher for
+                        a single path segment is used.
+        :param parser: A callable that will be used to parse and transform the
+                       value of the segment. If omitted, the value is returned
+                       as a string.
+        """
+        cls.segment_patterns[type_name] = "/({})".format(pattern)
+        cls.segment_parsers[type_name] = parser
 
     def __init__(self, url_pattern):
         self.url_pattern = url_pattern
@@ -829,67 +931,71 @@ class URLPattern():
         self.regex = None
 
     def compile(self):
-        pattern = ''
-        for segment in self.url_pattern.lstrip('/').split('/'):
-            if segment and segment[0] == '<':
-                if segment[-1] != '>':
-                    raise ValueError('invalid URL pattern')
+        """Generate a regular expression for the URL pattern.
+
+        This method is automatically invoked the first time the URL pattern is
+        matched against a path.
+        """
+        pattern = ""
+        for segment in self.url_pattern.lstrip("/").split("/"):
+            if segment and segment[0] == "<":
+                if segment[-1] != ">":
+                    raise ValueError("invalid URL pattern")
                 segment = segment[1:-1]
-                if ':' in segment:
-                    type_, name = segment.rsplit(':', 1)
+                if ":" in segment:
+                    type_, name = segment.rsplit(":", 1)
                 else:
-                    type_ = 'string'
+                    type_ = "string"
                     name = segment
                 parser = None
-                if type_.startswith('re:'):
-                    pattern += '/({pattern})'.format(pattern=type_[3:])
+                if type_.startswith("re:"):
+                    pattern += "/({pattern})".format(pattern=type_[3:])
                 else:
                     if type_ not in self.segment_patterns:
-                        raise ValueError('invalid URL segment type')
+                        raise ValueError("invalid URL segment type")
                     pattern += self.segment_patterns[type_]
                     parser = self.segment_parsers.get(type_)
-                self.segments.append({'parser': parser, 'name': name,
-                                      'type': type_})
+                self.segments.append({"parser": parser, "name": name, "type": type_})
             else:
-                pattern += '/' + segment
-                self.segments.append({'parser': None})
-        self.regex = re.compile('^' + pattern + '$')
+                pattern += "/" + segment
+                self.segments.append({"parser": None})
+        self.regex = re.compile("^" + pattern + "$")
         return self.regex
 
-    @classmethod
-    def register_type(cls, type_name, pattern='[^/]+', parser=None):
-        cls.segment_patterns[type_name] = '/({})'.format(pattern)
-        cls.segment_parsers[type_name] = parser
-
     def match(self, path):
+        """Match a path against the URL pattern.
+
+        Returns a dictionary with the values of all dynamic path segments if a
+        matche is found, or ``None`` if the path does not match this pattern.
+        """
         args = {}
         g = (self.regex or self.compile()).match(path)
         if not g:
             return
         i = 1
         for segment in self.segments:
-            if 'name' not in segment:
+            if "name" not in segment:
                 continue
             arg = g.group(i)
-            if segment['parser']:
-                arg = self.segment_parsers[segment['type']](arg)
+            if segment["parser"]:
+                arg = self.segment_parsers[segment["type"]](arg)
                 if arg is None:
                     return
-            args[segment['name']] = arg
+            args[segment["name"]] = arg
             i += 1
         return args
 
     def __repr__(self):  # pragma: no cover
-        return 'URLPattern: {}'.format(self.url_pattern)
+        return "URLPattern: {}".format(self.url_pattern)
 
 
 class HTTPException(Exception):
     def __init__(self, status_code, reason=None):
         self.status_code = status_code
-        self.reason = reason or str(status_code) + ' error'
+        self.reason = reason or str(status_code) + " error"
 
     def __repr__(self):  # pragma: no cover
-        return 'HTTPException: {}'.format(self.status_code)
+        return "HTTPException: {}".format(self.status_code)
 
 
 class Microdot:
@@ -912,8 +1018,8 @@ class Microdot:
         self.after_request_handlers = []
         self.after_error_request_handlers = []
         self.error_handlers = {}
-        self.shutdown_requested = False
         self.options_handler = self.default_options_handler
+        self.ssl = False
         self.debug = False
         self.server = None
 
@@ -947,11 +1053,19 @@ class Microdot:
             def index(request):
                 return 'Hello, world!'
         """
+
         def decorated(f):
             self.url_map.append(
-                ([m.upper() for m in (methods or ['GET'])],
-                 URLPattern(url_pattern), f, '', None))
+                (
+                    [m.upper() for m in (methods or ["GET"])],
+                    URLPattern(url_pattern),
+                    f,
+                    "",
+                    None,
+                )
+            )
             return f
+
         return decorated
 
     def get(self, url_pattern):
@@ -970,7 +1084,7 @@ class Microdot:
             def get_user(request, id):
                 # ...
         """
-        return self.route(url_pattern, methods=['GET'])
+        return self.route(url_pattern, methods=["GET"])
 
     def post(self, url_pattern):
         """Decorator that is used to register a function as a ``POST`` request
@@ -988,7 +1102,7 @@ class Microdot:
             def create_user(request):
                 # ...
         """
-        return self.route(url_pattern, methods=['POST'])
+        return self.route(url_pattern, methods=["POST"])
 
     def put(self, url_pattern):
         """Decorator that is used to register a function as a ``PUT`` request
@@ -1006,7 +1120,7 @@ class Microdot:
             def edit_user(request, id):
                 # ...
         """
-        return self.route(url_pattern, methods=['PUT'])
+        return self.route(url_pattern, methods=["PUT"])
 
     def patch(self, url_pattern):
         """Decorator that is used to register a function as a ``PATCH`` request
@@ -1024,7 +1138,7 @@ class Microdot:
             def edit_user(request, id):
                 # ...
         """
-        return self.route(url_pattern, methods=['PATCH'])
+        return self.route(url_pattern, methods=["PATCH"])
 
     def delete(self, url_pattern):
         """Decorator that is used to register a function as a ``DELETE``
@@ -1042,7 +1156,7 @@ class Microdot:
             def delete_user(request, id):
                 # ...
         """
-        return self.route(url_pattern, methods=['DELETE'])
+        return self.route(url_pattern, methods=["DELETE"])
 
     def before_request(self, f):
         """Decorator to register a function to run before each request is
@@ -1113,12 +1227,14 @@ class Microdot:
             def runtime_error(request, exception):
                 return 'Runtime error'
         """
+
         def decorated(f):
             self.error_handlers[status_code_or_exception_class] = f
             return f
+
         return decorated
 
-    def mount(self, subapp, url_prefix='', local=False):
+    def mount(self, subapp, url_prefix="", local=False):
         """Mount a sub-application, optionally under the given URL prefix.
 
         :param subapp: The sub-application to mount.
@@ -1130,8 +1246,14 @@ class Microdot:
         """
         for methods, pattern, handler, _prefix, _subapp in subapp.url_map:
             self.url_map.append(
-                (methods, URLPattern(url_prefix + pattern.url_pattern),
-                 handler, url_prefix + _prefix, _subapp or subapp))
+                (
+                    methods,
+                    URLPattern(url_prefix + pattern.url_pattern),
+                    handler,
+                    url_prefix + _prefix,
+                    _subapp or subapp,
+                )
+            )
         if not local:
             for handler in subapp.before_request_handlers:
                 self.before_request_handlers.append(handler)
@@ -1168,8 +1290,9 @@ class Microdot:
         """
         raise HTTPException(status_code, reason)
 
-    async def start_server(self, host='0.0.0.0', port=5000, debug=False,
-                           ssl=None):
+    async def start_server(
+        self, host="0.0.0.0", port=5000, debug=False, ssl=None, start_serving=True
+    ):
         """Start the Microdot web server as a coroutine. This coroutine does
         not normally return, as the server enters an endless listening loop.
         The :func:`shutdown` function provides a method for terminating the
@@ -1188,6 +1311,13 @@ class Microdot:
                       default is ``False``.
         :param ssl: An ``SSLContext`` instance or ``None`` if the server should
                     not use TLS. The default is ``None``.
+        :param start_serving: If ``True``, the server starts accepting
+                              connections immediately. When set to ``False``,
+                              this method returns a ``Server`` object. To
+                              accept connections, the
+                              ``Server.serve_forever()`` method should be
+                              called. The default is ``True``. A value of
+                              ``False`` is only supported in CPython.
 
         This method is a coroutine.
 
@@ -1207,10 +1337,11 @@ class Microdot:
 
             asyncio.run(main())
         """
+        self.ssl = ssl
         self.debug = debug
 
         async def serve(reader, writer):
-            if not hasattr(writer, 'awrite'):  # pragma: no cover
+            if not hasattr(writer, "awrite"):  # pragma: no cover
                 # CPython provides the awrite and aclose methods in 3.8+
                 async def awrite(self, data):
                     self.write(data)
@@ -1221,24 +1352,34 @@ class Microdot:
                     await self.wait_closed()
 
                 from types import MethodType
+
                 writer.awrite = MethodType(awrite, writer)
                 writer.aclose = MethodType(aclose, writer)
 
             await self.handle_request(reader, writer)
 
         if self.debug:  # pragma: no cover
-            print('Starting async server on {host}:{port}...'.format(
-                host=host, port=port))
+            print(
+                "Starting async server on {host}:{port}...".format(host=host, port=port)
+            )
 
         try:
-            self.server = await asyncio.start_server(serve, host, port,
-                                                     ssl=ssl)
+            self.server = await asyncio.start_server(
+                serve, host, port, ssl=ssl, start_serving=start_serving
+            )
+            if not start_serving:
+                return self.server
         except TypeError:  # pragma: no cover
-            self.server = await asyncio.start_server(serve, host, port)
+            if not start_serving:
+                raise ValueError("start_serving must be True")
+            try:
+                self.server = await asyncio.start_server(serve, host, port, ssl=ssl)
+            except TypeError:  # pragma: no cover
+                self.server = await asyncio.start_server(serve, host, port)
 
         while True:
             try:
-                if hasattr(self.server, 'serve_forever'):  # pragma: no cover
+                if hasattr(self.server, "serve_forever"):  # pragma: no cover
                     try:
                         await self.server.serve_forever()
                     except asyncio.CancelledError:
@@ -1250,7 +1391,7 @@ class Microdot:
                 # wait a bit and try again
                 await asyncio.sleep(0.1)
 
-    def run(self, host='0.0.0.0', port=5000, debug=False, ssl=None):
+    def run(self, host="0.0.0.0", port=5000, debug=False, ssl=None):
         """Start the web server. This function does not normally return, as
         the server enters an endless listening loop. The :func:`shutdown`
         function provides a method for terminating the server gracefully.
@@ -1281,8 +1422,9 @@ class Microdot:
 
             app.run(debug=True)
         """
-        asyncio.run(self.start_server(host=host, port=port, debug=debug,
-                                      ssl=ssl))  # pragma: no cover
+        asyncio.run(
+            self.start_server(host=host, port=port, debug=debug, ssl=ssl)
+        )  # pragma: no cover
 
     def shutdown(self):
         """Request a server shutdown. The server will then exit its request
@@ -1301,15 +1443,20 @@ class Microdot:
 
     def find_route(self, req):
         method = req.method.upper()
-        if method == 'OPTIONS' and self.options_handler:
-            return self.options_handler(req), '', None
-        if method == 'HEAD':
-            method = 'GET'
+        if method == "OPTIONS" and self.options_handler:
+            return self.options_handler(req), "", None
+        if method == "HEAD":
+            method = "GET"
         f = 404
-        p = ''
+        p = ""
         s = None
-        for route_methods, route_pattern, route_handler, url_prefix, subapp \
-                in self.url_map:
+        for (
+            route_methods,
+            route_pattern,
+            route_handler,
+            url_prefix,
+            subapp,
+        ) in self.url_map:
             req.url_args = route_pattern.match(req.path)
             if req.url_args is not None:
                 p = url_prefix
@@ -1326,16 +1473,22 @@ class Microdot:
         for route_methods, route_pattern, _, _, _ in self.url_map:
             if route_pattern.match(req.path) is not None:
                 allow.extend(route_methods)
-        if 'GET' in allow:
-            allow.append('HEAD')
-        allow.append('OPTIONS')
-        return {'Allow': ', '.join(allow)}
+        if "GET" in allow:
+            allow.append("HEAD")
+        allow.append("OPTIONS")
+        return {"Allow": ", ".join(allow)}
 
     async def handle_request(self, reader, writer):
         req = None
         try:
-            req = await Request.create(self, reader, writer,
-                                       writer.get_extra_info('peername'))
+            req = await Request.create(
+                self, reader, writer, writer.get_extra_info("peername")
+            )
+        except OSError as exc:  # pragma: no cover
+            if exc.errno in MUTED_SOCKET_ERRORS:
+                pass
+            else:
+                raise
         except Exception as exc:  # pragma: no cover
             print_exception(exc)
 
@@ -1350,31 +1503,32 @@ class Microdot:
             else:
                 raise
         if self.debug and req:  # pragma: no cover
-            print('{method} {path} {status_code}'.format(
-                method=req.method, path=req.path,
-                status_code=res.status_code))
+            print(
+                "{method} {path} {status_code}".format(
+                    method=req.method, path=req.path, status_code=res.status_code
+                )
+            )
 
     def get_request_handlers(self, req, attr, local_first=True):
-        handlers = getattr(self, attr + '_handlers')
-        local_handlers = getattr(req.subapp, attr + '_handlers') \
-            if req and req.subapp else []
-        return local_handlers + handlers if local_first \
-            else handlers + local_handlers
+        handlers = getattr(self, attr + "_handlers")
+        local_handlers = (
+            getattr(req.subapp, attr + "_handlers") if req and req.subapp else []
+        )
+        return local_handlers + handlers if local_first else handlers + local_handlers
 
     async def error_response(self, req, status_code, reason=None):
         if req and req.subapp and status_code in req.subapp.error_handlers:
-            return await invoke_handler(
-                req.subapp.error_handlers[status_code], req)
+            return await invoke_handler(req.subapp.error_handlers[status_code], req)
         elif status_code in self.error_handlers:
             return await invoke_handler(self.error_handlers[status_code], req)
-        return reason or 'N/A', status_code
+        return reason or "N/A", status_code
 
     async def dispatch_request(self, req):
         after_request_handled = False
         if req:
             if req.content_length > req.max_content_length:
                 # the request body is larger than allowed
-                res = await self.error_response(req, 413, 'Payload too large')
+                res = await self.error_response(req, 413, "Payload too large")
             else:
                 # find the route in the app's URL map
                 f, req.url_prefix, req.subapp = self.find_route(req)
@@ -1382,9 +1536,12 @@ class Microdot:
                 try:
                     res = None
                     if callable(f):
+                        req.route = f
+
                         # invoke the before request handlers
                         for handler in self.get_request_handlers(
-                                req, 'before_request', False):
+                            req, "before_request", False
+                        ):
                             res = await invoke_handler(handler, req)
                             if res:
                                 break
@@ -1397,14 +1554,13 @@ class Microdot:
                         if isinstance(res, int):
                             # an integer response is taken as a status code
                             # with an empty body
-                            res = '', res
+                            res = "", res
                         if isinstance(res, tuple):
                             # handle a tuple response
                             if isinstance(res[0], int):
                                 # a tuple that starts with an int has an empty
                                 # body
-                                res = ('', res[0],
-                                       res[1] if len(res) > 1 else {})
+                                res = ("", res[0], res[1] if len(res) > 1 else {})
                             body = res[0]
                             if isinstance(res[1], int):
                                 # extract the status code and headers (if
@@ -1423,12 +1579,11 @@ class Microdot:
 
                         # invoke the after request handlers
                         for handler in self.get_request_handlers(
-                                req, 'after_request', True):
-                            res = await invoke_handler(
-                                handler, req, res) or res
+                            req, "after_request", True
+                        ):
+                            res = await invoke_handler(handler, req, res) or res
                         for handler in req.after_request_handlers:
-                            res = await invoke_handler(
-                                handler, req, res) or res
+                            res = await invoke_handler(handler, req, res) or res
                         after_request_handled = True
                     elif isinstance(f, dict):
                         # the response from an OPTIONS request is a dict with
@@ -1437,11 +1592,10 @@ class Microdot:
                     else:
                         # if the route is not found, return a 404 or 405
                         # response as appropriate
-                        res = await self.error_response(req, f, 'Not found')
+                        res = await self.error_response(req, f, "Not found")
                 except HTTPException as exc:
                     # an HTTP exception was raised while handling this request
-                    res = await self.error_response(req, exc.status_code,
-                                                    exc.reason)
+                    res = await self.error_response(req, exc.status_code, exc.reason)
                 except Exception as exc:
                     # an unexpected exception was raised while handling this
                     # request
@@ -1451,8 +1605,7 @@ class Microdot:
                     # exists
                     handler = None
                     res = None
-                    if req.subapp and exc.__class__ in \
-                            req.subapp.error_handlers:
+                    if req.subapp and exc.__class__ in req.subapp.error_handlers:
                         handler = req.subapp.error_handlers[exc.__class__]
                     elif exc.__class__ in self.error_handlers:
                         handler = self.error_handlers[exc.__class__]
@@ -1474,10 +1627,11 @@ class Microdot:
                     if res is None:
                         # if there is still no response, issue a 500 error
                         res = await self.error_response(
-                            req, 500, 'Internal server error')
+                            req, 500, "Internal server error"
+                        )
         else:
             # if the request could not be parsed, issue a 400 error
-            res = await self.error_response(req, 400, 'Bad request')
+            res = await self.error_response(req, 400, "Bad request")
         if isinstance(res, tuple):
             res = Response(*res)
         elif not isinstance(res, Response):
@@ -1485,15 +1639,13 @@ class Microdot:
         if not after_request_handled:
             # if the request did not finish due to an error, invoke the after
             # error request handler
-            for handler in self.get_request_handlers(
-                    req, 'after_error_request', True):
-                res = await invoke_handler(
-                    handler, req, res) or res
-        res.is_head = (req and req.method == 'HEAD')
+            for handler in self.get_request_handlers(req, "after_error_request", True):
+                res = await invoke_handler(handler, req, res) or res
+        res.is_head = req and req.method == "HEAD"
         return res
 
 
-Response.already_handled = Response()
+Response.already_handled = Response()  # type: ignore[assignment]
 
 abort = Microdot.abort
 redirect = Response.redirect
