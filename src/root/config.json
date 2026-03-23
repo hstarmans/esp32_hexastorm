@@ -52,5 +52,8 @@
         "dnsmask": "255.255.255.0",
         "gateway_ip": "192.168.1.1",
         "primary_dns": "192.168.1.1"
-    }
+    },
+    "laserhead": {
+    "facetmeans": [5.0, 5.0, 5.0, 5.0]
+  }
 }
