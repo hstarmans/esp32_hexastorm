@@ -50,6 +50,8 @@ class W25QFlash(object):
         self.spi.init(baudrate=baud, phase=1, polarity=1)
         self._busy = False
 
+        self.wakeup()
+
         if software_reset:
             self.reset()
 
@@ -68,7 +70,7 @@ class W25QFlash(object):
             if not self._read_status_reg(nr=16):  # not in 4-byte mode
                 self._await()
                 self.cs(0)
-                self.spi.write(b"\xB7")  # 'Enter 4-Byte Address Mode'
+                self.spi.write(b"\xb7")  # 'Enter 4-Byte Address Mode'
                 self.cs(1)
 
     @property
@@ -151,6 +153,36 @@ class W25QFlash(object):
         time.sleep_us(30)
         self._busy = False
 
+    def wakeup(self) -> None:
+        """
+        Get the chip from deep power-down mode.
+        """
+        self.cs(0)
+        self.spi.write(b"\xab")  # Release Power-down command
+        self.cs(1)
+        time.sleep_ms(1)
+
+    def power_down(self) -> None:
+        """
+        Put the chip into deep power-down mode.
+
+         In this mode, the chip will consume only a few microamps, but it will
+         not respond to any commands (except for the wakeup command). The chip
+         will stay in this mode until the wakeup command is sent, or until a
+         hardware reset occurs. This can be used to save power when the flash is
+         not needed for a while.
+         Note: If the chip is in deep power-down mode, it will not respond to
+         any commands, and it will appear as if it is not connected. Therefore,
+         it's important to ensure that the wakeup command is sent before trying
+         to interact with the chip again.
+        """
+        self._await()
+        self.cs(0)
+        self.spi.write(b"\xb9")  # Deep Power-down command
+        self.cs(1)
+        # chip needs some time to enter sleep
+        time.sleep_us(100)
+
     def identify(self) -> None:
         """
         Identify the Winbond chip.
@@ -162,7 +194,7 @@ class W25QFlash(object):
         """
         self._await()
         self.cs(0)
-        self.spi.write(b"\x9F")  # 'Read JEDEC ID' command
+        self.spi.write(b"\x9f")  # 'Read JEDEC ID' command
 
         # manufacturer id, memory type id, capacity id
         mf, mem_type, cap = self.spi.read(3, 0x00)
@@ -207,7 +239,7 @@ class W25QFlash(object):
         self._wren()
         self._await()
         self.cs(0)
-        self.spi.write(b"\xC7")  # 'Chip Erase' command
+        self.spi.write(b"\xc7")  # 'Chip Erase' command
         self.cs(1)
         self._await()  # wait for the chip to finish formatting
 
@@ -232,19 +264,40 @@ class W25QFlash(object):
 
     def _await(self) -> None:
         """
-        Wait for device not to be busy
+        Wait for device not to be busy.
+        Detects if the chip is in Deep Power-down (returning 0xFF).
         """
         self._busy = True
         self.cs(0)
         self.spi.write(b"\x05")  # 'Read Status Register-1' command
 
-        # last bit (1) is BUSY bit in stat. reg. byte (0 = not busy, 1 = busy)
         trials = 0
-        while 0x1 & self.spi.read(1, 0xFF)[0]:
-            if trials > 5e6:
-                raise Exception("Device keeps busy, aborting.")
+        while True:
+            # Read the status byte
+            # If the chip is in DPD, this will return 0xFF due to pull-ups
+            stat_byte = self.spi.read(1, 0xFF)[0]
+
+            # Check if the chip is likely in Deep Power-down
+            # If we see 0xFF 100 times, the chip is effectively "offline"
+            if stat_byte == 0xFF and trials > 100:
+                self.cs(1)
+                self._busy = False
+                raise OSError("Flash not responding (0xFF). Likely in Deep Power-down.")
+
+            # Check the BUSY bit (bit 0)
+            # 0 means the chip is ready/idle
+            if not (stat_byte & 0x1):
+                break
+
+            # Safety timeout to prevent infinite loops on hardware failure
+            if trials > 500000:
+                self.cs(1)
+                self._busy = False
+                raise Exception("Device timeout: Chip stayed BUSY for too long.")
+
             time.sleep_us(1)
             trials += 1
+
         self.cs(1)
         self._busy = False
 
@@ -273,20 +326,21 @@ class W25QFlash(object):
         :param      addr:  The start address
         :type       addr:  int
         """
-        assert (
-            addr + len(buf) <= self._capacity
-        ), "memory not addressable at %s with range %d (max.: %s)" % (
-            hex(addr),
-            len(buf),
-            hex(self._capacity - 1),
+        assert addr + len(buf) <= self._capacity, (
+            "memory not addressable at %s with range %d (max.: %s)"
+            % (
+                hex(addr),
+                len(buf),
+                hex(self._capacity - 1),
+            )
         )
 
         self._await()
         self.cs(0)
         # 'Fast Read' (0x03 = default), 0x0C for 4-byte mode command
-        self.spi.write(b"\x0C" if self._ADR_LEN == 4 else b"\x0B")
+        self.spi.write(b"\x0c" if self._ADR_LEN == 4 else b"\x0b")
         self.spi.write(addr.to_bytes(self._ADR_LEN, "big"))
-        self.spi.write(b"\xFF")  # dummy byte
+        self.spi.write(b"\xff")  # dummy byte
         self.spi.readinto(buf, 0xFF)
         self.cs(1)
 
@@ -316,14 +370,14 @@ class W25QFlash(object):
         :param      addr:  The starting address
         :type       addr:  int
         """
-        assert (
-            len(buf) % self.PAGE_SIZE == 0
-        ), "invalid buffer length: {}".format(len(buf))
+        assert len(buf) % self.PAGE_SIZE == 0, "invalid buffer length: {}".format(
+            len(buf)
+        )
         assert not addr & 0xF, "address ({}) not at page start".format(addr)
-        assert (
-            addr + len(buf) <= self._capacity
-        ), "memory not addressable at {} with range {} (max.: {})".format(
-            hex(addr), len(buf), hex(self._capacity - 1)
+        assert addr + len(buf) <= self._capacity, (
+            "memory not addressable at {} with range {} (max.: {})".format(
+                hex(addr), len(buf), hex(self._capacity - 1)
+            )
         )
 
         for i in range(0, len(buf), self.PAGE_SIZE):
@@ -350,9 +404,7 @@ class W25QFlash(object):
         :param      buf:       The data buffer
         :type       buf:       list
         """
-        assert len(buf) == self.BLOCK_SIZE, "invalid block length: {}".format(
-            len(buf)
-        )
+        assert len(buf) == self.BLOCK_SIZE, "invalid block length: {}".format(len(buf))
 
         sector_nr = blocknum // 8
         sector_addr = sector_nr * self.SECTOR_SIZE
@@ -374,9 +426,9 @@ class W25QFlash(object):
         :param      buf:       The data buffer
         :type       buf:       list
         """
-        assert (
-            len(buf) % self.BLOCK_SIZE == 0
-        ), "invalid buffer length: {}".format(len(buf))
+        assert len(buf) % self.BLOCK_SIZE == 0, "invalid buffer length: {}".format(
+            len(buf)
+        )
 
         buf_len = len(buf)
         if buf_len == self.BLOCK_SIZE:
