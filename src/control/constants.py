@@ -2,21 +2,10 @@ import json
 import logging
 import sys
 import os
-import machine
 
 
 ESP32 = False if sys.platform in ["linux", "win32", "darwin"] else True
 logger = logging.getLogger(__name__)
-
-
-def hardware_init():
-    """Fast hardware fixes run immediately on boot"""
-    # UART RX and TX connected via resistor
-    # and TMC2209, which results in endless
-    # communication and failure of micropython shell
-    # fix is to set UART1 to zero
-    machine.Pin(43, machine.Pin.OUT).value(0)
-    machine.Pin(44, machine.Pin.OUT).value(0)
 
 
 def deploy_assets(overwrite=False):
@@ -81,6 +70,5 @@ def update_config():
 
 
 if ESP32:
-    hardware_init()  # fix TMC2209 UART pins
     deploy_assets()  # ensure config exists
 CONFIG = load_config()

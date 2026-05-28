@@ -3,8 +3,6 @@ import os
 import json
 import logging
 import network
-from machine import Pin
-
 import ota.rollback
 
 from control import bootlib, constants
@@ -40,23 +38,14 @@ async def network_manager():
         await bootlib.set_time()
 
     # Start the status LED loop
-    await bootlib.status_loop(loop=False)
+    # await bootlib.status_loop(loop=False)
 
 
 async def main():
     tasks = []
     constants.CONFIG = constants.load_config()
 
-    # We need the interface ON for the Webserver/WebREPL to bind ports.
-    wlan = network.WLAN(network.STA_IF)
-    wlan.active(True)
-
-    # CRITICAL: Immediately stop the background auto-connect process.
-    # This prevents the "Wifi Internal Error" race condition later.
-    wlan.disconnect()
-
     # Start the Background Network Manager (LEDs, WiFi connection, Time)
-
     network_task = asyncio.create_task(network_manager())
     tasks.append(network_task)
 

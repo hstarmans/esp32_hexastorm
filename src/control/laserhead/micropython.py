@@ -49,10 +49,6 @@ class Laserhead(BaseLaserhead, ESP32Host):
 
         return current_index
 
-    async def flash_fpga(self, filename):
-        fname = constants.CONFIG["fpga"]["storagefolder"] + f"/{filename}"
-        await super().flash_fpga(fname)
-
     async def enable_comp(
         self,
         laser0=False,

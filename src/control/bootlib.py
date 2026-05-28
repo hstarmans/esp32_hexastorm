@@ -222,40 +222,42 @@ async def status_loop(loop=False):
     pulses a led
     red led no wifi, blue led is wifi
     """
-    on_time = 2
-    off_time = 6
-    wifi_cycle_time = 60
-    led_on = True
-    Pin = machine.Pin
-    wifi_connected = is_connected()
-    leds = PlatformConfig(test=False).esp32_cfg["leds"]
-    blue_led = Pin(leds["blue"], Pin.OUT)
-    red_led = Pin(leds["red"], Pin.OUT)
-    current_time = time()
-    while True:
-        if wifi_connected:
-            red_led.value(1)
-            blue_led.value(not led_on)
-        else:
-            red_led.value(not led_on)
-            blue_led.value(1)
-        # check year is greater than 2024
-        if (localtime()[0] < 2024) and wifi_connected:
-            await set_time(1)
-        if not loop:
-            pass
-        elif led_on:
-            await asyncio.sleep(on_time)
-        else:
-            await asyncio.sleep(off_time)
-        led_on = not led_on
-        if (time() - current_time) >= wifi_cycle_time:
-            wifi_connected = is_connected()
-            current_time = time()
-            if not wifi_connected:
-                await connect_wifi()
-        if not loop:
-            break
+    print("leds need to be toggled via FPGA, skipping status loop")
+    # TODO: implement status loop with fpga toggling leds
+    # on_time = 2
+    # off_time = 6
+    # wifi_cycle_time = 60
+    # led_on = True
+    # Pin = machine.Pin
+    # wifi_connected = is_connected()
+    # leds = PlatformConfig(test=False).esp32_cfg["leds"]
+    # blue_led = Pin(leds["blue"], Pin.OUT)
+    # red_led = Pin(leds["red"], Pin.OUT)
+    # current_time = time()
+    # while True:
+    #     if wifi_connected:
+    #         red_led.value(1)
+    #         blue_led.value(not led_on)
+    #     else:
+    #         red_led.value(not led_on)
+    #         blue_led.value(1)
+    #     # check year is greater than 2024
+    #     if (localtime()[0] < 2024) and wifi_connected:
+    #         await set_time(1)
+    #     if not loop:
+    #         pass
+    #     elif led_on:
+    #         await asyncio.sleep(on_time)
+    #     else:
+    #         await asyncio.sleep(off_time)
+    #     led_on = not led_on
+    #     if (time() - current_time) >= wifi_cycle_time:
+    #         wifi_connected = is_connected()
+    #         current_time = time()
+    #         if not wifi_connected:
+    #             await connect_wifi()
+    #     if not loop:
+    #         break
 
 
 @wrapper_esp32(res=True)
@@ -271,6 +273,7 @@ async def connect_wifi(force=False):
     wlan = network.WLAN(network.STA_IF)
     ap = network.WLAN(network.AP_IF)
     wlan.active(True)
+    wlan.config(reconnects=False)
     wifi_login = constants.CONFIG["wifi_login"]
     if not wlan.isconnected() or force:
         # if machine.reset_cause() != machine.SOFT_RESET:
@@ -292,6 +295,9 @@ async def connect_wifi(force=False):
             logger.error(f"WLAN Connect failed with error: {e}")
         max_wait = 10
         while max_wait > 0:
+            if wlan.status() == network.STAT_WRONG_PASSWORD:
+                logger.error("Wrong WiFi password!")
+                break
             if wlan.isconnected():
                 made_connection = True
                 break
