@@ -113,3 +113,5 @@ if "package" in globals():
     require("pyjwt")
     require("logging")
     require("unittest")
+    # camera module, added via symlink
+    module("acamera.py", base_path="micropython-camera-API/src")

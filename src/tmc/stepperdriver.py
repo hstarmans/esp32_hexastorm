@@ -25,9 +25,7 @@ class TMC_2209:
         """Initialize UART to TMC and the EN pin (active-low). Starts disabled (EN high)."""
         self.tmc_uart = TMC_UART(mtr_id=mtr_id, uart_dct=uart_dct)
         self._pin_en = pin_en
-        self.p_pin_en = GPIO(
-            self._pin_en, GPIO.OUT, value=1
-        )  # EN high = disabled
+        self.p_pin_en = GPIO(self._pin_en, GPIO.OUT, value=1)  # EN high = disabled
 
         # microstep stats
         self._msres = -1
@@ -243,23 +241,14 @@ class TMC_2209:
     def _cs_from_run_mA(self, run_mA, vref=None):
         """Convert desired run current (mA) to CS value (0..31) using datasheet formula."""
         Vfs = self._vfs(vref)
-        cs = (
-            32.0
-            * 1.41421
-            * (float(run_mA) / 1000.0)
-            * (self._rsense + 0.02)
-            / Vfs
-            - 1
-        )
+        cs = 32.0 * 1.41421 * (float(run_mA) / 1000.0) * (self._rsense + 0.02) / Vfs - 1
         cs = max(0, min(31, cs))
         return int(round(cs))
 
     def _mA_from_cs(self, cs, vref=None):
         """Estimate mA from a CS value using inverse of the datasheet formula."""
         Vfs = self._vfs(vref)
-        i_a = (
-            ((cs + 1) / 32.0) / 1.41421 * (Vfs / (self._rsense + 0.02))
-        )  # Amps
+        i_a = ((cs + 1) / 32.0) / 1.41421 * (Vfs / (self._rsense + 0.02))  # Amps
         return int(round(i_a * 1000.0))
 
     @property
@@ -336,7 +325,8 @@ class TMC_2209:
     @property
     def stallguard_threshold(self):
         """SGTHRS (0x40): StallGuard threshold (lower value = more sensitive). (Field: reg.sgthrs[7:0])"""
-        return self.tmc_uart.read_u32(reg.SGTHRS) & 0xFFFF
+        print("stallguard_threshold: field write only, readback not supported by chip")
+        # return self.tmc_uart.read_u32(reg.SGTHRS) & 0xFFFF
 
     @stallguard_threshold.setter
     def stallguard_threshold(self, threshold):
@@ -346,7 +336,7 @@ class TMC_2209:
     @property
     def coolstep_threshold(self):
         """TCOOLTHRS (0x14): Lower velocity threshold for CoolStep & StallGuard to DIAG."""
-        return self.tmc_uart.read_u32(reg.TCOOLTHRS) & 0xFFFFF
+        print("coolstep_threshold: field write only, readback not supported by chip")
 
     @coolstep_threshold.setter
     def coolstep_threshold(self, threshold):

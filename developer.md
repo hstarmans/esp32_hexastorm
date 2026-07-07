@@ -45,7 +45,10 @@ Before building the MicroPython firmware, you need to install the necessary Pyth
     Instead of using Git submodules, a symbolic link can be created to the `hexastorm` library. 
     ```bash
     ln -s ~/CORRECTFOLDERONYOURSYSTEM/hexastorm/src/hexastorm/ THISPROJECT/src/hexastorm
+    ln -s ../../micropython-camera-API/ ./micropython-camera-API
+    ln -s ../../micropython-ulab/ ./micropython-ulab
     ```
+    I use v6.12 for [micropython-ulab](https://github.com/v923z/micropython-ulab) and v0.6.2 for [micropython-camera-API](https://github.com/cnadler86/micropython-camera-API).
 
 4.  **Create the Jobs Directory:**
     Create the necessary directory for job files on the emulated SD card.
@@ -68,7 +71,7 @@ The process of creating a MicroPython binary for the ESP32 involves using the Es
 2.  **Clone Additional Libraries:**
     Clone the `ulab` and `micropython` repositories. Ideally, `micropython-ulab` and `micropython` should reside in the same root folder.
     ```bash
-    git clone 6.11.0 --depth 1 https://github.com/v923z/micropython-ulab.git
+    git clone 6.12.0 --depth 1 https://github.com/v923z/micropython-ulab.git
     git clone https://github.com/micropython/micropython.git
     ```
 
@@ -187,7 +190,7 @@ The process of creating a MicroPython binary for the ESP32 involves using the Es
     #define MICROPY_CAMERA_PIN_HREF     (40)
     #define MICROPY_CAMERA_PIN_XCLK     (39)
     #define MICROPY_CAMERA_PIN_PWDN     (-1)
-    #define MICROPY_CAMERA_PIN_RESET    (-1)
+    #define MICROPY_CAMERA_PIN_RESET    (42)
     #define MICROPY_CAMERA_PIN_SIOD     (17)        // SDA
     #define MICROPY_CAMERA_PIN_SIOC     (18)        // SCL
     #define MICROPY_CAMERA_XCLK_FREQ    (20000000)  // Frequencies are normally either 10 MHz or 20 MHz
