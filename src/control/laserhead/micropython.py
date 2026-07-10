@@ -12,7 +12,6 @@ from hexastorm.config import Spi
 from .base import BaseLaserhead
 from .. import constants
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -196,8 +195,8 @@ class Laserhead(BaseLaserhead, ESP32Host):
                     await self.notify_listeners()
                     logger.info(f"Exposing lane {lane + 1} from {lanes}.")
                     if lane > 0:
-                        logger.info("Moving in x-direction for next lane.")
-                        await self.gotopoint([lane_width, 0, 0], absolute=False)
+                        logger.info("Moving in y-direction for next lane.")
+                        await self.gotopoint([0, lane_width, 0], absolute=False)
                     if lane % 2 == 1:
                         logger.info("Start exposing forward lane.")
                     else:

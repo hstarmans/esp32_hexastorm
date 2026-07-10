@@ -105,6 +105,7 @@ if "package" in globals():
     module("hexastorm/tests/test_mpy.py")
     # Root Modules
     module("tools.py")
+    module("boot.py")
     module("main.py")
     # Stdlib Requirements
     # Note: 'require' pulls from micropython-lib.

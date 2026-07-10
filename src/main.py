@@ -1,49 +1,41 @@
 import asyncio
-import os
-import json
 import logging
-import network
-import ota.rollback
+
 
 from control import bootlib, constants
 from control.webapp import app
+from control.laserhead import LASERHEAD as lh
 
-
+constants.CONFIG = constants.load_config()
 logger = logging.getLogger(__name__)
-bootlib.set_log_level(logging.INFO)
-bootlib.check_crash_loop_rtc()
-
-# not supported on current module
-if constants.ESP32 and False:
-    # bootloader needs to keep booting
-    # from this partition
-    ota.rollback.cancel()
-    try:
-        with open("config_old.json") as f:
-            dct2 = json.load(f)
-        constants.CONFIG.update(dct2)
-        constants.update_json()
-        os.remove("config_old.json")
-    except OSError:
-        pass
 
 
 async def network_manager():
     """
-    Connects to WiFi
-    Runs Status LED loop
+    Handles initial connection attempts with retry logic.
     """
-    # runs in background while webserver serves pages!
-    if await bootlib.connect_wifi():
-        await bootlib.set_time()
+    max_attempts = 6
+    connected = False
 
-    # Start the status LED loop
-    # await bootlib.status_loop(loop=False)
+    # Initial state red
+    await lh.set_leds(red=True, green=False, blue=False)
+
+    for attempt in range(max_attempts):
+        logger.info(f"Network: Connection attempt {attempt + 1}/{max_attempts}")
+        if await bootlib.connect_wifi():
+            logger.info("Network: Connected successfully!")
+            await bootlib.set_time()
+            connected = True
+            await lh.set_leds(red=False, green=True, blue=False)
+            break
+        await asyncio.sleep(10)  # Wait 10s between trials
+
+    if not connected:
+        logger.warning("Network: Could not connect within 60 seconds. Running offline.")
 
 
 async def main():
     tasks = []
-    constants.CONFIG = constants.load_config()
 
     # Start the Background Network Manager (LEDs, WiFi connection, Time)
     network_task = asyncio.create_task(network_manager())
@@ -51,12 +43,12 @@ async def main():
 
     # start webrepl if configured
     if constants.CONFIG["webrepl"]["start"]:
-        logging.info("Starting WebREPL mode...")
+        logger.info("Starting WebREPL mode...")
         bootlib.start_webrepl()
 
     # start WebServer
     if constants.CONFIG["webserver"]["start"]:
-        logging.info("Main: Starting Webserver NOW...")
+        logger.info("Main: Starting Webserver NOW...")
         # We gather the webserver (foreground) and network (background)
         tasks.append(app.start_server(port=5000, debug=False))
 
@@ -69,6 +61,6 @@ if constants.ESP32:
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        logging.error("Keyboard interrupt")
+        logger.error("Keyboard interrupt")
     except Exception as e:
-        logging.error(f"Unexpected error: {e}")
+        logger.error(f"Unexpected error: {e}")
