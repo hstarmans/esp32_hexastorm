@@ -121,20 +121,34 @@ document.addEventListener("alpine:init", () => {
          * @param {Event} e 
          */
         async handleClick(e) {
+            // Look for buttons with either vector (move) OR command (home)
             // @ts-ignore - closest is valid on target
-            const button = e.target.closest("[data-vector]");
+            const button = e.target.closest("[data-vector], [data-command]");
             if (!button || button.disabled) return;
 
-            const vector = JSON.parse(button.dataset.vector);
-            
-            try {
-                await fetch("/move", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ vector: vector, steps: this.step }),
-                });
-            } catch (err) {
-                console.error("Move failed", err);
+            if (button.dataset.command === "home") {
+                const axes = JSON.parse(button.dataset.axes);
+                try {
+                    await fetch("/home", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ axes: axes }),
+                    });
+                } catch (err) {
+                    console.error("Homing failed", err);
+                }
+            }
+            else if (button.dataset.vector){
+                const vector = JSON.parse(button.dataset.vector);
+                try {
+                    await fetch("/move", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ vector: vector, steps: this.step }),
+                    });
+                } catch (err) {
+                    console.error("Move failed", err);
+                }
             }
         }
     }));

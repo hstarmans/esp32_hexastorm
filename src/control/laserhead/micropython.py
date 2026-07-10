@@ -93,6 +93,12 @@ class Laserhead(BaseLaserhead, ESP32Host):
         await super().gotopoint(vector, absolute=False)
         self.enable_steppers = False
 
+    async def home(self, axes):
+        await super().home(axes)
+        self.enable_steppers = True
+        await super().home_axes(axes)
+        self.enable_steppers = False
+
     async def synchronize(self, value=True):
         """Synchronize laser with phodiode.
 

@@ -320,6 +320,15 @@ async def move(request, session):
     return devicestate.data
 
 
+@app.post("/home")
+@with_session
+async def home(request, session):
+    data = request.json
+    axes = [int(x) for x in data.get("axes", [0, 0, 0])]
+    await LASERHEAD.home(axes)
+    return devicestate.data
+
+
 @app.post("/control/laser")
 @with_session
 async def toggle_laser(request, session):

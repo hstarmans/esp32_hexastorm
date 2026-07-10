@@ -86,6 +86,9 @@ class BaseLaserhead:
     async def move(self, vector):
         logger.info(f"Moving vector {vector}.")
 
+    async def home(self, axes):
+        logger.info(f"Homing axes {axes}.")
+
     @property
     def state(self):
         return self._state
