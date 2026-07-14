@@ -5,37 +5,76 @@
     <body>
         {% include 'nav_bar.html' %}
         {% include 'printingstate.html' %}
-        
+
         <div id="controlstate"
             class="container-fluid" style="max-width: 1200px;"
             x-data="movement"
             x-show="!$store.machine.printing">
-             
-            <div class="row g-4 justify-content-center">
-                
+
+            <div class="row g-2 mb-4">
+                <div class="col-12">
+                    <div class="card bg-black border-secondary text-center shadow-sm">
+                        <div class="card-body py-2 font-monospace fs-4">
+                            <span class="text-secondary me-5 fw-bold">MPos</span>
+                            <span class="text-danger fw-bold me-4">X: <span x-text="$store.machine.mpos[0].toFixed(2)"></span></span>
+                            <span class="text-success fw-bold me-4">Y: <span x-text="$store.machine.mpos[1].toFixed(2)"></span></span>
+                            <span class="text-info fw-bold">Z: <span x-text="$store.machine.mpos[2].toFixed(2)"></span></span>
+                        <div class="card-body py-2 font-monospace fs-4">
+                            <span class="text-primary me-5 fw-bold">WPos</span>
+                            <span class="text-danger fw-bold me-4">X: <span x-text="$store.machine.wpos[0].toFixed(2)"></span></span>
+                            <span class="text-success fw-bold me-4">Y: <span x-text="$store.machine.wpos[1].toFixed(2)"></span></span>
+                            <span class="text-info fw-bold">Z: <span x-text="$store.machine.wpos[2].toFixed(2)"></span></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="row g-4 justify-content-center"></div> 
                 <div class="col-12 col-lg-5">
-                    <div class="card h-100 bg-dark border-secondary">
-                        <div class="card-header border-secondary">
-                            <i class="bi bi-arrows-move"></i> Motion Control
+                    <div class="card h-100 bg-dark border-secondary" x-data="commands">
+                        <div class="card-header border-secondary d-flex justify-content-between align-items-center">
+                            <span><i class="bi bi-arrows-move"></i> Motion Control</span>
+                            <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#gotoModal">
+                                <i class="bi bi-box-arrow-in-right"></i> Go To...
+                            </button>
                         </div>
                         <div class="card-body">
-                            <div class="d-flex justify-content-center gap-3 mb-4">
+                            <div class="d-flex justify-content-center align-items-center gap-3 mb-4 mt-2">
                                 <div style="width: 180px;">
                                     {% include 'XYmovement.html' %}
                                 </div>
+                                
                                 <div style="width: 60px;">
                                     {% include 'Zmovement.html' %}
                                 </div>
+
+                                <div class="d-flex flex-column gap-1 justify-content-center" style="width: 3.5rem;">
+                                    <button type="button" class="btn btn-sm btn-outline-danger d-flex align-items-center justify-content-center" 
+                                            style="height: 2.4rem;" @click="setWorkspaceZero([1,0,0])" title="Zero Workspace X">
+                                        <span class="fw-bold text-uppercase" style="font-size: 0.75rem;">X=0</span>
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-outline-success d-flex align-items-center justify-content-center" 
+                                            style="height: 2.4rem;" @click="setWorkspaceZero([0,1,0])" title="Zero Workspace Y">
+                                        <span class="fw-bold text-uppercase" style="font-size: 0.75rem;">Y=0</span>
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-outline-info d-flex align-items-center justify-content-center" 
+                                            style="height: 2.4rem;" @click="setWorkspaceZero([0,0,1])" title="Zero Workspace Z">
+                                        <span class="fw-bold text-uppercase" style="font-size: 0.75rem;">Z=0</span>
+                                    </button>
+                                    <button type="button" class="btn btn-sm btn-primary d-flex align-items-center justify-content-center" 
+                                            style="height: 2.4rem;" @click="setWorkspaceZero([1,1,1])" title="Zero Workspace All Axes">
+                                        <i class="bi bi-geo-alt-fill" style="font-size: 0.85rem;"></i>
+                                    </button>
+                                </div>
                             </div>
                             
-                            <hr class="border-secondary opacity-50">
+                            <hr class="border-secondary opacity-25">
                             {% include 'steps.html' %}
                         </div>
                     </div>
                 </div>
 
                 <div class="col-12 col-lg-4">
-                    {% include 'laserhead.html' %}
+                    {% include 'peripherals.html' %}
                 </div>
 
                 <div class="col-12 col-lg-3">

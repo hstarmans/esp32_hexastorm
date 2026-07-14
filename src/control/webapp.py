@@ -124,7 +124,8 @@ async def authenticate(request, session):
             "/control/",
             "/print/",
             "/state",
-            "/move",
+            "/gotopoint",
+            "/setworkspacezero",
             "/upload",
             "/deletefile",
             "/reset",
@@ -309,14 +310,46 @@ async def reset(req, session):
     return {"status": "success", "message": "Rebooting in 1s..."}
 
 
-@app.post("/move")
+@app.post("/gotopoint")
 @with_session
-async def move(request, session):
+async def api_gotopoint(request, session):
     data = request.json
-    steps = float(data.get("steps", 1))
-    vector = [int(x) * steps for x in data.get("vector", [0, 0, 0])]
-    await LASERHEAD.move(vector)
 
+    position = [float(x) for x in data.get("position", [0, 0, 0])]
+    absolute = data["absolute"]
+    workspace = data["workspace"]
+
+    await LASERHEAD.gotopoint(position=position, absolute=absolute, workspace=workspace)
+    return devicestate.data
+
+
+@app.post("/setworkspacezero")
+@with_session
+async def setworkspacezero(request, session):
+    data = request.json
+    axes = data["axes"]
+
+    await LASERHEAD.set_workspace_zero(axes=axes)
+    return devicestate.data
+
+
+@app.post("/control/spindle")
+@with_session
+async def control_spindle(request, session):
+    data = request.json or {}
+    value = data["value"]
+
+    await LASERHEAD.set_spindle(value)
+    return devicestate.data
+
+
+@app.post("/control/fan")
+@with_session
+async def control_fan(request, session):
+    data = request.json
+    value = data["value"]
+
+    await LASERHEAD.set_fan(value)
     return devicestate.data
 
 
@@ -381,7 +414,14 @@ async def print_control(request, session):
             data["exposureperline"]
         )
         constants.CONFIG["defaultprint"]["singlefacet"] = bool(data["singlefacet"])
-        constants.CONFIG["defaultprint"]["start_position"] = data["start_position"]
+        constants.CONFIG["defaultprint"]["workspace_origin"] = data["workspace_origin"]
+        constants.CONFIG["defaultprint"]["home_before_print"] = bool(
+            data["home_before_print"]
+        )
+        constants.CONFIG["defaultprint"]["use_custom_start"] = bool(
+            data["use_custom_start"]
+        )
+
         constants.update_config()
 
         # Start background print task

@@ -4,6 +4,7 @@ import struct
 from time import time
 import deflate
 
+import ulab.numpy as np
 from hexastorm.fpga_host.micropython import ESP32Host
 from hexastorm.fpga_host.syncwrap import syncable
 from hexastorm.fpga_host.tools import find_shift
@@ -87,17 +88,68 @@ class Laserhead(BaseLaserhead, ESP32Host):
         await super().toggle_prism()
         await self.enable_comp(polygon=self.state["components"]["rotating"])
 
-    async def move(self, vector):
-        await super().move(vector)
+    async def gotopoint(
+        self,
+        position,
+        speed=None,
+        absolute=True,
+        workspace=False,
+        check_sensors=True,
+        blind_distance_mm=5.0,
+    ):
+        """
+        Wraps the hardware gotopoint function to automatically handle stepper enabling
+        and state notifications for the web UI.
+        """
+        # 1. Execute hardware command (blocks until physical move is complete)
+        motor_state = self.enable_steppers
         self.enable_steppers = True
-        await super().gotopoint(vector, absolute=False)
-        self.enable_steppers = False
+
+        await ESP32Host.gotopoint(
+            self,
+            position=position,
+            speed=speed,
+            absolute=absolute,
+            workspace=workspace,
+            check_sensors=check_sensors,
+            blind_distance_mm=blind_distance_mm,
+        )
+        self.enable_steppers = motor_state
+
+        # 2. Update RAM and NVS instantly using the synchronous helper from base.py
+        self._update_coordinates(position, absolute, workspace)
+
+        # 3. Trigger SSE update for the web clients
+        await self.notify_listeners()
 
     async def home(self, axes):
-        await super().home(axes)
+        logger.info(f"Homing axes {axes}.")
+        # 1. Physical homing sequence
         self.enable_steppers = True
-        await super().home_axes(axes)
+        await ESP32Host.home_axes(self, axes)
         self.enable_steppers = False
+
+        # 2. Update RAM and NVS to reflect origin (0.0)
+        self._update_home_coordinates(axes)
+        await self.notify_listeners()
+
+    async def set_workspace_zero(self, axes=None):
+        # 1. Allow the FPGA/hardware layer to reset its internal offsets
+        ESP32Host.set_workspace_zero(self, axes)
+
+        # 2. Update the python state tracking and save to NVS
+        self._update_workspace_zero(axes)
+        await self.notify_listeners()
+
+    async def set_spindle(self, value: int):
+        await BaseLaserhead.set_spindle(self, value)
+        await self.set_spindle_speed(self.state["components"]["spindle"])
+        await self.notify_listeners()
+
+    async def set_fan(self, value: int):
+        await BaseLaserhead.set_fan(self, value)
+        await self.set_fan_speed(self.state["components"]["fan"])
+        await self.notify_listeners()
 
     async def synchronize(self, value=True):
         """Synchronize laser with phodiode.
@@ -169,13 +221,32 @@ class Laserhead(BaseLaserhead, ESP32Host):
                 laserpower = self.state["job"]["laserpower"]
                 if 50 < laserpower < 151:
                     self.laser_current = laserpower
-                logger.info("Homing X- and Y-axis.")
-                await self.home_axes([1, 1, 0])
-                logger.info("Moving to start position.")
-                # scanning direction offset is needed to prevent lock with home
-                await self.gotopoint(
-                    self.state["job"]["start_position"], absolute=False
-                )
+
+                # homing logic
+
+                home_before = constants.CONFIG["defaultprint"]["home_before_print"]
+                use_custom = constants.CONFIG["defaultprint"]["use_custom_start"]
+                custom_origin = constants.CONFIG["defaultprint"]["workspace_origin"]
+
+                if home_before:
+                    logger.info("Homing X- and Y-axis.")
+                    await self.home([1, 1, 0])
+                else:
+                    logger.info("Skipping homing before print per operator settings.")
+
+                # deciding start position
+                if use_custom and custom_origin is not None:
+                    logger.info(
+                        f"Overriding workspace origin to custom MPOS: {custom_origin}"
+                    )
+                    # Update local ulab numpy array tracking
+                    self._work_offset = np.array(custom_origin, dtype=float)
+                    # Sync to NVS
+                    self._save_position()
+
+                logger.info("Moving to workspace origin (WPOS 0, 0, 0).")
+                await self.gotopoint([0.0, 0.0, 0.0], absolute=True, workspace=True)
+
                 # enable scanhead
                 await self.enable_comp(
                     synchronize=True,

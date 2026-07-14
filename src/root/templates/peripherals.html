@@ -1,32 +1,72 @@
 <div class="card h-100 bg-dark border-secondary" x-data="commands">
     
     <div class="card-header border-secondary">
-        <i class="bi bi-cpu"></i> Laser Head
+        <i class="bi bi-cpu"></i> Machine Peripherals
     </div>
 
     <div class="card-body d-flex flex-column gap-3 justify-content-center">
         
-        <div class="d-grid gap-3">
-            <button type="button" 
-                    class="btn p-3 d-flex align-items-center justify-content-center gap-2"
-                    :class="$store.machine.components.laser ? 'btn-danger' : 'btn-outline-secondary'"
-                    @click="toggleLaser()">
-                <i class="bi" 
-                   :class="$store.machine.components.laser ? 'bi-brightness-high-fill' : 'bi-brightness-high'"></i>
-                <span x-text="$store.machine.components.laser ? 'Laser ARMED' : 'Laser OFF'"></span>
-            </button>
+        <div class="row g-2 mb-2">
+            <div class="col-6">
+                <button type="button" 
+                        class="btn w-100 py-3 d-flex flex-column align-items-center justify-content-center gap-2"
+                        :class="$store.machine.components.laser ? 'btn-danger' : 'btn-outline-secondary'"
+                        @click="toggleLaser()">
+                    <i class="bi fs-4" :class="$store.machine.components.laser ? 'bi-brightness-high-fill' : 'bi-brightness-high'"></i>
+                    <span class="small fw-bold" x-text="$store.machine.components.laser ? 'Laser ARMED' : 'Laser OFF'"></span>
+                </button>
+            </div>
 
-            <button type="button" 
-                    class="btn p-3 d-flex align-items-center justify-content-center gap-2"
-                    :class="$store.machine.components.rotating ? 'btn-success' : 'btn-outline-secondary'"
-                    @click="togglePrism()">
-                <i class="bi" 
-                   :class="$store.machine.components.rotating ? 'bi-fan' : 'bi-circle'"></i>
-                <span x-text="$store.machine.components.rotating ? 'Motor SPINNING' : 'Motor OFF'"></span>
-            </button>
+            <div class="col-6">
+                <button type="button" 
+                        class="btn w-100 py-3 d-flex flex-column align-items-center justify-content-center gap-2"
+                        :class="$store.machine.components.rotating ? 'btn-success' : 'btn-outline-secondary'"
+                        @click="togglePrism()">
+                    <i class="bi fs-4" :class="['bi-fan', $store.machine.components.rotating ? 'spin-animation' : '']"></i>
+                    <span class="small fw-bold" x-text="$store.machine.components.rotating ? 'Motor SPINNING' : 'Motor OFF'"></span>
+                </button>
+            </div>
         </div>
 
-        <hr class="border-secondary opacity-50 my-1">
+        <hr class="border-secondary opacity-25 my-1">
+
+        <div class="row g-3">
+            
+            <div class="col-12 col-md-6" 
+                 x-data="{ tempSpindle: $store.machine.components.spindle }"
+                 x-init="$watch('$store.machine.components.spindle', v => tempSpindle = v)">
+                
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="small text-warning fw-bold">
+                        <i class="bi bi-gear-wide-connected"></i> Spindle Speed
+                    </span>
+                    <span class="badge bg-warning text-dark font-monospace" 
+                          x-text="Math.round((tempSpindle / 255) * 100) + '%'"></span>
+                </div>
+                
+                <input type="range" class="form-range" min="0" max="255" 
+                       x-model.number="tempSpindle"
+                       @change="setSpindle(tempSpindle)">
+            </div>
+
+            <div class="col-12 col-md-6" 
+                 x-data="{ tempFan: $store.machine.components.fan }"
+                 x-init="$watch('$store.machine.components.fan', v => tempFan = v)">
+                
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="small text-info fw-bold">
+                        <i class="bi bi-fan" :class="$store.machine.components.fan > 0 ? 'spin-animation' : ''"></i> Fan Speed
+                    </span>
+                    <span class="badge bg-info text-dark font-monospace" 
+                          x-text="Math.round((tempFan / 255) * 100) + '%'"></span>
+                </div>
+                
+                <input type="range" class="form-range" min="0" max="255" 
+                       x-model.number="tempFan"
+                       @change="setFan(tempFan)">
+            </div>
+
+        </div>
 
         <button class="btn btn-outline-warning w-100 py-2" 
                 type="button" 
@@ -36,10 +76,7 @@
         </button>
     </div>
 
-    <div class="modal fade" 
-         id="diodemodal" 
-         tabindex="-1" 
-         aria-hidden="true"
+    <div class="modal fade" id="diodemodal" tabindex="-1" aria-hidden="true"
          x-data="{ 
              isTesting: false,  
              init() {
@@ -53,52 +90,33 @@
                  this.isTesting = true;
                  diodeTest();
              }
-             // calculateRPM() has been removed since the backend provides it now!
          }">
-     
         <div class="modal-dialog">
             <div class="modal-content bg-dark border-secondary text-light">
                 <div class="modal-header border-secondary">
                     <h1 class="modal-title fs-5">Diode Diagnostic</h1>
                     <button type="button" class="btn-close btn-close-white" :disabled="isTesting" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
-                
                 <div class="modal-body text-center p-4">
-                    
                     <div x-show="isTesting" class="py-4">
                         <div class="spinner-border text-primary" role="status"></div>
                         <h5 class="mt-3">Testing in progress...</h5>
-                        <p class="text-muted small">
-                            Measuring facet jitter profiles.<br>
-                            Do not open the laser enclosure.
-                        </p>
+                        <p class="text-muted small">Measuring facet jitter profiles.<br>Do not open the laser enclosure.</p>
                     </div>
-
                     <div x-show="!isTesting">
-                        
                         <template x-if="$store.machine.components.diodetest === null">
                             <div class="py-3">
                                 <i class="bi bi-question-circle display-4 text-secondary"></i>
                                 <p class="mt-2">No diagnostic data available.</p>
-                                <button class="btn btn-primary w-100 mt-2" 
-                                        @click="startTest()">
-                                    Run Initial Test
-                                </button>
+                                <button class="btn btn-primary w-100 mt-2" @click="startTest()">Run Initial Test</button>
                             </div>
                         </template>
-
                         <template x-if="$store.machine.components.diodetest !== null">
                             <div class="text-start">
-                                
                                 <div class="text-center mb-4">
-                                    <i class="bi display-1" 
-                                       :class="$store.machine.components.diodetest.passed ? 'bi-check-circle-fill text-success' : 'bi-exclamation-triangle-fill text-danger'"></i>
-                                    <h4 class="mt-2" 
-                                        :class="$store.machine.components.diodetest.passed ? 'text-success' : 'text-danger'"
-                                        x-text="$store.machine.components.diodetest.passed ? 'System Passed' : 'Diagnostic Failed'">
-                                    </h4>
+                                    <i class="bi display-1" :class="$store.machine.components.diodetest.passed ? 'bi-check-circle-fill text-success' : 'bi-exclamation-triangle-fill text-danger'"></i>
+                                    <h4 class="mt-2" :class="$store.machine.components.diodetest.passed ? 'text-success' : 'text-danger'" x-text="$store.machine.components.diodetest.passed ? 'System Passed' : 'Diagnostic Failed'"></h4>
                                 </div>
-
                                 <div class="row text-center mb-4">
                                     <div class="col border-end border-secondary">
                                         <small class="text-muted text-uppercase" style="font-size: 0.75rem;">Measured Speed</small>
@@ -109,48 +127,30 @@
                                         <div class="fs-5 font-monospace" x-text="`${$store.machine.components.diodetest.global_deviation_perc.toFixed(2)} %`"></div>
                                     </div>
                                 </div>
-
                                 <h6 class="text-muted mb-2 border-bottom border-secondary pb-2">Facet Breakdown</h6>
                                 <div class="list-group list-group-flush border-secondary">
                                     <template x-for="(data, facetId) in $store.machine.components.diodetest.facets" :key="facetId">
                                         <div class="list-group-item bg-transparent text-light border-secondary px-1 d-flex justify-content-between align-items-center">
-                                            
                                             <div>
-                                                <span class="badge me-2" 
-                                                      :class="data.passed ? 'bg-success' : 'bg-danger'" 
-                                                      x-text="`Facet ${facetId}`"></span>
+                                                <span class="badge me-2" :class="data.passed ? 'bg-success' : 'bg-danger'" x-text="`Facet ${facetId}`"></span>
                                                 <small class="text-muted" x-text="`${data.mean_ms.toFixed(4)} ms`"></small>
                                             </div>
-                                            
                                             <div class="text-end" :class="data.passed ? 'text-success' : 'text-danger'">
                                                 <i class="bi me-1" :class="data.passed ? 'bi-check2' : 'bi-x-lg'"></i>
                                                 <span class="font-monospace" x-text="`${data.jitter_perc.toFixed(4)}%`"></span>
                                             </div>
-
                                         </div>
                                     </template>
                                 </div>
-
                             </div>
                         </template>
-
                     </div>
                 </div>
-
                 <div class="modal-footer border-secondary">
-                    <button x-show="!isTesting && $store.machine.components.diodetest !== null" 
-                            type="button" 
-                            class="btn btn-outline-primary"
-                            @click="startTest()">
+                    <button x-show="!isTesting && $store.machine.components.diodetest !== null" type="button" class="btn btn-outline-primary" @click="startTest()">
                         <i class="bi bi-arrow-clockwise"></i> Remeasure
                     </button>
-                    
-                    <button type="button" 
-                            class="btn btn-secondary" 
-                            :disabled="isTesting" 
-                            data-bs-dismiss="modal">
-                        Close
-                    </button>
+                    <button type="button" class="btn btn-secondary" :disabled="isTesting" data-bs-dismiss="modal">Close</button>
                 </div>
             </div>
         </div>
@@ -158,7 +158,8 @@
 </div>
 
 <style>
-    .bi-fan {
+    /* Alleen animeren als het expliciet de klasse 'spin-animation' heeft gekregen via Alpine! */
+    .bi-fan.spin-animation {
         animation: spin 1s linear infinite;
         display: inline-block;
         transform-origin: center; 

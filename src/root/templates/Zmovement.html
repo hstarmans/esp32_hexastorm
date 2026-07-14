@@ -1,21 +1,30 @@
-<div class="d-grid gap-1 h-100" @click="handleClick($event)">
-    <button type="button" 
-            class="btn btn-secondary" 
-            data-vector="[0,0,1]">
-        <i class="bi bi-arrow-up"></i>
+<div class="d-flex flex-column align-items-center gap-1 h-100 justify-content-center" @click="handleClick($event)">
+    
+    <button type="button" class="btn btn-secondary d-flex justify-content-center align-items-center" 
+            style="width: 3.5rem; height: 3.5rem;" data-vector="[0,0,1]" title="Move Z Up">
+        <i class="bi bi-arrow-up fs-4"></i>
     </button>
 
-    <button type="button" 
-                    class="btn btn-outline-light" 
-                    data-command="home"
-                    data-axes="[0,0,1]"
-                    title="Home Z">
-        <i class="bi bi-house"></i>
+    <div class="d-flex gap-1" style="width: 3.5rem; height: 3.5rem;">
+        <button type="button" 
+                class="btn btn-outline-info w-50 p-0 d-flex align-items-center justify-content-center" 
+                data-command="home"
+                data-axes="[0,0,1]"
+                title="Home Z">
+            <span class="fw-bold" style="font-size: 0.85rem;">Z</span>
+        </button>
+        <button type="button" 
+                class="btn btn-outline-light w-50 p-0 d-flex align-items-center justify-content-center" 
+                data-command="home"
+                data-axes="[1,1,1]"
+                title="Home All Axes">
+            <span class="fw-bold" style="font-size: 0.75rem;">ALL</span>
+        </button>
+    </div>
+
+    <button type="button" class="btn btn-secondary d-flex justify-content-center align-items-center" 
+            style="width: 3.5rem; height: 3.5rem;" data-vector="[0,0,-1]" title="Move Z Down">
+        <i class="bi bi-arrow-down fs-4"></i>
     </button>
 
-    <button type="button" 
-            class="btn btn-secondary" 
-            data-vector="[0,0,-1]">
-        <i class="bi bi-arrow-down"></i>
-    </button>
 </div>

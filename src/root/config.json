@@ -5,9 +5,11 @@
         "exposureperline": 4,
         "lanewidth_correction": 0.4,
         "singlefacet": false,
-        "start_position": [
-            70,
-            5,
+        "home_before_print": true,
+        "use_custom_start": false,
+        "workspace_origin": [
+            0,
+            0,
             0
         ]
     },
@@ -54,6 +56,11 @@
         "primary_dns": "192.168.1.1"
     },
     "laserhead": {
-    "facetmeans": [5.0, 5.0, 5.0, 5.0]
-  }
+        "facetmeans": [
+            5.0,
+            5.0,
+            5.0,
+            5.0
+        ]
+    }
 }

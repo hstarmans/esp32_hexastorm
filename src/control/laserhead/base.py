@@ -3,7 +3,17 @@ import asyncio
 from time import time
 from random import randint
 
-from ..constants import CONFIG
+try:
+    import numpy as np
+
+    NP_FLOAT = float
+except ImportError:
+    from ulab import numpy as np
+
+    NP_FLOAT = np.float
+
+
+from ..constants import CONFIG, NVS_STORE
 
 
 logger = logging.getLogger(__name__)
@@ -16,7 +26,36 @@ class BaseLaserhead:
         self._start = asyncio.Event()
         self.statechange = asyncio.Event()
         self._debug = False
+
+        # Load coodinates from NVS flash database
+
+        if not hasattr(self, "_position"):
+            self._position = np.array(
+                [
+                    NVS_STORE.get_int("mpos_x", 0) / 1000.0,
+                    NVS_STORE.get_int("mpos_y", 0) / 1000.0,
+                    NVS_STORE.get_int("mpos_z", 0) / 1000.0,
+                ],
+                dtype=NP_FLOAT,
+            )
+
+        if not hasattr(self, "_work_offset"):
+            self._work_offset = np.array(
+                [
+                    NVS_STORE.get_int("woff_x", 0) / 1000.0,
+                    NVS_STORE.get_int("woff_y", 0) / 1000.0,
+                    NVS_STORE.get_int("woff_z", 0) / 1000.0,
+                ],
+                dtype=NP_FLOAT,
+            )
+
         self.reset_state()
+
+        self.reset_state()
+
+    def _save_position(self):
+        """Saves the current machine coordinates and work offsets directly to NVS."""
+        NVS_STORE.save_state(self.mpos, self._work_offset)
 
     def reset_state(self):
         job = {
@@ -27,20 +66,110 @@ class BaseLaserhead:
             "singlefacet": False,
             "laserpower": 130,
             "filename": "no file name",
+            "workspace_origin": [0.0, 0.0, 0.0],
         }
         job.update(CONFIG["defaultprint"])
         components = {
             "laser": False,
             "diodetest": None,
             "rotating": False,
+            "spindle": 0,  # spindle pwm [0-255]
+            "fan": 0,  # fan pwm [0-255]
         }
         state = {
             "printing": False,
             "paused": False,
             "job": job,
             "components": components,
+            "mpos": self.mpos,
+            "wpos": self.wpos,
         }
         self._state = state
+
+    @property
+    def mpos(self):
+        """Get machine position. Supports both numpy arrays (hardware) and lists (mock)."""
+        return self._position.tolist()
+
+    @property
+    def wpos(self):
+        """Get workspace position (mpos - work_offset) for both numpy and list types."""
+        return (self._position - self._work_offset).tolist()
+
+    # --- SYNCHRONOUS COORDINATE HELPERS ---
+    # These execute instant vector math and save to NVS, without blocking the hardware loop.
+
+    def _update_coordinates(self, position, absolute=True, workspace=False):
+        """Instant math execution for coordinate updates."""
+        pos_array = np.array(position, dtype=NP_FLOAT)
+
+        if absolute:
+            if workspace:
+                # WPOS to MPOS conversion: MPOS = WPOS + Offset
+                self._position = pos_array + self._work_offset
+            else:
+                self._position = pos_array.copy()
+        else:
+            # Relative movement (Jogging)
+            self._position += pos_array
+
+        self._save_position()
+
+    def _update_home_coordinates(self, axes):
+        """Resets the machine coordinates to 0.0 for the specified homed axes."""
+        for i in range(len(axes)):
+            if axes[i] == 1:
+                self._position[i] = 0.0
+        self._save_position()
+
+    def _update_workspace_zero(self, axes=None):
+        """Calculates and applies the new workspace offset based on current machine position."""
+        if axes is None:
+            axes = [1, 1, 1]
+
+        for i in range(len(axes)):
+            if axes[i] == 1:
+                # To make WPOS 0, the offset must equal the current MPOS
+                self._work_offset[i] = self._position[i]
+        self._save_position()
+
+    # --- MOCK / PC ASYNC METHODS ---
+    # These include simulated delays and call the synchronous helpers above.
+
+    async def gotopoint(
+        self,
+        position,
+        speed=None,
+        absolute=True,
+        workspace=False,
+        check_sensors=True,
+        blind_distance_mm=5.0,
+    ):
+        """Simulates target movement and updates mock coordinates over time."""
+        logger.info(f"Mock moving to {position} (abs={absolute}, wpos={workspace}).")
+
+        # Simulate physical transit time (Great for UI testing!)
+        await asyncio.sleep(0.3)
+
+        self._update_coordinates(position, absolute, workspace)
+        await self.notify_listeners()
+
+    async def home(self, axes):
+        """Mock homing: machine position set to 0.0."""
+        logger.info(f"Mock homing axes {axes}.")
+
+        await asyncio.sleep(0.8)  # Simulate homing travel time
+
+        self._update_home_coordinates(axes)
+        await self.notify_listeners()
+
+    async def set_workspace_zero(self, axes=None):
+        """Mock workspace zero."""
+        logger.info(f"Mock setting workspace zero for axes {axes}.")
+        self._update_workspace_zero(axes)
+        await self.notify_listeners()
+
+    # --- SYSTEM CONTROL METHODS ---
 
     def stop_print(self):
         logger.info("Print is stopped.")
@@ -83,14 +212,21 @@ class BaseLaserhead:
         self.state["components"]["rotating"] = prism = not prism
         logger.info(f"Change rotation state prism to {prism}.")
 
-    async def move(self, vector):
-        logger.info(f"Moving vector {vector}.")
+    async def set_spindle(self, value: int):
+        value = max(0, min(255, int(value)))
+        self.state["components"]["spindle"] = value
+        logger.info(f"Spindle PWM set to {value}")
 
-    async def home(self, axes):
-        logger.info(f"Homing axes {axes}.")
+    async def set_fan(self, value: int):
+        value = max(0, min(255, int(value)))
+        self.state["components"]["fan"] = value
+        logger.info(f"Fan PWM set to {value}")
 
     @property
     def state(self):
+        """Dynamically populates the current coordinates into the state dictionary."""
+        self._state["mpos"] = self.mpos
+        self._state["wpos"] = self.wpos
         return self._state
 
     @property
@@ -237,20 +373,43 @@ class BaseLaserhead:
 
     async def print_loop(self, fname):
         await self.print_loop_prep(fname)
-        # TODO: this would normally come from a file
         total_lines = 10
         self.laser_current = self.state["job"]["laserpower"]
         self.state["job"]["totallines"] = total_lines
-        logger.info("Homing X- and Y-axis.")
-        logger.info(f"Moving to start position. {self.state['job']['start_position']}")
+
+        # Read the workflow settings
+        home_before = CONFIG["defaultprint"]["home_before_print"]
+        use_custom = CONFIG["defaultprint"]["use_custom_start"]
+        custom_origin = CONFIG["defaultprint"]["workspace_origin"]
+
+        # 1. Homing check
+        if home_before:
+            logger.info("Homing X- and Y-axis.")
+            await self.home([1, 1, 0])
+        else:
+            logger.info("Skipping homing before print per user settings.")
+
+        # 2. Start position check
+        if use_custom:
+            logger.info(f"Overriding workspace origin to custom MPOS: {custom_origin}")
+            self._work_offset = np.array(custom_origin, dtype=NP_FLOAT)
+            self._save_position()
+
+        logger.info("Moving to workspace origin (WPOS 0, 0, 0).")
+        await self.gotopoint([0.0, 0.0, 0.0], absolute=True, workspace=True)
+
         start_time = time()
         for line in range(total_lines):
             logger.info(f"Exposing line {line}.")
             if await self.handle_pausing_and_stopping():
                 break
+
             self.state["job"]["currentline"] = line + 1
             self.state["job"]["printingtime"] = round(time() - start_time)
             await self.notify_listeners()
             await asyncio.sleep(5)
+
         self.state["printing"] = False
+        # Ensure the final position is logged to NVS when the print concludes
+        self._save_position()
         await self.notify_listeners()

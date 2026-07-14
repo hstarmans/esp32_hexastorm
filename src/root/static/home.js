@@ -14,7 +14,7 @@
  * @property {number} exposureperline - Exposure count
  * @property {number} laserpower - Laser power level
  * @property {boolean} singlefacet - Whether single facet mode is on
- * @property {number[]} start_position - The [x, y, z] starting vector
+ * @property {number[]} workspace_origin - The [x, y, z] starting offset vector
  */
 
 /**
@@ -22,6 +22,8 @@
  * @property {boolean} rotating - Is the motor turning?
  * @property {boolean} laser - Is the laser on?
  * @property {boolean|null} diodetest - null=not run, true=pass, false=fail
+ * @property {number} spindle - Spindle PWM speed (0-255)
+ * @property {number} fan - Fan PWM speed (0-255)
  */
 
 /**
@@ -30,6 +32,8 @@
  * @property {boolean} paused - Is the print paused?
  * @property {PrintJob} job - The current job details
  * @property {Components} components - Hardware status
+ * @property {number[]} mpos - Machine position mm [x, y, z]
+ * @property {number[]} wpos - Workspace position mm [x, y, z]
  * @property {number} [notauthorized] - Optional flag if session is invalid
  */
 
@@ -37,8 +41,45 @@
 
 document.addEventListener("alpine:init", () => {
     
-    // 1. GLOBAL STORE
-    // We explicitly type 'this' in comments so VS Code knows what 'this' refers to.
+    // 1. CENTRAL API HELPER
+    const api = {
+        /**
+         * Basic post request with error handling and state update
+         * @param {string} url 
+         * @param {Object} [payload={}] 
+         */
+        async post(url, payload = {}) {
+            try {
+                const res = await fetch(url, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(payload),
+                });
+                
+                if (!res.ok) throw new Error(res.statusText);
+                
+                const data = await res.json();
+                // @ts-ignore
+                Alpine.store('machine').update(data);
+                
+            } catch (err) {
+                console.error(url, err);
+                alert("Command failed: " + err);
+            }
+        },
+
+        /**
+         * Universal function for all motion types
+         * @param {number[]} position 
+         * @param {boolean} [absolute=true] 
+         * @param {boolean} [workspace=false] 
+         */
+        gotopoint(position, absolute = true, workspace = false) {
+            this.post('/gotopoint', { position, absolute, workspace });
+        }
+    };
+
+    // 2. GLOBAL MACHINE STORE
     Alpine.store('machine', {
         printing: false,
         paused: false,
@@ -51,15 +92,19 @@ document.addEventListener("alpine:init", () => {
             exposureperline: 0,
             laserpower: 0,
             singlefacet: false,
-            start_position: [0, 0, 0],
+            workspace_origin: [0, 0, 0],
         },
         /** @type {Components} */
         components: {
             rotating: false,
             laser: false,
-            diodetest: null
+            diodetest: null,
+            spindle: 0,
+            fan: 0
         },
-
+        mpos: [0.00, 0.00, 0.00], // machine position in mm
+        wpos: [0.00, 0.00, 0.00], // workspace position in mm
+        
         /**
          * Updates the store with data from the server
          * @param {MachineState} data - The JSON object from the backend
@@ -70,28 +115,25 @@ document.addEventListener("alpine:init", () => {
                 return;
             }
 
-            // We define what a "valid" packet looks like. 
-            // It MUST have 'printing' status AND the 'job'/'components' objects.
             const isValidPacket = (
                 typeof data.printing !== 'undefined' &&
-                data.job &&             // Checks if job object exists
-                data.components         // Checks if components object exists
+                data.job &&            
+                data.components &&     
+                data.mpos &&           
+                data.wpos              
             );
 
             if (!isValidPacket) {
                 console.warn("Ignored incomplete state packet:", data);
-                // We return immediately. The UI keeps showing the old (valid) state.
                 return;
             }
 
-            // Since we passed the gatekeeper, we know all these exist.
             this.printing = data.printing;
             this.paused = data.paused || false; 
-            
-            // We simply overwrite the objects.
-            // AlpineJS will detect the changes inside them automatically.
             this.job = data.job;
             this.components = data.components;
+            this.mpos = data.mpos;
+            this.wpos = data.wpos;
         },
 
         /**
@@ -104,12 +146,12 @@ document.addEventListener("alpine:init", () => {
         }
     });
 
-    // 2. MOVEMENT LOGIC
+    // 3. MOVEMENT LOGIC (JOGGING / DIAL-IN)
     Alpine.data("movement", () => ({
         step: 10,
 
         init() {
-            // @ts-ignore - Custom events sometimes confuse TS, ignore is safe here
+            // @ts-ignore
             this.$el.addEventListener("step-change", (e) => {
                 // @ts-ignore
                 this.step = e.detail.step;
@@ -117,78 +159,56 @@ document.addEventListener("alpine:init", () => {
         },
 
         /**
-         * Handles clicking the arrow buttons
+         * Handles clicking the arrow and homing buttons
          * @param {Event} e 
          */
         async handleClick(e) {
-            // Look for buttons with either vector (move) OR command (home)
-            // @ts-ignore - closest is valid on target
+            // @ts-ignore
             const button = e.target.closest("[data-vector], [data-command]");
             if (!button || button.disabled) return;
 
             if (button.dataset.command === "home") {
                 const axes = JSON.parse(button.dataset.axes);
-                try {
-                    await fetch("/home", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ axes: axes }),
-                    });
-                } catch (err) {
-                    console.error("Homing failed", err);
-                }
+                api.post("/home", { axes: axes });
             }
             else if (button.dataset.vector){
                 const vector = JSON.parse(button.dataset.vector);
-                try {
-                    await fetch("/move", {
-                        method: "POST",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify({ vector: vector, steps: this.step }),
-                    });
-                } catch (err) {
-                    console.error("Move failed", err);
-                }
+                
+                // Calculate the relative vector based on step size
+                const targetPos = vector.map(v => v * this.step);
+                
+                // Call central API with absolute=false for jogging
+                api.gotopoint(targetPos, false, false);
             }
         }
     }));
 
-    // 3. COMMANDS LOGIC
+    // 4. COMMANDS LOGIC (HARDWARE ACTIONS)
     Alpine.data("commands", () => ({
         
-        /**
-         * Sends a generic POST request to the backend.
-         * @param {string} url - The endpoint path (e.g., '/control/laser')
-         * @param {Object} [payload] - Optional JSON body to send
-         * @returns {Promise<void>}
-         */
-        async post(url, payload = {}) {
-          try {
-              const res = await fetch(url, {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify(payload),
-              });
-              
-              if (!res.ok) throw new Error(res.statusText);
-              
-              // UI flicker is possible if the SSE event is delayed
-              const data = await res.json();
-              Alpine.store('machine').update(data);
-              
-          } catch (err) {
-              console.error(url, err);
-              alert("Command failed: " + err);
-          }
-        },
-
-        // Point to the new specific URLs
-        toggleLaser() { this.post('/control/laser'); },
-        togglePrism() { this.post('/control/prism'); },
-        diodeTest()   { this.post('/control/diodetest'); },
+        toggleLaser() { api.post('/control/laser'); },
+        togglePrism() { api.post('/control/prism'); },
+        diodeTest()   { api.post('/control/diodetest'); },
         
-        stopPrint()   { this.post('/print/control', { action: 'stop' }); },
-        pausePrint()  { this.post('/print/control', { action: 'pause' }); },
+        /** @param {number} value */
+        setSpindle(value) { api.post('/control/spindle', { value: value }); },
+        
+        /** @param {number} value */
+        setFan(value)     { api.post('/control/fan', { value: value }); },
+        
+        /** @param {number[]} [axes=[1, 1, 1]] */
+        setWorkspaceZero(axes = [1, 1, 1]) { api.post('/setworkspacezero', { axes: axes }); },
+        
+        /** * @param {number[]} position 
+         * @param {boolean} [workspace=true] 
+         */
+        goto(position, workspace = true) { 
+            api.gotopoint(position, true, workspace); 
+        },
+        
+        stopPrint()   { api.post('/print/control', { action: 'stop' }); },
+        pausePrint()  { api.post('/print/control', { action: 'pause' }); },
+        
         async reboot() {
             if(!confirm("Are you sure you want to reboot the system?")) return;
 
@@ -199,30 +219,15 @@ document.addEventListener("alpine:init", () => {
                 });
                 
                 alert("System is rebooting. Page will reload in 10 seconds.");
-                
-                setTimeout(() => {
-                    window.location.reload();
-                }, 10000);
+                setTimeout(() => window.location.reload(), 10000);
 
             } catch (err) {
                 alert("Reboot command failed: " + err);
             }
         },
     }));
-    // 4. UPLOAD LOGIC
-    /**
-     * @typedef {Object} FileUploader
-     * @property {File | null} file - The file object selected by the user
-     * @property {boolean} isUploading - UI state for showing progress bar vs input
-     * @property {number} progress - Upload percentage (0-100)
-     * @property {string} errorMessage - Error text to display
-     * @property {XMLHttpRequest | null} xhr - The active XHR request object
-     * @property {(e: Event) => void} handleFileSelect - Input change handler
-     * @property {() => void} upload - Starts the binary upload
-     * @property {() => void} cancel - Aborts the active upload
-     * @property {(msg: string) => void} handleError - Helper to set error state
-     */
 
+    // 5. UPLOAD LOGIC
     Alpine.data("fileUploader", () => ({
         /** @type {File | null} */
         file: null,
@@ -232,10 +237,7 @@ document.addEventListener("alpine:init", () => {
         /** @type {XMLHttpRequest | null} */
         xhr: null,
 
-        /**
-         * Triggered when file input changes
-         * @param {Event} e 
-         */
+        /** @param {Event} e */
         handleFileSelect(e) {
             const target = /** @type {HTMLInputElement} */ (e.target);
             if (target.files && target.files.length > 0) {
@@ -247,9 +249,6 @@ document.addEventListener("alpine:init", () => {
             this.progress = 0;
         },
 
-        /**
-         * Performs the raw binary upload
-         */
         upload() {
             if (!this.file) return;
 
@@ -257,10 +256,8 @@ document.addEventListener("alpine:init", () => {
             this.progress = 0;
             this.errorMessage = '';
 
-            // We use XHR because fetch() doesn't support upload progress streams easily
             this.xhr = new XMLHttpRequest();
             
-            // Setup listeners
             if (this.xhr.upload) {
                 this.xhr.upload.addEventListener("progress", (e) => {
                     if (e.lengthComputable) {
@@ -270,8 +267,6 @@ document.addEventListener("alpine:init", () => {
             }
 
             this.xhr.addEventListener("load", () => {
-                // We check for 'this.xhr' existence to satisfy strict null checks, 
-                // though logically it exists here.
                 if (!this.xhr) return;
 
                 if (this.xhr.status === 200) {
@@ -293,34 +288,26 @@ document.addEventListener("alpine:init", () => {
                 this.errorMessage = "Upload cancelled";
             });
 
-            // Open Connection
             this.xhr.open("POST", "/upload");
-
-            // CRITICAL: Matches your Python backend expectation
             this.xhr.setRequestHeader("Content-Disposition", `attachment; filename="${this.file.name}"`);
             this.xhr.setRequestHeader("Content-Type", "application/octet-stream");
-
-            // Send raw file bytes
             this.xhr.send(this.file);
         },
 
         cancel() {
-            if (this.xhr) {
-                this.xhr.abort();
-            }
+            if (this.xhr) this.xhr.abort();
             this.isUploading = false;
         },
 
-        /**
-         * @param {string} msg 
-         */
+        /** @param {string} msg */
         handleError(msg) {
             this.errorMessage = msg;
             this.isUploading = false;
             this.progress = 0;
         }
     }));
-    // 5. DELETE FILE LOGIC
+
+    // 6. DELETE FILE LOGIC
     Alpine.data("fileDeleter", () => ({
         isDeleting: false,
 
@@ -336,7 +323,6 @@ document.addEventListener("alpine:init", () => {
 
             const filename = select.value;
 
-            // Double confirmation usually good for deletions
             if (!confirm(`Are you sure you want to permanently delete "${filename}"?`)) {
                 return;
             }
@@ -351,7 +337,6 @@ document.addEventListener("alpine:init", () => {
                 });
 
                 if (res.ok) {
-                    // Success: Reload page to update the Jinja file list
                     window.location.reload();
                 } else {
                     const err = await res.json();
@@ -364,24 +349,8 @@ document.addEventListener("alpine:init", () => {
             }
         }
     }));
-    // 6. PRINT LAUNCHER LOGIC
-    /**
-     * @typedef {Object} PrintLauncher
-     * @property {string} selectedFile
-     * @property {number|string} laserPower
-     * @property {number|string} exposure
-     * @property {number|string} posX      
-     * @property {number|string} posY      
-     * @property {number|string} posZ      
-     * @property {boolean} singleFacet
-     * @property {boolean} isStarting
-     * @property {() => void} init
-     * @property {() => Promise<void>} startPrint
-     * * // Add Alpine Magic Properties here so TS knows they exist:
-     * @property {(callback: Function) => void} $nextTick
-     * @property {Object.<string, HTMLElement>} $refs
-     */
 
+    // 7. PRINT LAUNCHER LOGIC
     Alpine.data("printLauncher", () => ({
         /** @type {string} */
         selectedFile: '',
@@ -394,19 +363,16 @@ document.addEventListener("alpine:init", () => {
         posZ: 0,
         singleFacet: false,
         isStarting: false,
+        homeBeforePrint: true,
+        useCustomStart: false,
 
-        /**
-         * Initialize default values
-         */
         init() {
-            // We cast 'this' to the Type defined above so VS Code sees $nextTick
-            const self = /** @type {PrintLauncher} */ (/** @type {unknown} */ (this));
-
-            self.$nextTick(() => {
-                const select = /** @type {HTMLSelectElement} */ (self.$refs.fileSelect);
-                
+            // @ts-ignore
+            this.$nextTick(() => {
+                // @ts-ignore
+                const select = this.$refs.fileSelect;
                 if (select && select.options.length > 0) {
-                    self.selectedFile = select.options[0].value;
+                    this.selectedFile = select.options[0].value;
                 }
             });
         },
@@ -426,7 +392,10 @@ document.addEventListener("alpine:init", () => {
                     laserpower: Number(this.laserPower),
                     exposureperline: Number(this.exposure),
                     singlefacet: this.singleFacet,
-                    start_position: [
+                    home_before_print: this.homeBeforePrint,
+                    use_custom_start: this.useCustomStart,
+                    // Send coordinates as workspace_origin
+                    workspace_origin: [
                         Number(this.posX), 
                         Number(this.posY), 
                         Number(this.posZ)
@@ -441,8 +410,6 @@ document.addEventListener("alpine:init", () => {
 
                 if (!res.ok) throw new Error(res.statusText);
 
-                setTimeout(() => window.location.reload(), 500);
-
             } catch (err) {
                 const message = err instanceof Error ? err.message : String(err);
                 alert("Failed to start print: " + message);
@@ -452,9 +419,6 @@ document.addEventListener("alpine:init", () => {
         }
     }));
 });
-
-
-
 
 // --- SERVER SENT EVENTS (SSE) ---
 
@@ -467,11 +431,10 @@ function initializeSocket() {
     stateSocket = new EventSource('/state');
     
     stateSocket.onmessage = (event) => {
-        // Heartbeat check (ignore "ping" events)
         if(event.type === 'ping' || event.data === 'ping') return;
 
         const data = JSON.parse(event.data);
-        // @ts-ignore - Alpine isn't globally typed in window, so we ignore
+        // @ts-ignore
         Alpine.store('machine').update(data);
     };
 
@@ -482,5 +445,5 @@ function initializeSocket() {
     };
 }
 
-// Start SSE on load
+// Start SSE connection on window load
 window.addEventListener("load", initializeSocket);
