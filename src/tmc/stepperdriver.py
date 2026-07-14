@@ -35,6 +35,16 @@ class TMC_2209:
         self._vref = float(vref)
         self._rsense = float(rsense)
 
+        self._current_cache = {
+            "run_mA": 0,
+            "run_cs": 0,
+            "hold_cs": 0,
+            "hold_mA": 0,
+            "hold_delay": 0,
+            "vref": self._vref,
+            "rsense": self._rsense,
+        }
+
         self.readStepsPerRevolution()
         self.clearGSTAT()
         self.tmc_uart.flushSerialBuffer()
@@ -72,6 +82,20 @@ class TMC_2209:
     def drvstatus(self):
         """Raw DRVSTATUS (0x6F): motor state (reg.stst), mode (reg.stealth), and error flags (reg.ol*/s2*/*ot*)."""
         return self.tmc_uart.read_u32(reg.DRVSTATUS)
+
+    @property
+    def drvstatus_parsed(self):
+        """Returns a human-readable dictionary of the driver diagnostics."""
+        val = self.drvstatus
+        return {
+            "standstill": bool((val >> 31) & 0x1),
+            "stealth_chop": bool((val >> 30) & 0x1),
+            "current_scale": (val >> 16) & 0x1F,
+            "warning_120c": bool(val & 0x1),
+            "error_150c": bool((val >> 1) & 0x1),
+            "short_to_gnd_a": bool((val >> 2) & 0x1),
+            "short_to_gnd_b": bool((val >> 3) & 0x1),
+        }
 
     @property
     def gconf(self):
@@ -234,9 +258,21 @@ class TMC_2209:
     # Flexible setter (mA or tuple or dict) + readable getter with CS & mA.
 
     def _vfs(self, vref=None):
-        """Internal: Vsense-dependent full-scale voltage at Rsense, derived from CHOPCONF.reg.vsense and vref."""
-        vref = self._vref if vref is None else float(vref)
-        return (0.180 if self.vsense else 0.325) * vref / 2.5
+        """
+        Calculate the full-scale sensing voltage (V_FS) at the sense resistor.
+
+        If GCONF.i_scale_analog is False, the driver ignores the physical VREF pin
+        and uses its internal reference, meaning V_FS is a fixed constant determined
+        solely by CHOPCONF.vsense (0.325V or 0.180V).
+        """
+        if not self.iscale_analog:
+            # Forceer de interne 2.5V logica (de * 2.5 en / 2.5 strepen elkaar hierdoor weg)
+            actual_vref = 2.5
+        else:
+            # Gebruik de fysieke VREF (meestal 1.2V)
+            actual_vref = self._vref if vref is None else float(vref)
+
+        return (0.180 if self.vsense else 0.325) * actual_vref / 2.5
 
     def _cs_from_run_mA(self, run_mA, vref=None):
         """Convert desired run current (mA) to CS value (0..31) using datasheet formula."""
@@ -263,20 +299,7 @@ class TMC_2209:
           }
         (Bit fields: reg.ihold, reg.irun, reg.iholddelay)
         """
-        val = self.tmc_uart.read_u32(reg.IHOLD_IRUN)
-        hold_cs = (val >> reg.IHOLD_SHIFT) & 0x1F
-        run_cs = (val >> reg.IRUN_SHIFT) & 0x1F
-        hold_delay = (val >> reg.IHOLDDELAY_SHIFT) & 0x0F
-
-        return {
-            "run_cs": run_cs,
-            "hold_cs": hold_cs,
-            "hold_delay": hold_delay,
-            "run_mA": self._mA_from_cs(run_cs),
-            "hold_mA": self._mA_from_cs(hold_cs),
-            "vref": self._vref,
-            "rsense": self._rsense,
-        }
+        return self._current_cache
 
     @current.setter
     def current(self, value):
@@ -285,7 +308,7 @@ class TMC_2209:
           • int/float: run_mA (hold_multiplier=0.5, hold_delay=10)
           • (run_mA, hold_multiplier, hold_delay)
           • {"run_mA":..., "hold_multiplier":..., "hold_delay":..., "vref":...}
-        Calculates IHOLD/IRUN/IHOLDDELAY (reg.ihold, reg.irun, reg.iholddelay).
+        Calculates IHOLD/IRUN/IHOLDDELAY (reg.ihold, reg.irun, reg.iholddelay) and updates local cache.
         """
         if isinstance(value, (int, float)):
             run_mA = float(value)
@@ -318,7 +341,18 @@ class TMC_2209:
             | ((run_cs & 0x1F) << reg.IRUN_SHIFT)
             | ((hold_delay & 0x0F) << reg.IHOLDDELAY_SHIFT)
         )
+
         self.tmc_uart.write_reg_check(reg.IHOLD_IRUN, ihold_irun)
+
+        self._current_cache = {
+            "run_mA": run_mA,
+            "run_cs": run_cs,
+            "hold_cs": hold_cs,
+            "hold_mA": self._mA_from_cs(hold_cs, vref=vref),
+            "hold_delay": hold_delay,
+            "vref": vref,
+            "rsense": self._rsense,
+        }
 
     # ----------------------- Thresholds & diagnostics -----------------------
 
@@ -357,3 +391,51 @@ class TMC_2209:
     def stallguard_result(self):
         """SG_RESULT (0x41): Higher value means lower motor load (StallGuard)."""
         return self.tmc_uart.read_u32(reg.SG_RESULT)
+
+    @property
+    def chopper_timings(self):
+        """
+        Reads the current spreadCycle chopper timing configuration from CHOPCONF.
+        Returns:
+            dict: {"toff": int, "hstrt": int, "hend": int}
+        """
+        chopconf = self.tmc_uart.read_u32(reg.CHOPCONF)
+
+        toff = (chopconf & reg.toff_mask) >> reg.TOFF_SHIFT
+        hstrt = (chopconf & reg.hstrt_mask) >> reg.HSTRT_SHIFT
+        hend = (chopconf & reg.hend_mask) >> reg.HEND_SHIFT
+
+        return {"toff": toff, "hstrt": hstrt, "hend": hend}
+
+    @chopper_timings.setter
+    def chopper_timings(self, timings):
+        """
+        Sets the spreadCycle chopper timing configuration (TOFF, HSTRT, HEND).
+        Args:
+            timings (dict): Dictionary containing keys 'toff', 'hstrt', and/or 'hend'.
+                            Values not provided in the dict will retain their current settings.
+        """
+        if not isinstance(timings, dict):
+            raise ValueError(
+                "chopper_timings must be a dictionary, e.g., {'toff': 5, 'hstrt': 4, 'hend': 1}"
+            )
+
+        # Read current CHOPCONF to preserve other bits
+        chopconf = self.tmc_uart.read_u32(reg.CHOPCONF)
+
+        # Get current values to provide defaults for missing keys
+        current_timings = self.chopper_timings
+        toff = int(timings.get("toff", current_timings["toff"])) & 0x0F
+        hstrt = int(timings.get("hstrt", current_timings["hstrt"])) & 0x07
+        hend = int(timings.get("hend", current_timings["hend"])) & 0x0F
+
+        # Clear old chopper bits
+        chopconf &= ~(reg.toff_mask | reg.hstrt_mask | reg.hend_mask)
+
+        # Update with new bits
+        chopconf |= toff << reg.TOFF_SHIFT
+        chopconf |= hstrt << reg.HSTRT_SHIFT
+        chopconf |= hend << reg.HEND_SHIFT
+
+        # Write back to driver
+        self.tmc_uart.write_reg_check(reg.CHOPCONF, chopconf)

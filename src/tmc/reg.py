@@ -51,6 +51,16 @@ intpol = 1 << 28  # Interpolate to 256 usteps
 MSRES_MASK = msres0 | msres1 | msres2 | msres3
 MSRES_SHIFT = 24
 
+# chopper timings
+
+TOFF_SHIFT = 0
+HSTRT_SHIFT = 4
+HEND_SHIFT = 7
+
+toff_mask = 0x0F << TOFF_SHIFT  # bits [3:0] (0..15)
+hstrt_mask = 0x07 << HSTRT_SHIFT  # bits [6:4] (0..7)
+hend_mask = 0x0F << HEND_SHIFT  # bits [10:7] (0..15)
+
 # ------------------------ IOIN bits ------------------------------------
 io_enn = 1 << 0  # ENN pin level (1=high)
 io_step = 1 << 7  # STEP pin level
