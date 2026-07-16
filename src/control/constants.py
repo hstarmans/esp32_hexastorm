@@ -79,13 +79,32 @@ class SafeNVS:
         self.commit()
 
 
+def merge_configs(default_dct, old_dct):
+    """
+    Recursively updates default_dct with values from old_dct.
+    Preserves new keys in default_dct that don't exist in old_dct.
+    """
+    for key, value in old_dct.items():
+        # If the value is a dictionary, and the key exists in both, recurse
+        if (
+            isinstance(value, dict)
+            and key in default_dct
+            and isinstance(default_dct[key], dict)
+        ):
+            merge_configs(default_dct[key], value)
+        else:
+            # Otherwise, overwrite the default with the user's old value
+            default_dct[key] = value
+    return default_dct
+
+
 def deploy_assets(overwrite=False):
     """Extracts frozen assets only if a sentinel file is missing."""
 
     # Check for sentinel file (fastest check)
     if not overwrite:
         try:
-            os.stat("/templates/home.html")
+            os.stat("/templates/config.json")
             logging.info("Assets already deployed. Skipping extraction.")
             return
         except OSError:
@@ -114,8 +133,11 @@ def recurse_dct(dct, target, replace):
 
 
 def load_config():
-    """Load json config settings."""
+    """Load json config settings and migrate old configs if present."""
     fname = "config.json" if ESP32 else "src/root/config.json"
+    fname_old = "config_old.json" if ESP32 else "src/root/config_old.json"
+
+    # 1. Load the active config (which might be a fresh factory extraction)
     try:
         with open(fname) as f:
             dct = json.load(f)
@@ -124,7 +146,29 @@ def load_config():
     except OSError:
         logger.warning("Could not load config.json, using defaults")
         dct = {}
-    return dct
+
+    # 2. Check if a migration/old config exists
+    try:
+        with open(fname_old) as f_old:
+            logger.info("Found config_old.json. Migrating user settings...")
+            old_dct = json.load(f_old)
+
+            # Merge old user settings over the loaded (likely factory) defaults
+            dct = merge_configs(dct, old_dct)
+
+        # Rename the old config so we don't migrate again on next boot
+        try:
+            os.rename(fname_old, fname_old + ".bak")
+        except OSError:
+            os.remove(fname_old)  # Fallback if rename fails
+
+        # We flag that a migration happened so we can save the merged result
+        migration_happened = True
+    except OSError:
+        migration_happened = False
+
+    # (We wait to save until CONFIG is globally assigned, otherwise update_config fails)
+    return dct, migration_happened
 
 
 def update_config():
@@ -141,6 +185,14 @@ def update_config():
 
 
 if ESP32:
-    deploy_assets()  # ensure config exists
-CONFIG = load_config()
+    deploy_assets()  # Extracts fresh config.json if missing
+
+# Load config and capture the migration flag
+CONFIG, _migrated = load_config()
+
+if _migrated:
+    # Save the newly merged configuration to disk permanently
+    logger.info("Saving migrated configuration to disk.")
+    update_config()
+
 NVS_STORE = SafeNVS()

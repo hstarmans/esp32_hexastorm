@@ -1,0 +1,224 @@
+<div class="modal fade" id="settingsModal" tabindex="-1" aria-labelledby="settingsModalLabel" aria-hidden="true" x-data="machineSettings">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content bg-dark text-light border-secondary">
+            
+            <div class="modal-header border-secondary">
+                <h5 class="modal-title" id="settingsModalLabel">
+                    <i class="bi bi-sliders me-2"></i> Machine Settings
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            
+            <div class="modal-body">
+                <ul class="nav nav-tabs border-secondary mb-3" id="settingsTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active text-light" id="network-tab" data-bs-toggle="tab" data-bs-target="#network-tab-pane" type="button" role="tab">Network</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link text-light" id="motors-tab" data-bs-toggle="tab" data-bs-target="#motors-tab-pane" type="button" role="tab">Motors</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link text-light" id="offsets-tab" data-bs-toggle="tab" data-bs-target="#offsets-tab-pane" type="button" role="tab">Offsets</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link text-light" id="system-tab" data-bs-toggle="tab" data-bs-target="#system-tab-pane" type="button" role="tab">System</button>
+                    </li>
+                </ul>
+                
+                <div class="tab-content" id="settingsTabsContent">
+                    
+                    <div class="tab-pane fade show active" id="network-tab-pane" role="tabpanel" aria-labelledby="network-tab">
+                        <div class="p-3">
+                            <h6 class="border-bottom border-secondary pb-2 mb-3">Wi-Fi Configuration</h6>
+                            
+                            <form id="wifiSettingsForm">
+                                <div class="row g-3 mb-4">
+                                    <div class="col-md-6">
+                                        <label class="form-label small text-secondary mb-1">Access Point Name (ESSID)</label>
+                                        <input type="text" class="form-control bg-dark text-light border-secondary" x-model="wifi_login.essid" placeholder="hexastorm">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label small text-secondary mb-1">Access Point Password</label>
+                                        <input type="password" class="form-control bg-dark text-light border-secondary" x-model="wifi_login.ap_password">
+                                    </div>
+
+                                    <div class="col-md-6">
+                                        <label class="form-label small text-secondary mb-1">Connect to Network (SSID)</label>
+                                        <input type="text" class="form-control bg-dark text-light border-secondary" x-model="wifi_login.ssid" placeholder="Network Name">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label small text-secondary mb-1">Network Password</label>
+                                        <input type="password" class="form-control bg-dark text-light border-secondary" x-model="wifi_login.password">
+                                    </div>
+                                </div>
+
+                                <h6 class="border-bottom border-secondary pb-2 mb-3">IP Configuration</h6>
+                                
+                                <div class="form-check form-switch mb-3">
+                                    <input class="form-check-input" type="checkbox" role="switch" id="staticIpToggle" x-model="wifi_login.static_enabled">
+                                    <label class="form-check-label" for="staticIpToggle">Enable Static IP</label>
+                                </div>
+
+                                <div class="row g-3" :class="{ 'opacity-50': !wifi_login.static_enabled }">
+                                    <div class="col-md-6">
+                                        <label class="form-label small text-secondary mb-1">Static IP Address</label>
+                                        <input type="text" class="form-control bg-dark text-light border-secondary" x-model="wifi_login.static_ip" :disabled="!wifi_login.static_enabled">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label small text-secondary mb-1">Subnet Mask (dnsmask)</label>
+                                        <input type="text" class="form-control bg-dark text-light border-secondary" x-model="wifi_login.dnsmask" :disabled="!wifi_login.static_enabled">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label small text-secondary mb-1">Gateway IP</label>
+                                        <input type="text" class="form-control bg-dark text-light border-secondary" x-model="wifi_login.gateway_ip" :disabled="!wifi_login.static_enabled">
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label small text-secondary mb-1">Primary DNS</label>
+                                        <input type="text" class="form-control bg-dark text-light border-secondary" x-model="wifi_login.primary_dns" :disabled="!wifi_login.static_enabled">
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                    
+                    <div class="tab-pane fade" id="motors-tab-pane" role="tabpanel" aria-labelledby="motors-tab">
+                        <div class="p-3">
+                            <h6 class="border-bottom border-secondary pb-2 mb-3">Axis Configuration</h6>
+                            <p class="text-secondary small mb-3">Configure steps, limits, and TMC driver parameters per axis.</p>
+
+                            <div class="accordion accordion-flush border border-secondary rounded" id="motorsAccordion"> 
+                                <template x-for="axis in Object.keys(motors)" :key="axis">
+                                    <div class="accordion-item bg-dark border-secondary">
+                                        <h2 class="accordion-header" :id="'heading' + axis">
+                                            <button class="accordion-button collapsed bg-dark text-light text-uppercase" 
+                                                    type="button" 
+                                                    data-bs-toggle="collapse" 
+                                                    :data-bs-target="'#collapse' + axis" 
+                                                    aria-expanded="false" 
+                                                    :aria-controls="'collapse' + axis">
+                                                <i class="bi bi-cpu me-2 text-primary"></i> <span x-text="axis + '-Axis'"></span>
+                                            </button>
+                                        </h2>
+                                        
+                                        <div :id="'collapse' + axis" class="accordion-collapse collapse" :aria-labelledby="'heading' + axis" data-bs-parent="#motorsAccordion">
+                                            <div class="accordion-body border-top border-secondary">
+                                                <div class="row g-3">
+                                                    <div class="col-md-4">
+                                                        <label class="form-label small text-secondary mb-1">Steps per mm</label>
+                                                        <input type="number" class="form-control form-control-sm bg-dark text-light border-secondary" x-model="motors[axis].steps_mm">
+                                                    </div>
+                                                    <div class="col-md-4">
+                                                        <label class="form-label small text-secondary mb-1">Microstepping</label>
+                                                        <select class="form-select form-select-sm bg-dark text-light border-secondary" x-model="motors[axis].microstep_resolution">
+                                                            <option value="8">8</option>
+                                                            <option value="16">16</option>
+                                                            <option value="32">32</option>
+                                                            <option value="64">64</option>
+                                                            <option value="128">128</option>
+                                                            <option value="256">256</option>
+                                                        </select>
+                                                    </div>
+                                                    <div class="col-md-4">
+                                                        <label class="form-label small text-secondary mb-1">Motor Current (mA)</label>
+                                                        <input type="number" class="form-control form-control-sm bg-dark text-light border-secondary" x-model="motors[axis].current">
+                                                    </div>
+
+                                                    <div class="col-md-4">
+                                                        <label class="form-label small text-secondary mb-1">Homing Direction</label>
+                                                        <select class="form-select form-select-sm bg-dark text-light border-secondary" x-model="motors[axis].homing_dir">
+                                                            <option value="-1">Towards Min (-1)</option>
+                                                            <option value="1">Towards Max (1)</option>
+                                                        </select>
+                                                    </div>
+                                                    <div class="col-md-4">
+                                                        <label class="form-label small text-secondary mb-1">Offset (mm)</label>
+                                                        <input type="number" class="form-control form-control-sm bg-dark text-light border-secondary" x-model="motors[axis].offset_mm" step="0.1">
+                                                    </div>
+                                                    <div class="col-md-4 d-flex align-items-end">
+                                                        <div class="form-check form-switch mb-1">
+                                                            <input class="form-check-input" type="checkbox" role="switch" :id="'invert' + axis" x-model="motors[axis].direction_inverted">
+                                                            <label class="form-check-label small" :for="'invert' + axis">Invert Direction</label>
+                                                        </div>
+                                                    </div>
+
+                                                    <div class="col-12 mt-3 mb-1">
+                                                        <span class="badge bg-secondary">TMC Advanced</span>
+                                                    </div>
+                                                    <div class="col-md-6 mt-0">
+                                                        <label class="form-label small text-secondary mb-1">StallGuard Threshold</label>
+                                                        <input type="number" class="form-control form-control-sm bg-dark text-light border-secondary" x-model="motors[axis].stallguard_threshold">
+                                                    </div>
+                                                    <div class="col-md-6 mt-0">
+                                                        <label class="form-label small text-secondary mb-1">CoolStep Threshold</label>
+                                                        <input type="number" class="form-control form-control-sm bg-dark text-light border-secondary" x-model="motors[axis].coolstep_threshold">
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="tab-pane fade" id="offsets-tab-pane" role="tabpanel" aria-labelledby="offsets-tab">
+                        <div class="p-3">
+                            <h6 class="border-bottom border-secondary pb-2 mb-3">Tool Offsets</h6>
+                            <p class="text-secondary small mb-3">
+                                Define the physical distance between your primary spindle and secondary tools. 
+                                Measurements are relative to the spindle (Tool 0) center.
+                            </p>
+
+                            <div class="card bg-dark border-secondary mb-4">
+                                <div class="card-header border-secondary d-flex align-items-center">
+                                    <i class="bi bi-brightness-high text-danger me-2"></i> Laser Head (Tool 1)
+                                </div>
+                                <div class="card-body">
+                                    <div class="row g-3">
+                                        <div class="col-md-6">
+                                            <label class="form-label small text-secondary mb-1">X Offset (mm)</label>
+                                            <div class="input-group input-group-sm">
+                                                <span class="input-group-text bg-dark text-secondary border-secondary">X</span>
+                                                <input type="number" class="form-control bg-dark text-light border-secondary" 
+                                                       x-model="tools.laser.offset_x" step="0.1" placeholder="e.g., 35.0">
+                                            </div>
+                                            <div class="form-text text-secondary" style="font-size: 0.7em;">Positive = Right of spindle</div>
+                                        </div>
+                                        
+                                        <div class="col-md-6">
+                                            <label class="form-label small text-secondary mb-1">Y Offset (mm)</label>
+                                            <div class="input-group input-group-sm">
+                                                <span class="input-group-text bg-dark text-secondary border-secondary">Y</span>
+                                                <input type="number" class="form-control bg-dark text-light border-secondary" 
+                                                       x-model="tools.laser.offset_y" step="0.1" placeholder="e.g., -12.5">
+                                            </div>
+                                            <div class="form-text text-secondary" style="font-size: 0.7em;">Positive = Behind spindle</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="tab-pane fade p-3" id="system-tab-pane" role="tabpanel" tabindex="0" aria-labelledby="system-tab">
+                        <div class="alert alert-warning bg-transparent border-warning text-warning" role="alert">
+                            <i class="bi bi-exclamation-triangle me-2"></i>
+                            Factory reset will clear all network and calibration data.
+                        </div>
+                        <button type="button" class="btn btn-outline-danger" @click="factoryReset()">
+                            Reset to Defaults
+                        </button>
+                    </div>
+                    
+                </div>
+            </div>
+            
+            <div class="modal-footer border-secondary">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-info" @click="saveSettings()">
+                    <i class="bi bi-save"></i> Save Configuration
+                </button>
+            </div>
+        </div>
+    </div>
+</div>

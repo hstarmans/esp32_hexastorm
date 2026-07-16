@@ -1,31 +1,38 @@
-<nav class="navbar navbar-dark bg-dark border-bottom border-secondary mb-4 p-3" 
-     x-data="commands">
-    
-    <div class="container-fluid" style="max-width: 1200px;">
-        
-        <a href="/" class="navbar-brand d-flex align-items-center gap-2">
-            <i class="bi bi-hexagon logo-spin" style="font-size: 1.2rem;"></i>
+<div x-data="commands">
+    <nav class="navbar navbar-dark bg-dark border-bottom border-secondary mb-4 p-3">
+        <div class="container-fluid" style="max-width: 1200px;">
             
-            <span class="fw-bold text-uppercase" 
-                  style="letter-spacing: 1.5px; font-family: system-ui, -apple-system, sans-serif;">
-                Hexastorm
-            </span>
-        </a>
-
-        <div class="d-flex align-items-center gap-2">
-            <span class="navbar-text me-3 d-none d-sm-inline small">
-                <i class="bi bi-circle-fill text-success" style="font-size: 0.6em; vertical-align: middle;"></i> 
-                System Online
-            </span>
-            <button type="button" class="btn btn-sm btn-outline-light" @click="reboot()">
-                <i class="bi bi-arrow-counterclockwise"></i> Reboot
-            </button>
-            <a href="/logout" class="btn btn-sm btn-outline-danger">
-                <i class="bi bi-box-arrow-right"></i> Logout
+            <a href="/" class="navbar-brand d-flex align-items-center gap-2">
+                <i class="bi bi-hexagon logo-spin" style="font-size: 1.2rem;"></i>
+                <span class="fw-bold text-uppercase" 
+                      style="letter-spacing: 1.5px; font-family: system-ui, -apple-system, sans-serif;">
+                    Hexastorm
+                </span>
             </a>
+
+            <div class="d-flex align-items-center gap-2">
+                <span class="navbar-text me-3 d-none d-sm-inline small">
+                    <i class="bi bi-circle-fill text-success" style="font-size: 0.6em; vertical-align: middle;"></i> 
+                    System Online
+                </span>
+                
+                <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="modal" data-bs-target="#settingsModal">
+                    <i class="bi bi-gear-fill"></i> Settings
+                </button>
+                
+                <button type="button" class="btn btn-sm btn-outline-light" @click="reboot()">
+                    <i class="bi bi-arrow-counterclockwise"></i> Reboot
+                </button>
+                
+                <a href="/logout" class="btn btn-sm btn-outline-danger">
+                    <i class="bi bi-box-arrow-right"></i> Logout
+                </a>
+            </div>
         </div>
-    </div>
-</nav>
+    </nav>
+</div>
+
+
 
 <style>
     /* 20 seconds for a full rotation = very subtle */
@@ -37,5 +44,15 @@
     @keyframes rotate-center {
         0% { transform: rotate(0deg); }
         100% { transform: rotate(360deg); }
+    }
+    
+    /* Optional: Fix for active tab styling in dark mode */
+    .nav-tabs .nav-link.active {
+        background-color: #212529 !important; /* matches bg-dark */
+        border-color: #6c757d #6c757d #212529 !important; /* matches border-secondary */
+        color: #0dcaf0 !important; /* Bootstrap Info blue for active tab text */
+    }
+    .nav-tabs .nav-link:hover {
+        border-color: #6c757d;
     }
 </style>

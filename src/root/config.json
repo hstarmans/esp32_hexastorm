@@ -36,7 +36,7 @@
         "webrepl_password": "hexastorm"
     },
     "webserver": {
-        "start": false,
+        "start": true,
         "password": "dd7b857b942e5bba6f062d46c9e6100cf84a7f61a59591b6b193b7a6b10a5705",
         "salt": "6bcad2870a09b584d9045736c372085c58a871bf4ec1333f128e2f7c37d2806e",
         "max_content_length": 10,
@@ -62,5 +62,43 @@
             5.0,
             5.0
         ]
+    },
+    "motors": {
+        "x": {
+            "steps_mm": 160,
+            "microstep_resolution": 16,
+            "current": 400,
+            "homing_dir": -1,
+            "offset_mm": 0.0,
+            "direction_inverted": false,
+            "stallguard_threshold": 100,
+            "coolstep_threshold": 2500
+        },
+        "y": {
+            "steps_mm": 160,
+            "microstep_resolution": 16,
+            "current": 400,
+            "homing_dir": -1,
+            "offset_mm": 0.0,
+            "direction_inverted": false,
+            "stallguard_threshold": 100,
+            "coolstep_threshold": 2500
+        },
+        "z": {
+            "steps_mm": 400,
+            "microstep_resolution": 16,
+            "current": 400,
+            "homing_dir": 1,
+            "offset_mm": 0.0,
+            "direction_inverted": false,
+            "stallguard_threshold": 100,
+            "coolstep_threshold": 2500
+        }
+    },
+    "tools": {
+        "laser": {
+            "offset_x": 35.0,
+            "offset_y": -12.5
+        }
     }
 }

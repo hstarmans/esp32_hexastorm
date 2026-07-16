@@ -481,6 +481,72 @@ async def state(request, session, sse):
             break
 
 
+@app.get("/api/settings")
+@with_session
+async def get_settings(request, session):
+    """
+    Exposes the active machine, network, and tool settings to the frontend.
+    """
+    return {
+        "wifi_login": constants.CONFIG.get("wifi_login", {}),
+        "motors": constants.CONFIG.get("motors", {}),
+        "tools": constants.CONFIG.get("tools", {}),
+    }
+
+
+@app.post("/api/settings")
+@with_session
+async def save_settings(request, session):
+    """
+    Receives modified settings from the UI and commits them to config.json.
+    """
+    data = request.json or {}
+
+    # Safely merge incoming structures into CONFIG
+    if "wifi_login" in data:
+        constants.CONFIG["wifi_login"] = data["wifi_login"]
+    if "motors" in data:
+        constants.CONFIG["motors"] = data["motors"]
+    if "tools" in data:
+        constants.CONFIG["tools"] = data["tools"]
+
+    # Commit changes to config.json using existing helper
+    constants.update_config()
+
+    logger.info("Configuration updated successfully.")
+    return {"status": "success", "message": "Settings saved"}
+
+
+@app.post("/api/settings/reset")
+@with_session
+async def api_factory_reset(request, session):
+    """
+    Wipes the active configuration file and triggers a hard reboot.
+    On restart, bootlib/constants will redeploy frozen factory defaults.
+    """
+    logger.warning("FACTORY RESET TARGETED! Wiping configuration...")
+
+    config_file = "config.json" if constants.ESP32 else "src/root/config.json"
+    nvs_file = "nvs_mock.json" if constants.ESP32 else "src/root/nvs_mock.json"
+
+    # 1. Delete configuration JSONs
+    for file_path in (config_file, nvs_file):
+        try:
+            os.remove(file_path)
+        except OSError:
+            pass  # File didn't exist or already removed
+
+    # 2. Trigger asynchronous reboot sequence
+    async def delayed_reset():
+        await asyncio.sleep(1)
+        import machine
+
+        machine.reset()
+
+    asyncio.create_task(delayed_reset())
+    return {"status": "success", "message": "Factory reset initiated, rebooting..."}
+
+
 @app.route("/static/<path:path>")
 async def static(request, path):
     if ".." in path:

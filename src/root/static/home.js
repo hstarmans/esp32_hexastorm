@@ -442,6 +442,84 @@ document.addEventListener("alpine:init", () => {
             }
         }
     }));
+
+    // 8. SETTINGS MODAL LOGIC
+    Alpine.data("machineSettings", () => ({
+        // Fully stubbed out so Alpine doesn't panic on initial render
+        wifi_login: {
+            essid: '', ap_password: '', ssid: '', password: '',
+            static_enabled: false, static_ip: '', dnsmask: '', gateway_ip: '', primary_dns: ''
+        },
+        motors: {
+            x: { steps_mm: 0, microstep_resolution: 16, current: 0, homing_dir: -1, offset_mm: 0, direction_inverted: false, stallguard_threshold: 0, coolstep_threshold: 0 },
+            y: { steps_mm: 0, microstep_resolution: 16, current: 0, homing_dir: -1, offset_mm: 0, direction_inverted: false, stallguard_threshold: 0, coolstep_threshold: 0 },
+            z: { steps_mm: 0, microstep_resolution: 16, current: 0, homing_dir: -1, offset_mm: 0, direction_inverted: false, stallguard_threshold: 0, coolstep_threshold: 0 }
+        },
+        tools: {
+            laser: { offset_x: 0, offset_y: 0 }
+        },
+        isLoading: false,
+
+        /** * Automatically fetch settings from the backend when this component initializes 
+         */
+        async init() {
+            this.isLoading = true;
+            try {
+                const res = await fetch('/api/settings');
+                if (res.ok) {
+                    const data = await res.json();
+                    
+                    // Merge incoming data over the stubbed defaults
+                    this.wifi_login = { ...this.wifi_login, ...data.wifi_login };
+                    this.motors = { ...this.motors, ...data.motors };
+                    this.tools = { ...this.tools, ...data.tools };
+                } else {
+                    console.error("Failed to load configuration");
+                }
+            } catch (err) {
+                console.error("Network error loading settings:", err);
+            } finally {
+                this.isLoading = false;
+            }
+        },
+
+        /**
+         * Save the modified settings back to the JSON file on the ESP32
+         */
+        async saveSettings() {
+            try {
+                const res = await fetch('/api/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        wifi_login: this.wifi_login,
+                        motors: this.motors,
+                        tools: this.tools
+                    })
+                });
+
+                if (res.ok) {
+                    alert("Settings saved successfully! A reboot may be required for some changes to take effect.");
+                } else {
+                    alert("Failed to save settings.");
+                }
+            } catch (err) {
+                alert("Error saving settings: " + err);
+            }
+        },
+
+        async factoryReset() {
+            if (!confirm("WARNING: This will wipe all calibration and Wi-Fi data. Are you sure?")) return;
+            
+            try {
+                await fetch('/api/settings/reset', { method: 'POST' });
+                alert("Factory reset triggered. Rebooting...");
+                setTimeout(() => window.location.reload(), 5000);
+            } catch (err) {
+                alert("Reset failed: " + err);
+            }
+        }
+    }));
 });
 
 // --- SERVER SENT EVENTS (SSE) ---
