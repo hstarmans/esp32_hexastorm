@@ -401,19 +401,30 @@ async def diode_test(request, session):
 @app.post("/print/control")
 @with_session
 async def print_control(request, session):
+    # Let it raise a KeyError if request.json is missing or None
     data = request.json
-    action = data.get("action")
+    action = data["action"]
 
     if action == "start":
         if LASERHEAD.state["printing"]:
             return {"error": "Already printing"}, 409
-        # Parse settings
+
+        # Let it raise a KeyError if "file" is missing
         filename = data["file"].replace("/", "_")
-        constants.CONFIG["defaultprint"]["laserpower"] = int(data["laserpower"])
-        constants.CONFIG["defaultprint"]["exposureperline"] = int(
-            data["exposureperline"]
-        )
-        constants.CONFIG["defaultprint"]["singlefacet"] = bool(data["singlefacet"])
+
+        # Determine job type based on file extension
+        is_gcode = filename.lower().endswith((".gcode", ".nc", ".tap"))
+
+        if not is_gcode:
+            # Only parse laser-specific settings for exposure jobs
+            # Will raise KeyError or ValueError natively if inputs are bad
+            constants.CONFIG["defaultprint"]["laserpower"] = int(data["laserpower"])
+            constants.CONFIG["defaultprint"]["exposureperline"] = int(
+                data["exposureperline"]
+            )
+            constants.CONFIG["defaultprint"]["singlefacet"] = bool(data["singlefacet"])
+
+        # Shared settings
         constants.CONFIG["defaultprint"]["workspace_origin"] = data["workspace_origin"]
         constants.CONFIG["defaultprint"]["home_before_print"] = bool(
             data["home_before_print"]
@@ -424,16 +435,28 @@ async def print_control(request, session):
 
         constants.update_config()
 
-        # Start background print task
-        async def print_task():
-            await LASERHEAD.print_loop(filename)
+        # Start background task
+        async def run_job():
+            # No try/except block. Let any exception crash the task
+            # and bubble up spectacularly to the event loop!
+            if is_gcode:
+                if constants.CONFIG["defaultprint"]["home_before_print"]:
+                    logger.info("Homing X and Y axes before G-code execution.")
+                    await LASERHEAD.home([1, 1, 0])
+
+                await LASERHEAD.execute_gcode(filename)
+            else:
+                await LASERHEAD.print_loop(filename)
+
             devicestate.laserhead_update()
 
-        asyncio.create_task(print_task())
+        asyncio.create_task(run_job())
+
     elif action == "stop":
         LASERHEAD.stop_print()
     elif action == "pause":
         LASERHEAD.pause_print()
+
     return devicestate.data
 
 

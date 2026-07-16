@@ -354,6 +354,8 @@ document.addEventListener("alpine:init", () => {
     Alpine.data("printLauncher", () => ({
         /** @type {string} */
         selectedFile: '',
+        /** @type {'laser' | 'cnc'} */
+        jobMode: 'laser',
         /** @type {number|string} */
         laserPower: 100,
         /** @type {number|string} */
@@ -366,17 +368,40 @@ document.addEventListener("alpine:init", () => {
         homeBeforePrint: true,
         useCustomStart: false,
 
+        /** @this {PrintLauncher} */
         init() {
-            // @ts-ignore
             this.$nextTick(() => {
-                // @ts-ignore
-                const select = this.$refs.fileSelect;
+                const select = /** @type {HTMLSelectElement | null} */ (this.$refs.fileSelect);
                 if (select && select.options.length > 0) {
                     this.selectedFile = select.options[0].value;
+                    this.detectMode(this.selectedFile);
                 }
+            });
+
+            this.$watch('selectedFile', (value) => {
+                // Typen dwingen naar string om "undefined" errors te voorkomen
+                this.detectMode(String(value));
             });
         },
 
+        /** * @this {PrintLauncher}
+         * @param {string} filename 
+         */
+        detectMode(filename) {
+            // Fallback check voor het geval de runtime toch iets geks doorgeeft
+            if (!filename || typeof filename !== 'string') return;
+            
+            const parts = filename.split('.');
+            const ext = parts.length > 1 ? parts.pop()?.toLowerCase() : '';
+            
+            if (ext && ['gcode', 'nc', 'tap'].includes(ext)) {
+                this.jobMode = 'cnc';
+            } else {
+                this.jobMode = 'laser';
+            }
+        },
+
+        /** @this {PrintLauncher} */
         async startPrint() {
             if (!this.selectedFile) {
                 alert("Please select a file.");
@@ -394,7 +419,6 @@ document.addEventListener("alpine:init", () => {
                     singlefacet: this.singleFacet,
                     home_before_print: this.homeBeforePrint,
                     use_custom_start: this.useCustomStart,
-                    // Send coordinates as workspace_origin
                     workspace_origin: [
                         Number(this.posX), 
                         Number(this.posY), 
@@ -412,7 +436,7 @@ document.addEventListener("alpine:init", () => {
 
             } catch (err) {
                 const message = err instanceof Error ? err.message : String(err);
-                alert("Failed to start print: " + message);
+                alert("Failed to start job: " + message);
             } finally {
                 this.isStarting = false;
             }

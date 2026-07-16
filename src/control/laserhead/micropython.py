@@ -181,6 +181,139 @@ class Laserhead(BaseLaserhead, ESP32Host):
         if not cur_sync:
             await self.synchronize(False)
 
+    async def execute_gcode(self, fname):
+        """
+        Parses and executes a standard G-code file for 2.5D PCB milling.
+        Supports:
+            G0/G1: Linear motion
+            G90/G91: Absolute/Relative positioning
+            G21: Millimeters mode (enforced)
+            F: Feedrate (mm/min -> converted to mm/s)
+            M3/M5: Spindle On/Off
+        """
+        logger.info(f"Starting G-Code execution: {fname}")
+
+        # Setup default state for execution
+        # Spindle starts off, positioning starts absolute
+        is_absolute = True
+        current_feedrate_mms = 10.0  # Default fallback speed
+        self.state["printing"] = True
+        self.enable_steppers = True
+        await self.notify_listeners()
+
+        # We need a tracker for current position because G-code can omit axes.
+        # e.g., if we are at [10, 10, 0] and command is "G1 X20", Y and Z remain unchanged.
+        # We initialize it with our current WPOS (Workspace Position)
+        gcode_pos = self.wpos
+
+        try:
+            filepath = constants.CONFIG["webserver"]["job_folder"] + f"/{fname}"
+            with open(filepath, "r") as f:
+                for line_num, line in enumerate(f):
+                    # Check for pause/stop from the web UI
+                    if await self.handle_pausing_and_stopping():
+                        logger.info("G-code execution aborted/stopped by user.")
+                        break
+
+                    # Parse the line
+                    # Strip comments starting with ';' or '('
+                    line = line.split(";")[0].split("(")[0].strip().upper()
+                    if not line:
+                        continue
+
+                    tokens = line.split()
+                    cmd = tokens[0]
+
+                    # Parse parameters into a dictionary (e.g. {'X': 10.5, 'F': 300})
+                    params = {}
+                    for token in tokens[1:]:
+                        if len(token) > 1 and token[0] in "XYZFSIJ":
+                            try:
+                                params[token[0]] = float(token[1:])
+                            except ValueError:
+                                pass  # Ignore malformed tokens
+
+                    # Execution State Machine
+                    if cmd == "G21":
+                        pass  # Millimeters - expected default
+
+                    elif cmd == "G20":
+                        logger.warning("G20 (Inches) is not supported. Halting.")
+                        break
+
+                    elif cmd == "G90":
+                        is_absolute = True
+
+                    elif cmd == "G91":
+                        is_absolute = False
+
+                    elif cmd in ["M3", "M03"]:
+                        # Spindle On (Default 255 if S is not provided)
+                        spindle_speed = int(params.get("S", 255))
+                        await self.set_spindle(spindle_speed)
+
+                    elif cmd in ["M5", "M05"]:
+                        # Spindle Off
+                        await self.set_spindle(0)
+
+                    elif cmd in ["G0", "G00", "G1", "G01"]:
+                        # Linear Motion
+                        # Update feedrate if provided (G-code feedrate is mm/min, gotopoint needs mm/s)
+                        if "F" in params:
+                            current_feedrate_mms = params["F"] / 60.0
+
+                        # Determine speed (Rapid vs Feed)
+                        # Assume rapid G0 is just a fast feedrate (e.g., 20 mm/s).
+                        # Adjust this based on your machine's physical limits.
+                        move_speed = (
+                            20.0 if cmd in ["G0", "G00"] else current_feedrate_mms
+                        )
+
+                        # Construct target position
+                        # If an axis is missing in the command, it stays at its current value
+                        target_pos = list(gcode_pos)  # Copy current state
+
+                        if is_absolute:
+                            if "X" in params:
+                                target_pos[0] = params["X"]
+                            if "Y" in params:
+                                target_pos[1] = params["Y"]
+                            if "Z" in params:
+                                target_pos[2] = params["Z"]
+                            # Update our internal tracker
+                            gcode_pos = list(target_pos)
+                        else:
+                            dx = params.get("X", 0.0)
+                            dy = params.get("Y", 0.0)
+                            dz = params.get("Z", 0.0)
+                            target_pos = [dx, dy, dz]
+                            # Update our internal tracker for future lines
+                            gcode_pos[0] += dx
+                            gcode_pos[1] += dy
+                            gcode_pos[2] += dz
+
+                        # Execute the physical move
+                        # G-code targets are inherently workspace coordinates (relative to origin)
+                        await self.gotopoint(
+                            position=target_pos,
+                            speed=move_speed,
+                            absolute=is_absolute,
+                            workspace=True,  # G-code ALWAYS operates in workspace coords
+                            check_sensors=False,  # Head experiences force by definition
+                        )
+
+        except OSError:
+            logger.error(f"G-code file not found: {fname}")
+        except Exception as e:
+            logger.error(f"Error executing G-code at line {line_num}: {e}")
+        finally:
+            # Clean up
+            await self.set_spindle(0)
+            self.enable_steppers = False
+            self.state["printing"] = False
+            await self.notify_listeners()
+            logger.info("G-code execution finished.")
+
     async def print_loop(self, fname):
         self.reset()  # reset facet counter
         await super().print_loop_prep(fname)

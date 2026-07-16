@@ -11,9 +11,14 @@ src/control/frozen_root.py
 src/root/sd/jobs/*
 src/root/sd/fpga/*
 
-# ignore hexastorm package for now
+# mock json file
+src/root/nvs_mock.json
+
+# packages needed for building
 src/hexastorm/*
 src/hexastorm
+src/micropython-ulab
+src/micropython-camera-API
 
 # ignore uploaded files folder
 files/*
