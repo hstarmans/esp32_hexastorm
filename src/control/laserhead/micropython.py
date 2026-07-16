@@ -93,9 +93,8 @@ class Laserhead(BaseLaserhead, ESP32Host):
         position,
         speed=None,
         absolute=True,
-        workspace=False,
         check_sensors=True,
-        blind_distance_mm=5.0,
+        workspace=False,
     ):
         """
         Wraps the hardware gotopoint function to automatically handle stepper enabling
@@ -112,7 +111,6 @@ class Laserhead(BaseLaserhead, ESP32Host):
             absolute=absolute,
             workspace=workspace,
             check_sensors=check_sensors,
-            blind_distance_mm=blind_distance_mm,
         )
         self.enable_steppers = motor_state
 

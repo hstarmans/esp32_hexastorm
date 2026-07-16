@@ -143,7 +143,6 @@ class BaseLaserhead:
         absolute=True,
         workspace=False,
         check_sensors=True,
-        blind_distance_mm=5.0,
     ):
         """Simulates target movement and updates mock coordinates over time."""
         logger.info(f"Mock moving to {position} (abs={absolute}, wpos={workspace}).")
