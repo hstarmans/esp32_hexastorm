@@ -64,35 +64,53 @@
         ]
     },
     "motors": {
+        "motor_globals": {
+            "vsense": false,
+            "iscale_analog": false,
+            "interpolation": true,
+            "spread_cycle": false,
+            "internal_rsense": false,
+            "motor_enabled": false,
+            "direction_inverted": false,
+            "coolstep_threshold": 2500,
+            "stallguard_threshold": 100,
+            "microstep_resolution": 16,
+            "current": 400
+        },
+        "non_tmc_keys": [
+            "steps_mm", 
+            "homing_dir", 
+            "offset_mm"
+        ],
         "x": {
             "steps_mm": 160,
-            "microstep_resolution": 16,
-            "current": 400,
             "homing_dir": -1,
             "offset_mm": 0.0,
-            "direction_inverted": false,
-            "stallguard_threshold": 100,
-            "coolstep_threshold": 2500
+            "microstep_resolution": 16,
+            "current": 400,
+            "stallguard_threshold": 120,
+            "coolstep_threshold": 2500,
+            "direction_inverted": false
         },
         "y": {
             "steps_mm": 160,
-            "microstep_resolution": 16,
-            "current": 400,
             "homing_dir": -1,
             "offset_mm": 0.0,
-            "direction_inverted": false,
-            "stallguard_threshold": 100,
-            "coolstep_threshold": 2500
+            "microstep_resolution": 16,
+            "current": 600,
+            "stallguard_threshold": 80,
+            "coolstep_threshold": 2500,
+            "direction_inverted": false
         },
         "z": {
             "steps_mm": 400,
-            "microstep_resolution": 16,
-            "current": 400,
             "homing_dir": 1,
             "offset_mm": 0.0,
-            "direction_inverted": false,
+            "microstep_resolution": 16,
+            "current": 400,
             "stallguard_threshold": 100,
-            "coolstep_threshold": 2500
+            "coolstep_threshold": 2500,
+            "direction_inverted": true
         }
     },
     "tools": {

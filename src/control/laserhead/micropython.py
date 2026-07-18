@@ -49,6 +49,30 @@ class Laserhead(BaseLaserhead, ESP32Host):
 
         return current_index
 
+    def apply_motor_settings(self):
+        """Explicitly push config.json settings directly to the TMC drivers."""
+        motors_config = constants.CONFIG["motors"]
+
+        # Extract metadata from the block
+        non_tmc_keys = set(motors_config["non_tmc_keys"])
+        motor_globals = motors_config["motor_globals"]
+
+        # set values on TMC2209
+
+        for ax_name, tmc in getattr(self, "steppers", {}).items():
+            # 1. Apply global fallbacks first
+            for key, value in motor_globals.items():
+                if key not in non_tmc_keys:
+                    setattr(tmc, key, value)
+
+            # 2. Apply axis-specific overrides (ensure it's actually an axis dictionary)
+            if ax_name in motors_config and isinstance(motors_config[ax_name], dict):
+                for key, value in motors_config[ax_name].items():
+                    if key not in non_tmc_keys:
+                        setattr(tmc, key, value)
+
+        BaseLaserhead.apply_motor_settings()
+
     async def enable_comp(
         self,
         laser0=False,
@@ -123,9 +147,10 @@ class Laserhead(BaseLaserhead, ESP32Host):
     async def home(self, axes):
         logger.info(f"Homing axes {axes}.")
         # 1. Physical homing sequence
+        motor_state = self.enable_steppers
         self.enable_steppers = True
         await ESP32Host.home_axes(self, axes)
-        self.enable_steppers = False
+        self.enable_steppers = motor_state
 
         # 2. Update RAM and NVS to reflect origin (0.0)
         self._update_home_coordinates(axes)

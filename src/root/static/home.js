@@ -168,13 +168,14 @@ document.addEventListener("alpine:init", () => {
             if (!button || button.disabled) return;
 
             if (button.dataset.command === "home") {
-                const axes = JSON.parse(button.dataset.axes);
+                // Cast axes as a number array as well to keep things clean
+                const axes = /** @type {number[]} */ (JSON.parse(button.dataset.axes));
                 api.post("/home", { axes: axes });
             }
             else if (button.dataset.vector){
-                const vector = JSON.parse(button.dataset.vector);
+                // Tell TypeScript this is definitely an array of numbers
+                const vector = /** @type {number[]} */ (JSON.parse(button.dataset.vector));
                 
-                // Calculate the relative vector based on step size
                 const targetPos = vector.map(v => v * this.step);
                 
                 // Call central API with absolute=false for jogging
@@ -451,6 +452,8 @@ document.addEventListener("alpine:init", () => {
             static_enabled: false, static_ip: '', dnsmask: '', gateway_ip: '', primary_dns: ''
         },
         motors: {
+            motor_globals: {},
+            non_tmc_keys: [],
             x: { steps_mm: 0, microstep_resolution: 16, current: 0, homing_dir: -1, offset_mm: 0, direction_inverted: false, stallguard_threshold: 0, coolstep_threshold: 0 },
             y: { steps_mm: 0, microstep_resolution: 16, current: 0, homing_dir: -1, offset_mm: 0, direction_inverted: false, stallguard_threshold: 0, coolstep_threshold: 0 },
             z: { steps_mm: 0, microstep_resolution: 16, current: 0, homing_dir: -1, offset_mm: 0, direction_inverted: false, stallguard_threshold: 0, coolstep_threshold: 0 }

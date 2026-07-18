@@ -6,8 +6,17 @@ this class creates a simplified mock implementation. This allows developers to e
 certain aspects of their MicroPython code on a Linux machine without requiring an actual ESP32 device.
 """
 
+import os
+import logging
+
+
+logger = logging.getLogger(__name__)
+
+
 def reset():
-    print("resetting entire chip")
+    logger.info("resetting entire chip")
+    os._exit(0)
+
 
 class I2C:
     def __init__(self, id=0, scl=1, sda=2, freq=400000, timeout=50000):
@@ -29,11 +38,10 @@ class SoftI2C(I2C):
 
 
 class UART:
-
     def __init__(self, serialport, baudrate=115200, tx=43, rx=44):
         pass
 
-    def init(self, speed=115200 , bits=8, parity=None, stop=1):
+    def init(self, speed=115200, bits=8, parity=None, stop=1):
         pass
 
     def write(self, data):
@@ -76,14 +84,10 @@ class Pin:
 
 
 class SoftSPI:
-    def __init__(
-        self, sck=1, mosi=2, miso=2, baudrate=100000, polarity=1, phase=0
-    ):
+    def __init__(self, sck=1, mosi=2, miso=2, baudrate=100000, polarity=1, phase=0):
         self.init(sck, mosi, miso, baudrate, polarity, phase)
 
-    def init(
-        self, sck=2, mosi=-1, miso=1, baudrate=100_000, polarity=1, phase=0
-    ):
+    def init(self, sck=2, mosi=-1, miso=1, baudrate=100_000, polarity=1, phase=0):
         self.sck = sck
         self.mosi = mosi
         self.miso = miso
@@ -113,7 +117,9 @@ class SoftSPI:
 
 
 class SPI:
-    def __init__(self, number=0, sck=2, mosi=3, miso=4, baudrate=100_000, phase=-1, polarity=-1):
+    def __init__(
+        self, number=0, sck=2, mosi=3, miso=4, baudrate=100_000, phase=-1, polarity=-1
+    ):
         self.init(number, baudrate, phase, polarity)
 
     def init(self, number=2, baudrate=10, phase=-1, polarity=-1):

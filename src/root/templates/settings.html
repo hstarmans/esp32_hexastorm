@@ -37,18 +37,28 @@
                                         <label class="form-label small text-secondary mb-1">Access Point Name (ESSID)</label>
                                         <input type="text" class="form-control bg-dark text-light border-secondary" x-model="wifi_login.essid" placeholder="hexastorm">
                                     </div>
-                                    <div class="col-md-6">
+                                    <div class="col-md-6" x-data="{ show: false }">
                                         <label class="form-label small text-secondary mb-1">Access Point Password</label>
-                                        <input type="password" class="form-control bg-dark text-light border-secondary" x-model="wifi_login.ap_password">
+                                        <div class="input-group">
+                                            <input :type="show ? 'text' : 'password'" class="form-control bg-dark text-light border-secondary" x-model="wifi_login.ap_password">
+                                            <button class="btn btn-outline-secondary border-secondary text-light" type="button" @click="show = !show">
+                                                <i class="bi" :class="show ? 'bi-eye-slash' : 'bi-eye'"></i>
+                                            </button>
+                                        </div>
                                     </div>
 
                                     <div class="col-md-6">
                                         <label class="form-label small text-secondary mb-1">Connect to Network (SSID)</label>
                                         <input type="text" class="form-control bg-dark text-light border-secondary" x-model="wifi_login.ssid" placeholder="Network Name">
                                     </div>
-                                    <div class="col-md-6">
+                                    <div class="col-md-6" x-data="{ show: false }">
                                         <label class="form-label small text-secondary mb-1">Network Password</label>
-                                        <input type="password" class="form-control bg-dark text-light border-secondary" x-model="wifi_login.password">
+                                        <div class="input-group">
+                                            <input :type="show ? 'text' : 'password'" class="form-control bg-dark text-light border-secondary" x-model="wifi_login.password">
+                                            <button class="btn btn-outline-secondary border-secondary text-light" type="button" @click="show = !show">
+                                                <i class="bi" :class="show ? 'bi-eye-slash' : 'bi-eye'"></i>
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
 
@@ -87,7 +97,7 @@
                             <p class="text-secondary small mb-3">Configure steps, limits, and TMC driver parameters per axis.</p>
 
                             <div class="accordion accordion-flush border border-secondary rounded" id="motorsAccordion"> 
-                                <template x-for="axis in Object.keys(motors)" :key="axis">
+                                <template x-for="axis in Object.keys(motors).filter(k => k !== 'motor_globals' && k !== 'non_tmc_keys')" :key="axis">
                                     <div class="accordion-item bg-dark border-secondary">
                                         <h2 class="accordion-header" :id="'heading' + axis">
                                             <button class="accordion-button collapsed bg-dark text-light text-uppercase" 

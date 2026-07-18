@@ -513,6 +513,8 @@ async def save_settings(request, session):
     # Commit changes to config.json using existing helper
     constants.update_config()
 
+    LASERHEAD.apply_motor_settings()
+
     logger.info("Configuration updated successfully.")
     return {"status": "success", "message": "Settings saved"}
 
@@ -521,27 +523,27 @@ async def save_settings(request, session):
 @with_session
 async def api_factory_reset(request, session):
     """
-    Wipes the active configuration file and triggers a hard reboot.
-    On restart, bootlib/constants will redeploy frozen factory defaults.
+    Wipes the active configuration files and triggers a hard reboot.
+    On restart, the system will redeploy factory defaults.
     """
     logger.warning("FACTORY RESET TARGETED! Wiping configuration...")
 
-    config_file = "config.json" if constants.ESP32 else "src/root/config.json"
-    nvs_file = "nvs_mock.json" if constants.ESP32 else "src/root/nvs_mock.json"
-
-    # 1. Delete configuration JSONs
-    for file_path in (config_file, nvs_file):
+    # Delete active mutable configuration JSONs
+    for file_path in (constants.CONFIG_FILE, constants.NVS_FILE):
         try:
-            os.remove(file_path)
-        except OSError:
-            pass  # File didn't exist or already removed
+            import os
 
-    # 2. Trigger asynchronous reboot sequence
+            os.remove(file_path)
+            logger.info(f"Deleted {file_path}")
+        except OSError:
+            pass  # File didn't exist
+
+    # Trigger asynchronous reboot sequence
     async def delayed_reset():
         await asyncio.sleep(1)
         import machine
 
-        machine.reset()
+        machine.reset()  # On ESP32 reboots hardware. On PC, triggers os._exit(0).
 
     asyncio.create_task(delayed_reset())
     return {"status": "success", "message": "Factory reset initiated, rebooting..."}

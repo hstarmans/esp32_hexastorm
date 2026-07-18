@@ -7,6 +7,16 @@ import os
 ESP32 = False if sys.platform in ["linux", "win32", "darwin"] else True
 logger = logging.getLogger(__name__)
 
+if ESP32:
+    CONFIG_FILE = "config.json"
+    CONFIG_OLD_FILE = "config_old.json"
+    NVS_FILE = "nvs_mock.json"  # Unused usually, but keeps variables consistent
+else:
+    CONFIG_FILE = "src/root/mock_config.json"
+    FACTORY_CONFIG_FILE = "src/root/config.json"  # Immutable template
+    CONFIG_OLD_FILE = "src/root/mock_config_old.json"
+    NVS_FILE = "src/root/nvs_mock.json"
+
 
 class SafeNVS:
     """
@@ -16,7 +26,7 @@ class SafeNVS:
 
     def __init__(self, namespace="hexastorm"):
         self.esp32_nvs = None
-        self.mock_file = "nvs_mock.json" if ESP32 else "src/root/nvs_mock.json"
+        self.mock_file = NVS_FILE
         self.mock_data = {}
 
         if ESP32:
@@ -134,53 +144,59 @@ def recurse_dct(dct, target, replace):
 
 def load_config():
     """Load json config settings and migrate old configs if present."""
-    fname = "config.json" if ESP32 else "src/root/config.json"
-    fname_old = "config_old.json" if ESP32 else "src/root/config_old.json"
 
-    # 1. Load the active config (which might be a fresh factory extraction)
+    # Recreate mock_config.json from factory template if missing ---
+    if not ESP32:
+        try:
+            os.stat(CONFIG_FILE)
+        except OSError:
+            logger.info(
+                "mock_config.json missing. Generating from factory config.json..."
+            )
+            try:
+                with open(FACTORY_CONFIG_FILE, "r") as src:
+                    with open(CONFIG_FILE, "w") as dst:
+                        dst.write(src.read())
+            except OSError:
+                logger.error("Could not find factory config.json to copy!")
+
+    # Load the active config (which might be a fresh factory extraction)
     try:
-        with open(fname) as f:
+        with open(CONFIG_FILE) as f:
             dct = json.load(f)
             if not ESP32:
                 recurse_dct(dct, "sd/", "src/root/sd/")
     except OSError:
-        logger.warning("Could not load config.json, using defaults")
+        logger.warning(f"Could not load {CONFIG_FILE}, using defaults")
         dct = {}
 
-    # 2. Check if a migration/old config exists
+    # Check if a migration/old config exists
     try:
-        with open(fname_old) as f_old:
-            logger.info("Found config_old.json. Migrating user settings...")
+        with open(CONFIG_OLD_FILE) as f_old:
+            logger.info(f"Found {CONFIG_OLD_FILE}. Migrating user settings...")
             old_dct = json.load(f_old)
-
-            # Merge old user settings over the loaded (likely factory) defaults
             dct = merge_configs(dct, old_dct)
 
-        # Rename the old config so we don't migrate again on next boot
         try:
-            os.rename(fname_old, fname_old + ".bak")
+            os.rename(CONFIG_OLD_FILE, CONFIG_OLD_FILE + ".bak")
         except OSError:
-            os.remove(fname_old)  # Fallback if rename fails
+            os.remove(CONFIG_OLD_FILE)
 
-        # We flag that a migration happened so we can save the merged result
         migration_happened = True
     except OSError:
         migration_happened = False
 
-    # (We wait to save until CONFIG is globally assigned, otherwise update_config fails)
     return dct, migration_happened
 
 
 def update_config():
     """Update the json settings."""
-    fname = "config.json" if ESP32 else "src/root/config.json"
-    with open(fname, "w") as fp:
+    with open(CONFIG_FILE, "w") as fp:
         if not ESP32:
             recurse_dct(CONFIG, "src/root/sd/", "sd/")
             json.dump(CONFIG, fp, indent=4)
             recurse_dct(CONFIG, "sd/", "src/root/sd/")
         else:
-            # micropython doesn't support indent
             json.dump(CONFIG, fp, separators=(",\n", ":\n"))
 
 

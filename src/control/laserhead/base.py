@@ -12,6 +12,8 @@ except ImportError:
 
     NP_FLOAT = np.float
 
+from hexastorm.config import PlatformConfig
+
 
 from ..constants import CONFIG, NVS_STORE
 
@@ -21,6 +23,8 @@ logger = logging.getLogger(__name__)
 
 class BaseLaserhead:
     def __init__(self):
+        self.cfg = PlatformConfig(test=False)  # overwritten by derived classes
+
         self._stop = asyncio.Event()
         self._pause = asyncio.Event()
         self._start = asyncio.Event()
@@ -153,9 +157,31 @@ class BaseLaserhead:
         self._update_coordinates(position, absolute, workspace)
         await self.notify_listeners()
 
+    def _update_home_coordinates(self, axes):
+        """Mock behavior: Resets machine coordinates to the offset_mm (pull-off distance)."""
+        axis_names = ["x", "y", "z"]
+
+        # Read the live offsets from our math dictionary
+        offsets = [self.cfg.motor_cfg["offset_mm"].get(ax, 0.0) for ax in axis_names]
+
+        for i in range(len(axes)):
+            if axes[i] == 1:
+                # The mock machine rests at the pull-off offset, exactly like the real one!
+                self._position[i] = offsets[i]
+
+        self._save_position()
+
     async def home(self, axes):
-        """Mock homing: machine position set to 0.0."""
-        logger.info(f"Mock homing axes {axes}.")
+        """Mock homing: simulates travel and rests at offset_mm."""
+        axis_names = ["x", "y", "z"]
+        homing_dirs = [
+            self.cfg.motor_cfg["homing_dir"].get(ax, -1) for ax in axis_names
+        ]
+        offsets = [self.cfg.motor_cfg["offset_mm"].get(ax, 0.0) for ax in axis_names]
+
+        logger.info(
+            f"Mock homing axes {axes}. Directions: {homing_dirs}, Pull-off: {offsets}"
+        )
 
         await asyncio.sleep(0.8)  # Simulate homing travel time
 
@@ -220,6 +246,20 @@ class BaseLaserhead:
         value = max(0, min(255, int(value)))
         self.state["components"]["fan"] = value
         logger.info(f"Fan PWM set to {value}")
+
+    def apply_motor_settings(self):
+        motors_config = CONFIG["motors"]
+        non_tmc_keys = set(motors_config["non_tmc_keys"])
+
+        # update hexastorm side
+        for ax_name, settings in motors_config.items():
+            if isinstance(settings, dict) and ax_name not in ["motor_globals"]:
+                for key in non_tmc_keys:
+                    if key in settings:
+                        # Ensures the FPGA interpolator uses the UI's steps_mm and limits
+                        self.cfg.motor_cfg[key][ax_name] = settings[key]
+
+        logger.info("Motor settings pushed to TMC and hexastorm layer.")
 
     @property
     def state(self):

@@ -13,6 +13,7 @@ src/root/sd/fpga/*
 
 # mock json file
 src/root/nvs_mock.json
+src/root/mock_config.json
 
 # packages needed for building
 src/hexastorm/*
