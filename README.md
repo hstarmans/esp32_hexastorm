@@ -20,6 +20,8 @@ The core of the machine's motion control is handled by a Lattice iCE40 UP5K FPGA
   * **Laser Mode:** Seamlessly streams high-frequency packed scanlines and manages precise polygon sync.
 * **Peripherals Control:** Remote control over UV laser state, rotating prism, spindle speed, cooling fans, and led diagnostics.
 * **Workspace Operations:** Easily set local workspace zeros (WPOS) and home axes against physical limit switches.
+* **Comprehensive Machine Configuration:** A dedicated Settings UI to manage Wi-Fi credentials, static IP allocation, TMC motor driver calibrations, and tool offsets without recompiling code.
+* **Over-The-Air (OTA) Updates:** Check for and apply the latest firmware releases directly from GitHub via the web interface, completely bypassing physical USB connections and button presses.
 
 ---
 
