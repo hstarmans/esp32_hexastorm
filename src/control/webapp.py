@@ -519,6 +519,68 @@ async def save_settings(request, session):
     return {"status": "success", "message": "Settings saved"}
 
 
+@app.get("/api/system/update/check")
+@with_session
+async def api_check_update(request, session):
+    """
+    Checks the GitHub API for a newer release tag.
+    """
+    logger.info("Checking GitHub for firmware updates...")
+
+    current_version = constants.CONFIG.get("github", {}).get("version", "unknown")
+
+    # get_firmware_dct returns {} if no new update is found
+    release_dct = bootlib.get_firmware_dct(require_new=True)
+
+    if release_dct:
+        latest_version = release_dct.get("tag_name", "unknown")
+        return {
+            "update_available": True,
+            "current_version": current_version,
+            "latest_version": latest_version,
+        }
+    else:
+        return {
+            "update_available": False,
+            "current_version": current_version,
+            "latest_version": current_version,
+        }
+
+
+@app.post("/api/system/update/apply")
+@with_session
+async def api_apply_update(request, session):
+    """
+    Triggers the OTA update process in the background.
+    """
+    logger.warning("OTA Firmware update triggered via web interface!")
+
+    # Check if the UI sent {"force": true}
+    payload = request.json if request.json else {}
+    force_update = payload.get("force", False)
+
+    async def background_update():
+        # Give the web server 1 second to return the JSON response to the browser
+        await asyncio.sleep(1)
+
+        # (Optional) If you have a global state dict for SSE, you could flag it here:
+        # machine_state["system_status"] = "Updating Firmware..."
+
+        success = await bootlib.update_firmware(force=force_update)
+
+        if not success:
+            logger.error("Background OTA update failed.")
+            # machine_state["system_status"] = "Update Failed"
+
+    # Dispatch the update task to the asyncio event loop
+    asyncio.create_task(background_update())
+
+    return {
+        "status": "success",
+        "message": "Firmware download started. The system will flash and reboot automatically.",
+    }
+
+
 @app.post("/api/settings/reset")
 @with_session
 async def api_factory_reset(request, session):

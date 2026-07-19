@@ -13,10 +13,10 @@ The core of the machine's motion control is handled by a Lattice iCE40 UP5K FPGA
 
 ## Features
 
-* **Coordinated Multi-Axis Motion:** Fully coordinated 3D linear interpolation ($G0$/$G1$) across all axes for precise routing and carving.
+* **Coordinated Multi-Axis Motion:** Fully coordinated 3D linear interpolation (`G0`/`G1`) across all axes for precise routing and carving.
 * **Smart Job Launcher:** Auto-detects whether an uploaded file is a laser exposure job or a CNC G-code job, dynamically updating the web UI options accordingly.
 * **Hardware Abstraction:**
-  * **CNC Mode:** Leverages a lightweight on-board G-code parser supporting absolute/relative positioning ($G90$/$G91$), millimeter mode ($G21$), spindle speed control ($M3$/$M5$), and feedrates.
+  * **CNC Mode:** Leverages a lightweight on-board G-code parser supporting absolute/relative positioning (`G90`/`G91`), millimeter mode (`G21`), spindle speed control (`M3`/`M5`), and feedrates.
   * **Laser Mode:** Seamlessly streams high-frequency packed scanlines and manages precise polygon sync.
 * **Peripherals Control:** Remote control over UV laser state, rotating prism, spindle speed, cooling fans, and led diagnostics.
 * **Workspace Operations:** Easily set local workspace zeros (WPOS) and home axes against physical limit switches.
@@ -36,6 +36,19 @@ A visual overview of the webserver interface after successful login:
 <img src="images/webserver.png" align="center" height="500"/>
 
 ---
+
+## Testing Locally
+
+You can test and interact with the web UI locally on your machine without flashing the ESP32. 
+
+Install the project dependencies using [uv](https://docs.astral.sh/uv/), and then spin up the local webserver:
+
+```bash
+# Install dependencies
+uv sync
+
+# Run the webserver locally
+uv run python -m src.control.webapp
 
 ## Getting Started
 

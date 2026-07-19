@@ -168,48 +168,105 @@ def get_firmware_dct(require_new=True):
         return {}
 
 
-def update_firmware(force=False, download=True):
+@wrapper_esp32(res=False)
+async def update_firmware(force=False):
+    """
+    Downloads firmware from GitHub Releases and streams it directly to the
+    ESP32 OTA partition. Executes asynchronously to keep hardware loops alive.
+    """
     gh = constants.CONFIG["github"]
-    if download:
-        release_dct = get_firmware_dct(require_new=(not force))
-        if not release_dct:
-            return False
-        head = {
-            "User-Agent": f"laserhead {constants.CONFIG['serial']}",
-            "Accept": "application/octet-stream",
-        }
 
-        if len(gh["token"]) > 0:
-            head["Authorization"] = f"token {gh['token']}"
+    # 1. Check for release (Blocking call, but very fast)
+    release_dct = get_firmware_dct(require_new=(not force))
+    if not release_dct:
+        return False
 
-        with requests.get(release_dct["assets"][0]["url"], headers=head) as resp:
-            if resp.status_code != 200:
-                logger.error("Download firmware binary failed")
-                return False
-            else:
-                with open(f"{gh['storagefolder']}/{gh['bin_name']}", mode="wb") as file:
-                    for chunk in resp.iter_content(chunk_size=1024):
-                        file.write(chunk)
-        logger.info(f"Downloaded file {gh['bin_name']}")
+    try:
+        asset_url = release_dct["assets"][0]["url"]
+        asset_size = release_dct["assets"][0]["size"]
+    except (KeyError, IndexError):
+        logger.error("Release JSON is missing asset data.")
+        return False
+
+    head = {
+        "User-Agent": f"laserhead {constants.CONFIG['serial']}",
+        "Accept": "application/octet-stream",
+    }
+    if len(gh["token"]) > 0:
+        head["Authorization"] = f"token {gh['token']}"
+
+    logger.warning(
+        f"Starting direct-to-flash OTA update ({asset_size / 1024 / 1024:.2f} MB)..."
+    )
 
     if constants.ESP32:
-        # purge templates and static folder
-        flds = ["templates", "static"]
-        for fld in flds:
-            for f in os.listdir(fld):
-                os.remove(fld + "/" + f)
         try:
-            os.rename("config.json", "config_old.json")
-        except OSError:
-            pass
-        # Write firmware from a url or filename
-        # reboot if successful and verified
-        with OTA(reboot=True) as ota:
-            ota.from_firmware_file(
-                f"{gh['storagefolder']}/{gh['bin_name']}",
-                sha="",
-                length=release_dct["assets"][0]["size"],
+            # stream=True ensures we don't load the whole file into RAM
+            with requests.get(asset_url, headers=head, stream=True) as resp:
+                if resp.status_code not in (200, 302):
+                    logger.error(f"Download failed with status code {resp.status_code}")
+                    return False
+
+                # We want to clean up files BEFORE we reboot.
+                from ota.update import OTA
+
+                with OTA() as ota:
+                    downloaded = 0
+
+                    # 4096 bytes perfectly matches an ESP32 flash memory page
+                    for chunk in resp.iter_content(chunk_size=4096):
+                        if not chunk:
+                            break
+
+                        ota.write(chunk)
+                        downloaded += len(chunk)
+
+                        # Yield control back to the async loop!
+                        # This keeps your webserver responding and prevents watchdog crashes.
+                        await asyncio.sleep(0)
+
+                    if downloaded < asset_size:
+                        logger.error(
+                            f"Incomplete download! Got {downloaded}/{asset_size} bytes."
+                        )
+                        return False
+
+            logger.info("OTA Flash successful! Validating and finalizing partition...")
+
+            # 3. Clean up the file system before reboot
+            logger.info("Purging old frozen assets...")
+            for fld in ["templates", "static"]:
+                try:
+                    for f in os.listdir(fld):
+                        os.remove(f"{fld}/{f}")
+                    os.rmdir(fld)
+                except OSError:
+                    pass
+
+            try:
+                os.rename("config.json", "config_old.json")
+            except OSError:
+                pass
+
+            # 4. Trigger the reboot safely
+            logger.warning(
+                "Update applied! Rebooting into new firmware in 2 seconds..."
             )
+            await asyncio.sleep(2)
+            import machine
+
+            machine.reset()
+
+        except Exception as e:
+            logger.error(f"OTA Update crashed: {e}")
+            return False
+
+    else:
+        # Mock behavior for PC
+        logger.info(
+            f"Mock OTA: Simulated direct-to-flash of {asset_url} ({asset_size} bytes)"
+        )
+        return True
 
 
 @wrapper_esp32(res=True)

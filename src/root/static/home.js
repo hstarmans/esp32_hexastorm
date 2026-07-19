@@ -523,6 +523,86 @@ document.addEventListener("alpine:init", () => {
             }
         }
     }));
+
+    Alpine.data('firmwareUpdater', () => ({
+        currentVersion: 'Loading...', 
+        latestVersion: '',
+        checking: false,
+        checked: false,
+        updateAvailable: false,
+        isUpdating: false,
+        errorMessage: '',
+
+        /**
+         * Automatically runs when Alpine initializes this component.
+         * Silently fetches the current firmware version.
+         */
+        async init() {
+            try {
+                const response = await fetch('/api/system/update/check');
+                if (response.ok) {
+                    const data = await response.json();
+                    this.currentVersion = data.current_version;
+                } else {
+                    this.currentVersion = 'Unknown';
+                }
+            } catch (e) {
+                this.currentVersion = 'Unknown';
+            }
+        },
+
+        async checkUpdate() {
+            this.checking = true;
+            this.errorMessage = '';
+            this.checked = false;
+            this.updateAvailable = false;
+            
+            try {
+                const response = await fetch('/api/system/update/check');
+                if (!response.ok) throw new Error('Failed to check for updates');
+                
+                const data = await response.json();
+                this.currentVersion = data.current_version;
+                this.latestVersion = data.latest_version;
+                this.updateAvailable = data.update_available;
+                this.checked = true;
+            } catch (error) {
+                this.errorMessage = "Could not reach the update server. Check Wi-Fi connection.";
+            } finally {
+                this.checking = false;
+            }
+        },
+
+        /** @param {boolean} force */
+        async applyUpdate(force = false) {
+            const msg = force 
+                ? "Force a reinstall of the current firmware? The machine will be unresponsive for 1-2 minutes and will reboot automatically."
+                : "Are you sure you want to update the firmware? The machine will be unresponsive for 1-2 minutes and will reboot automatically.";
+
+            if (!confirm(msg)) {
+                return;
+            }
+            
+            this.isUpdating = true;
+            this.errorMessage = '';
+            
+            try {
+                const response = await fetch('/api/system/update/apply', { 
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ force: force })
+                });
+                
+                if (!response.ok) throw new Error('Failed to start update');
+                
+            } catch (error) {
+                this.isUpdating = false;
+                this.errorMessage = "Failed to trigger the update process.";
+            }
+        }
+    }));
 });
 
 // --- SERVER SENT EVENTS (SSE) ---
