@@ -269,39 +269,42 @@ async def update_firmware(force=False):
         return True
 
 
-@wrapper_esp32(res=True)
-async def connect_wifi(force=False):
-    """tries to connect to wifi
+@wrapper_esp32(res=False)
+async def connect_wifi(force=False, create_ap=True):
+    """
+    Tries to connect to WiFi.
 
-    If connection fails access point is created
-    If connection succeeds active access points are deactivated
+    :param bool force: Force reconnection even if already connected.
+    :param bool create_ap: If True and WiFi fails, starts Access Point mode.
 
-    returns boolean: True if connected
+    :return bool: True if connected to WiFi, False otherwise.
     """
     made_connection = False
     wlan = network.WLAN(network.STA_IF)
     ap = network.WLAN(network.AP_IF)
     wlan.active(True)
     wlan.config(reconnects=False)
-    wifi_login = constants.CONFIG["wifi_login"]
+
+    wifi_login = constants.CONFIG.get("wifi_login", {})
+
     if not wlan.isconnected() or force:
-        # if machine.reset_cause() != machine.SOFT_RESET:
-        if wifi_login["static_enabled"]:
+        if wifi_login.get("static_enabled", False):
             wlan.ifconfig(
                 (
-                    wifi_login["static_ip"],
-                    wifi_login["dnsmask"],
-                    wifi_login["gateway_ip"],
-                    wifi_login["primary_dns"],
+                    wifi_login.get("static_ip"),
+                    wifi_login.get("dnsmask"),
+                    wifi_login.get("gateway_ip"),
+                    wifi_login.get("primary_dns"),
                 )
             )
         wlan.disconnect()
-        await asyncio.sleep(0.5)  # Give the driver a moment to reset
-        # method can fail due to power supply issues
+        await asyncio.sleep(0.5)
+
         try:
-            wlan.connect(wifi_login["ssid"], wifi_login["password"])
+            wlan.connect(wifi_login.get("ssid", ""), wifi_login.get("password", ""))
         except OSError as e:
             logger.error(f"WLAN Connect failed with error: {e}")
+
         max_wait = 10
         while max_wait > 0:
             if wlan.status() == network.STAT_WRONG_PASSWORD:
@@ -310,26 +313,40 @@ async def connect_wifi(force=False):
             if wlan.isconnected():
                 made_connection = True
                 break
-            else:
-                max_wait -= 1
-                await asyncio.sleep(1)
-        ap.active(False)
+            max_wait -= 1
+            await asyncio.sleep(1)
+
     else:
         made_connection = True
-        ap.active(False)
+
     if made_connection:
+        ap.active(False)
         logger.info(f"Network config {wlan.ifconfig()}")
-    else:
+    elif create_ap:
         wlan.active(False)
-        logger.error("Cannot connect to wifi, creating access point!")
-        logger.error(f"Used ssid {wifi_login['ssid']} and {wifi_login['password']}.")
-        ap.active(True)
-        ap.config(
-            essid=f"sensor_serial{constants.CONFIG['serial']}",
-            authmode=network.AUTH_WPA_WPA2_PSK,
-            max_clients=10,
-            password=wifi_login["ap_password"],
-        )
+        logger.error("Cannot connect to WiFi, creating Access Point...")
+
+        try:
+            # Fallbacks in case config keys are missing or invalid
+            ap_essid = str(wifi_login.get("essid", "hexastorm"))
+            ap_pass = str(wifi_login.get("ap_password", "hexastorm"))
+
+            # Ensure password meets 8-character minimum for WPA2
+            if len(ap_pass) < 8:
+                ap_pass = ap_pass.ljust(8, "0")
+
+            # Configure BEFORE activating
+            ap.config(
+                essid=ap_essid,
+                authmode=network.AUTH_WPA_WPA2_PSK,
+                max_clients=10,
+                password=ap_pass,
+            )
+            ap.active(True)
+            logger.info(f"Access Point active: essid {ap_essid}")
+        except Exception as e:
+            logger.error(f"Failed to start Access Point: {e}")
+
     return made_connection
 
 

@@ -53,8 +53,7 @@ class BaseLaserhead:
                 dtype=NP_FLOAT,
             )
 
-        self.reset_state()
-
+        self.apply_motor_settings()
         self.reset_state()
 
     def _save_position(self):

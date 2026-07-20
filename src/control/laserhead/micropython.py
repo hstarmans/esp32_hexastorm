@@ -4,11 +4,15 @@ import struct
 from time import time
 import deflate
 
-import ulab.numpy as np
 from hexastorm.fpga_host.micropython import ESP32Host
 from hexastorm.fpga_host.syncwrap import syncable
 from hexastorm.fpga_host.tools import find_shift
 from hexastorm.config import Spi
+
+try:
+    import numpy as np
+except ImportError:
+    from ulab import numpy as np
 
 from .base import BaseLaserhead
 from .. import constants
@@ -71,7 +75,7 @@ class Laserhead(BaseLaserhead, ESP32Host):
                     if key not in non_tmc_keys:
                         setattr(tmc, key, value)
 
-        BaseLaserhead.apply_motor_settings()
+        super().apply_motor_settings()
 
     async def enable_comp(
         self,

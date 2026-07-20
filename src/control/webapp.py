@@ -500,7 +500,7 @@ async def save_settings(request, session):
     """
     Receives modified settings from the UI and commits them to config.json.
     """
-    data = request.json or {}
+    data = request.json
 
     # Safely merge incoming structures into CONFIG
     if "wifi_login" in data:

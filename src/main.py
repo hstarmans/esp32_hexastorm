@@ -6,13 +6,15 @@ from control import bootlib, constants
 from control.webapp import app
 from control.laserhead import LASERHEAD as lh
 
-constants.CONFIG = constants.load_config()
 logger = logging.getLogger(__name__)
 
 
 async def network_manager():
     """
-    Handles initial connection attempts with retry logic.
+    Handles initial WiFi connection attempts with retry logic and LED feedback.
+    - Red: Connecting / Searching
+    - Green: Connected to local WiFi
+    - Blue: Access Point mode active
     """
     max_attempts = 6
     connected = False
@@ -32,6 +34,7 @@ async def network_manager():
 
     if not connected:
         logger.warning("Network: Could not connect within 60 seconds. Running offline.")
+        await lh.set_leds(red=False, green=False, blue=True)
 
 
 async def main():

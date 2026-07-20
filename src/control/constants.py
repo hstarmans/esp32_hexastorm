@@ -114,7 +114,7 @@ def deploy_assets(overwrite=False):
     # Check for sentinel file (fastest check)
     if not overwrite:
         try:
-            os.stat("/templates/config.json")
+            os.stat(CONFIG_FILE)
             logging.info("Assets already deployed. Skipping extraction.")
             return
         except OSError:
@@ -189,15 +189,83 @@ def load_config():
     return dct, migration_happened
 
 
+def sanitize_types(obj):
+    """
+    Recursively converts string representations of numbers and booleans
+    received from web forms into native Python types (int, float, bool).
+
+    :param obj: The object, list, or primitive value to sanitize.
+    :return: The structure with sanitized data types.
+    """
+    if isinstance(obj, dict):
+        return {k: sanitize_types(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [sanitize_types(v) for v in obj]
+    elif isinstance(obj, str):
+        val = obj.strip()
+        if val.lower() == "true":
+            return True
+        if val.lower() == "false":
+            return False
+        try:
+            return int(val)
+        except ValueError:
+            try:
+                return float(val)
+            except ValueError:
+                return val  # Retain standard strings (e.g., SSIDs or file paths)
+    return obj
+
+
+def dump_pretty_json(obj, fp, indent=4, level=0):
+    """Custom pretty-printer for MicroPython to handle proper indentation."""
+    spacing = " " * (indent * level)
+    if isinstance(obj, dict):
+        if not obj:
+            fp.write("{}")
+            return
+        fp.write("{\n")
+        items = list(obj.items())
+        for i, (k, v) in enumerate(items):
+            fp.write(" " * (indent * (level + 1)))
+            fp.write(f'"{k}": ')
+            dump_pretty_json(v, fp, indent, level + 1)
+            if i < len(items) - 1:
+                fp.write(",")
+            fp.write("\n")
+        fp.write(spacing + "}")
+    elif isinstance(obj, list):
+        # Render simple primitive lists (e.g. [0, 0, 0]) on a single line
+        if all(not isinstance(x, (dict, list)) for x in obj):
+            json.dump(obj, fp)
+        else:
+            fp.write("[\n")
+            for i, v in enumerate(obj):
+                fp.write(" " * (indent * (level + 1)))
+                dump_pretty_json(v, fp, indent, level + 1)
+                if i < len(obj) - 1:
+                    fp.write(",")
+                fp.write("\n")
+            fp.write(spacing + "]")
+    else:
+        json.dump(obj, fp)
+
+
 def update_config():
     """Update the json settings."""
+    global CONFIG
+
+    clean_cfg = sanitize_types(CONFIG)
+    CONFIG.clear()
+    CONFIG.update(clean_cfg)
+
     with open(CONFIG_FILE, "w") as fp:
         if not ESP32:
             recurse_dct(CONFIG, "src/root/sd/", "sd/")
             json.dump(CONFIG, fp, indent=4)
             recurse_dct(CONFIG, "sd/", "src/root/sd/")
         else:
-            json.dump(CONFIG, fp, separators=(",\n", ":\n"))
+            dump_pretty_json(CONFIG, fp, indent=4)
 
 
 if ESP32:
