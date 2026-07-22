@@ -318,8 +318,12 @@ async def api_gotopoint(request, session):
     position = [float(x) for x in data.get("position", [0, 0, 0])]
     absolute = data["absolute"]
     workspace = data["workspace"]
-
+    state = LASERHEAD.enable_steppers
+    LASERHEAD.enable_steppers = True
     await LASERHEAD.gotopoint(position=position, absolute=absolute, workspace=workspace)
+    if state is False:
+        await LASERHEAD.wait_fifo_empty()
+        LASERHEAD.enable_steppers = False
     return devicestate.data
 
 

@@ -129,10 +129,7 @@ class Laserhead(BaseLaserhead, ESP32Host):
         and state notifications for the web UI.
         """
         # 1. Execute hardware command (blocks until physical move is complete)
-        motor_state = self.enable_steppers
-        self.enable_steppers = True
-
-        await ESP32Host.gotopoint(
+        result = await ESP32Host.gotopoint(
             self,
             position=position,
             speed=speed,
@@ -140,13 +137,13 @@ class Laserhead(BaseLaserhead, ESP32Host):
             workspace=workspace,
             check_sensors=check_sensors,
         )
-        self.enable_steppers = motor_state
 
         # 2. Update RAM and NVS instantly using the synchronous helper from base.py
         self._update_coordinates(position, absolute, workspace)
 
         # 3. Trigger SSE update for the web clients
         await self.notify_listeners()
+        return result
 
     async def home(self, axes):
         logger.info(f"Homing axes {axes}.")
@@ -154,6 +151,8 @@ class Laserhead(BaseLaserhead, ESP32Host):
         motor_state = self.enable_steppers
         self.enable_steppers = True
         await ESP32Host.home_axes(self, axes)
+        # no need to await fifo empty as gotopoint is always exected with
+        # check sensors is True
         self.enable_steppers = motor_state
 
         # 2. Update RAM and NVS to reflect origin (0.0)
@@ -338,6 +337,7 @@ class Laserhead(BaseLaserhead, ESP32Host):
         finally:
             # Clean up
             await self.set_spindle(0)
+            await self.wait_fifo_empty()
             self.enable_steppers = False
             self.state["printing"] = False
             await self.notify_listeners()
@@ -496,6 +496,7 @@ class Laserhead(BaseLaserhead, ESP32Host):
         await self.notify_listeners()
         logger.info("Waiting for stopline to execute.")
         await self.enable_comp(synchronize=False)
+        await self.wait_fifo_empty()
         self.enable_steppers = False
         if (await self.fpga_state)["error"]:
             logger.info("Error detected during printing")

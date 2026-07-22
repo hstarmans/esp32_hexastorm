@@ -159,7 +159,20 @@ def get_firmware_dct(require_new=True):
         return {}
 
     def clean(code):
-        return int(code.replace(".", "").replace("v", ""))
+        if isinstance(code, bool):
+            logger.error("Version number invalid, boolean")
+            return 0
+        if not isinstance(code, str):
+            try:
+                return float(code)
+            except (ValueError, TypeError):
+                logger.error("Version number invalid, not convertable to float")
+                return 0.0
+        try:
+            return float(code.lower().replace("v", ""))
+        except (ValueError, TypeError):
+            logger.error("Version number invalid, not convertable to float")
+            return 0.0
 
     if (not require_new) or (clean(release_dct["tag_name"]) > clean(gh["version"])):
         return release_dct
