@@ -139,24 +139,17 @@ class Laserhead(BaseLaserhead, ESP32Host):
         )
 
         # 2. Update RAM and NVS instantly using the synchronous helper from base.py
-        self._update_coordinates(position, absolute, workspace)
+        self._save_position()
 
         # 3. Trigger SSE update for the web clients
         await self.notify_listeners()
         return result
 
-    async def home(self, axes):
+    async def home_axes(self, axes):
         logger.info(f"Homing axes {axes}.")
-        # 1. Physical homing sequence
-        motor_state = self.enable_steppers
-        self.enable_steppers = True
         await ESP32Host.home_axes(self, axes)
-        # no need to await fifo empty as gotopoint is always exected with
-        # check sensors is True
-        self.enable_steppers = motor_state
 
-        # 2. Update RAM and NVS to reflect origin (0.0)
-        self._update_home_coordinates(axes)
+        self._save_position()
         await self.notify_listeners()
 
     async def set_workspace_zero(self, axes=None):
@@ -390,7 +383,7 @@ class Laserhead(BaseLaserhead, ESP32Host):
 
                 if home_before:
                     logger.info("Homing X- and Y-axis.")
-                    await self.home([1, 1, 0])
+                    await self.home_axes([1, 1, 0])
                 else:
                     logger.info("Skipping homing before print per operator settings.")
 

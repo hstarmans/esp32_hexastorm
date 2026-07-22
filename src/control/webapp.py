@@ -362,7 +362,12 @@ async def control_fan(request, session):
 async def home(request, session):
     data = request.json
     axes = [int(x) for x in data.get("axes", [0, 0, 0])]
-    await LASERHEAD.home(axes)
+    state = LASERHEAD.enable_steppers
+    LASERHEAD.enable_steppers = True
+    await LASERHEAD.home_axes(axes)
+    if state is False:
+        await LASERHEAD.wait_fifo_empty()
+        LASERHEAD.enable_steppers = False
     return devicestate.data
 
 

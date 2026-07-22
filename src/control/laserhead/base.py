@@ -33,25 +33,23 @@ class BaseLaserhead:
 
         # Load coodinates from NVS flash database
 
-        if not hasattr(self, "_position"):
-            self._position = np.array(
-                [
-                    NVS_STORE.get_int("mpos_x", 0) / 1000.0,
-                    NVS_STORE.get_int("mpos_y", 0) / 1000.0,
-                    NVS_STORE.get_int("mpos_z", 0) / 1000.0,
-                ],
-                dtype=NP_FLOAT,
-            )
+        self._position = np.array(
+            [
+                NVS_STORE.get_int("mpos_x", 0) / 1000.0,
+                NVS_STORE.get_int("mpos_y", 0) / 1000.0,
+                NVS_STORE.get_int("mpos_z", 0) / 1000.0,
+            ],
+            dtype=NP_FLOAT,
+        )
 
-        if not hasattr(self, "_work_offset"):
-            self._work_offset = np.array(
-                [
-                    NVS_STORE.get_int("woff_x", 0) / 1000.0,
-                    NVS_STORE.get_int("woff_y", 0) / 1000.0,
-                    NVS_STORE.get_int("woff_z", 0) / 1000.0,
-                ],
-                dtype=NP_FLOAT,
-            )
+        self._work_offset = np.array(
+            [
+                NVS_STORE.get_int("woff_x", 0) / 1000.0,
+                NVS_STORE.get_int("woff_y", 0) / 1000.0,
+                NVS_STORE.get_int("woff_z", 0) / 1000.0,
+            ],
+            dtype=NP_FLOAT,
+        )
 
         self.apply_motor_settings()
         self.reset_state()
