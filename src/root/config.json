@@ -74,7 +74,7 @@
             "direction_inverted": false,
             "coolstep_threshold": 2500,
             "stallguard_threshold": 100,
-            "microstep_resolution": 16,
+            "microstep_resolution": 2,
             "current": 400
         },
         "non_tmc_keys": [
@@ -83,30 +83,30 @@
             "offset_mm"
         ],
         "x": {
-            "steps_mm": 160,
+            "steps_mm": 100,
             "homing_dir": -1,
             "offset_mm": 0.0,
-            "microstep_resolution": 16,
+            "microstep_resolution": 2,
             "current": 400,
             "stallguard_threshold": 120,
             "coolstep_threshold": 2500,
             "direction_inverted": false
         },
         "y": {
-            "steps_mm": 160,
+            "steps_mm": 100,
             "homing_dir": -1,
             "offset_mm": 0.0,
-            "microstep_resolution": 16,
+            "microstep_resolution": 2,
             "current": 600,
             "stallguard_threshold": 80,
             "coolstep_threshold": 2500,
             "direction_inverted": false
         },
         "z": {
-            "steps_mm": 400,
+            "steps_mm": 100,
             "homing_dir": 1,
             "offset_mm": 0.0,
-            "microstep_resolution": 16,
+            "microstep_resolution": 2,
             "current": 400,
             "stallguard_threshold": 100,
             "coolstep_threshold": 2500,

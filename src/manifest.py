@@ -1,3 +1,4 @@
+import time
 import os
 import subprocess
 import sys
@@ -73,6 +74,10 @@ try:
         cwd=base_dir,
         check=True,
     )
+
+    build_id = f"build_{int(time.time())}"
+    with open(frozen_output, "a") as f:
+        f.write(f'\nBUILD_ID = "{build_id}"\n')
 except subprocess.CalledProcessError as e:
     logging.error(f"Error during asset packing: {e}")
     sys.exit(1)

@@ -109,29 +109,69 @@ def merge_configs(default_dct, old_dct):
 
 
 def deploy_assets(overwrite=False):
-    """Extracts frozen assets only if a sentinel file is missing."""
+    """Extracts frozen assets if firmware BUILD_ID differs from deployed version on disk."""
 
-    # Check for sentinel file (fastest check)
-    if not overwrite:
-        try:
-            os.stat(CONFIG_FILE)
-            logging.info("Assets already deployed. Skipping extraction.")
-            return
-        except OSError:
-            pass  # File missing, proceed to extract
-
-    logging.info("First boot detected. Initializing asset extraction...")
-
-    # Once you import frozen_root, the on-import hooks will run
-    # files get extracted and overwrite
     try:
+        if "control.frozen_root" in sys.modules:
+            del sys.modules["control.frozen_root"]
         from . import frozen_root
     except ImportError:
-        logging.error("Could not import frozen_root. Is the build correct?")
+        logger.error("Could not import frozen_root. Is the build correct?")
         return
 
-    # Perform the extraction
-    logging.info("Extracting static files to filesystem...")
+    current_build_id = getattr(frozen_root, "BUILD_ID", None)
+
+    # Read currently deployed build ID from disk
+    deployed_build_id = None
+    if not overwrite:
+        try:
+            with open(".asset_version", "r") as f:
+                deployed_build_id = f.read().strip()
+        except OSError:
+            pass
+
+    # If build IDs match and CONFIG_FILE exists, skip extraction
+    if not overwrite and current_build_id and deployed_build_id == current_build_id:
+        try:
+            os.stat(CONFIG_FILE)
+            logger.info("Assets up to date. Skipping extraction.")
+            return
+        except OSError:
+            pass
+
+    logger.info(
+        f"New firmware build detected ({current_build_id or 'first boot'}). Deploying assets..."
+    )
+
+    # Back up active config to config_old.json so load_config() merges user settings
+    try:
+        os.stat(CONFIG_FILE)
+        try:
+            os.rename(CONFIG_FILE, CONFIG_OLD_FILE)
+            logger.info(
+                f"Backed up {CONFIG_FILE} to {CONFIG_OLD_FILE} before asset extraction."
+            )
+        except OSError:
+            pass
+    except OSError:
+        pass
+
+    # Re-import frozen_root to trigger extraction
+    try:
+        if "control.frozen_root" in sys.modules:
+            del sys.modules["control.frozen_root"]
+        from . import frozen_root
+    except Exception as e:
+        logger.error(f"Asset extraction failed: {e}")
+        return
+
+    # Record deployed build ID
+    if current_build_id:
+        try:
+            with open(".asset_version", "w") as f:
+                f.write(str(current_build_id))
+        except OSError as e:
+            logger.error(f"Could not save .asset_version: {e}")
 
 
 def recurse_dct(dct, target, replace):

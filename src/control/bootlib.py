@@ -348,14 +348,14 @@ async def connect_wifi(force=False, create_ap=True):
             if len(ap_pass) < 8:
                 ap_pass = ap_pass.ljust(8, "0")
 
-            # Configure BEFORE activating
+            # Activate AP interface first before configuring
+            ap.active(True)
             ap.config(
                 essid=ap_essid,
                 authmode=network.AUTH_WPA_WPA2_PSK,
                 max_clients=10,
                 password=ap_pass,
             )
-            ap.active(True)
             logger.info(f"Access Point active: essid {ap_essid}")
         except Exception as e:
             logger.error(f"Failed to start Access Point: {e}")

@@ -19,6 +19,7 @@ dependencies = [
     "pyjwt>=2.10.1",
     "pytest>=8.3.5",
     "requests>=2.32.3",
+    "pyserial>=3.5",
     "sseclient-py>=1.8.0",
     "websocket-client>=1.8.0",
 ]
@@ -33,6 +34,9 @@ builtins = ["include", "package", "module", "require", "options"]
 
 [tool.ruff.format]
 quote-style = "double"
+
+[project.scripts]
+build = "build:main"
 
 [dependency-groups]
 dev = [
