@@ -22,8 +22,10 @@ logger = logging.getLogger(__name__)
 
 class Laserhead(BaseLaserhead, ESP32Host):
     def __init__(self):
-        BaseLaserhead.__init__(self)
         ESP32Host.__init__(self)
+        BaseLaserhead.__init__(
+            self
+        )  # overwrites self._position, motors need to be present
         self.cur_facet_means = None
 
     @property
@@ -62,8 +64,7 @@ class Laserhead(BaseLaserhead, ESP32Host):
         motor_globals = motors_config["motor_globals"]
 
         # set values on TMC2209
-
-        for ax_name, tmc in getattr(self, "steppers", {}).items():
+        for ax_name, tmc in self.steppers.items():
             # 1. Apply global fallbacks first
             for key, value in motor_globals.items():
                 if key not in non_tmc_keys:

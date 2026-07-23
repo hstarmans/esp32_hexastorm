@@ -502,7 +502,7 @@ document.addEventListener("alpine:init", () => {
                 });
 
                 if (res.ok) {
-                    alert("Settings saved successfully! A reboot may be required for some changes to take effect.");
+                    alert("Settings saved successfully! For network changes, a reboot is  requiredfor changes to take effect.");
                 } else {
                     alert("Failed to save settings.");
                 }
