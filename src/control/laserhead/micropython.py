@@ -78,36 +78,15 @@ class Laserhead(BaseLaserhead, ESP32Host):
 
         super().apply_motor_settings()
 
-    async def enable_comp(
-        self,
-        laser0=False,
-        laser1=False,
-        polygon=False,
-        synchronize=False,
-        singlefacet=False,
-    ):
+    async def enable_comp(self, **kwargs):
         """enable components
 
         laser0   -- True enables laser channel 0
         laser1   -- True enables laser channel 1
         polygon  -- False enables polygon motor
         """
-        await BaseLaserhead.enable_comp(
-            self,
-            laser0=laser0,
-            laser1=laser1,
-            polygon=polygon,
-            synchronize=synchronize,
-            singlefacet=singlefacet,
-        )
-        await ESP32Host.enable_comp(
-            self,
-            laser0=laser0,
-            laser1=laser1,
-            polygon=polygon,
-            synchronize=synchronize,
-            singlefacet=singlefacet,
-        )
+        await BaseLaserhead.enable_comp(self, **kwargs)
+        await ESP32Host.enable_comp(self, **kwargs)
 
     async def toggle_laser(self):
         await super().toggle_laser()
@@ -229,7 +208,7 @@ class Laserhead(BaseLaserhead, ESP32Host):
         gcode_pos = self.wpos
 
         try:
-            filepath = constants.CONFIG["webserver"]["job_folder"] + f"/{fname}"
+            filepath = self.get_job_path(fname)
             with open(filepath, "r") as f:
                 for line_num, line in enumerate(f):
                     # Check for pause/stop from the web UI
@@ -338,7 +317,7 @@ class Laserhead(BaseLaserhead, ESP32Host):
             logger.info("G-code execution finished.")
 
     async def print_loop(self, fname):
-        self.reset()  # reset facet counter
+        await self.flush_buffer()  # Light weight reset: Flushes FIFO & resets FPGA fsm state
         await super().print_loop_prep(fname)
         await self.notify_listeners()
         await asyncio.sleep(0)
@@ -346,8 +325,9 @@ class Laserhead(BaseLaserhead, ESP32Host):
         bits_scanline = int(self.cfg.laser_timing["scanline_length"])
         words_scanline = self.cfg.hdl_cfg.words_scanline
         bytes_command_word = Spi.command_bytes + Spi.word_bytes
-        # protocol sends over command + word, where word can contain instruction
-        # command needs to be adapted for exposures per line
+        # a laserline instruction is: command + word
+        # we read the stored instruction from memory but want to change
+        # the command, e.g. steps size after each line
         commands = {0: None, 1: None}
         for direction in [0, 1]:
             line = self.bit_to_byte_list(
@@ -358,134 +338,131 @@ class Laserhead(BaseLaserhead, ESP32Host):
             cmd_lst = self.byte_to_cmd_list(line)
             commands[direction] = cmd_lst[0]
 
-        with open(constants.CONFIG["webserver"]["job_folder"] + f"/{fname}", "rb") as f:
-            with deflate.DeflateIO(f, deflate.ZLIB) as d:
-                # 1. Header
-                correction = constants.CONFIG["defaultprint"]["lanewidth_correction"]
-                logger.info(f"Lanewdith correction {correction}.")
-                lane_width = struct.unpack("<f", d.read(4))[0] + correction
-                facets_lane = struct.unpack("<I", d.read(4))[0]
-                lanes = struct.unpack("<I", d.read(4))[0]
-                self.state["job"]["totallines"] = int(facets_lane * lanes)
-                start_time = time()
-                await self.notify_listeners()
-                # z is not homed as it should be already in
-                # position so laser is in focus
-                self.enable_steppers = True
-                laserpower = self.state["job"]["laserpower"]
-                if 50 < laserpower < 151:
-                    self.laser_current = laserpower
+        with open(self.get_job_path(fname), "rb") as f, deflate.DeflateIO(
+            f, deflate.ZLIB
+        ) as d:
+            # Header
+            correction = constants.CONFIG["defaultprint"]["lanewidth_correction"]
+            logger.info(f"Lanewdith correction {correction}.")
+            lane_width = struct.unpack("<f", d.read(4))[0] + correction
+            facets_lane = struct.unpack("<I", d.read(4))[0]
+            lanes = struct.unpack("<I", d.read(4))[0]
+            self.state["job"]["totallines"] = int(facets_lane * lanes)
+            start_time = time()
+            await self.notify_listeners()
+            # z is not homed as it should be already in
+            # position so laser is in focus
+            self.enable_steppers = True
+            laserpower = self.state["job"]["laserpower"]
+            self.laser_current = laserpower
 
-                # homing logic
+            # homing logic
 
-                home_before = constants.CONFIG["defaultprint"]["home_before_print"]
-                use_custom = constants.CONFIG["defaultprint"]["use_custom_start"]
-                custom_origin = constants.CONFIG["defaultprint"]["workspace_origin"]
-
-                if home_before:
-                    logger.info("Homing X- and Y-axis.")
-                    await self.home_axes([1, 1, 0])
-                else:
-                    logger.info("Skipping homing before print per operator settings.")
-
-                # deciding start position
-                if use_custom and custom_origin is not None:
-                    logger.info(
-                        f"Overriding workspace origin to custom MPOS: {custom_origin}"
-                    )
-                    # Update local ulab numpy array tracking
-                    self._work_offset = np.array(custom_origin, dtype=float)
-                    # Sync to NVS
-                    self._save_position()
-
-                logger.info("Moving to workspace origin (WPOS 0, 0, 0).")
-                await self.gotopoint([0.0, 0.0, 0.0], absolute=True, workspace=True)
-
-                # enable scanhead
-                await self.enable_comp(
-                    synchronize=True,
-                    singlefacet=self.state["job"]["singlefacet"],
+            cfg_print = constants.CONFIG["defaultprint"]
+            # Homing logic
+            if cfg_print["home_before_print"]:
+                logger.info("Homing X- and Y-axis.")
+                await self.home_axes([1, 1, 0])
+            else:
+                logger.info("Skipping homing before print per operator settings.")
+            # Deciding start position
+            custom_origin = cfg_print["workspace_origin"]
+            if cfg_print["use_custom_start"] and custom_origin is not None:
+                logger.info(
+                    f"Overriding workspace origin to custom MPOS: {custom_origin}"
                 )
-                await asyncio.sleep(2)  # wait for stabilization
-                # ensure facet 0 is at the start
-                offset_0 = await self.remap(facet_id=0)
-                # internal facet counter needs to align with calibration table
-                if offset_0 != 0:
-                    logger.info(
-                        f"Rotational offset detected: shifting start by {offset_0} lines."
-                    )
-                    self.enable_steppers = False
-                    for _ in range(offset_0):
-                        await self.write_line(bits_scanline * [0])
-                    self.enable_steppers = True
-                for lane in range(lanes):
-                    if await self.handle_pausing_and_stopping():
-                        break
-                    self.state["job"]["currentline"] = int(lane * facets_lane)
-                    self.state["job"]["printingtime"] = round(time() - start_time)
-                    await self.notify_listeners()
-                    logger.info(f"Exposing lane {lane + 1} from {lanes}.")
-                    if lane > 0:
-                        logger.info("Moving in y-direction for next lane.")
-                        await self.gotopoint([0, lane_width, 0], absolute=False)
-                    if lane % 2 == 1:
-                        logger.info("Start exposing forward lane.")
-                    else:
-                        logger.info("Start exposing back lane.")
+                self._work_offset = np.array(custom_origin, dtype=float)
+                self._save_position()
 
-                    total_facets = int(self.cfg.laser_timing["rpm"] / exposures)
-                    if self.state["job"]["singlefacet"]:
-                        total_facets = int(total_facets / 4)
+            logger.info("Moving to workspace origin (WPOS 0, 0, 0).")
+            await self.gotopoint([0.0, 0.0, 0.0], absolute=True, workspace=True)
 
-                    if exposures == 1:
-                        lines_chunk = self.cfg.hdl_cfg.lines_chunk
-                        for facet in range(0, facets_lane, lines_chunk):
-                            if facet % 1000 == 0:
-                                self.state["job"]["currentline"] = (
-                                    int(lane * facets_lane) + facet
-                                )
-                                self.state["job"]["printingtime"] = round(
-                                    time() - start_time
-                                )
-                                await self.notify_listeners()
-                                if await self.handle_pausing_and_stopping():
-                                    break
-                            last_facet = min(facet + lines_chunk, facets_lane)
-                            to_read = last_facet - facet
-                            line_data = d.read(
-                                words_scanline * bytes_command_word * to_read
+            # enable scanhead
+            await self.enable_comp(
+                synchronize=True,
+                singlefacet=self.state["job"]["singlefacet"],
+            )
+            await asyncio.sleep(2)  # wait for stabilization
+            # ensure facet 0 is at the start
+            offset_0 = await self.remap(facet_id=0)
+            # internal facet counter needs to align with calibration table
+            if offset_0 != 0:
+                logger.info(
+                    f"Rotational offset detected: shifting start by {offset_0} lines."
+                )
+                self.enable_steppers = False
+                dummy_line = [0] * bits_scanline
+                for _ in range(offset_0):
+                    await self.write_line(dummy_line)
+                self.enable_steppers = True
+            for lane in range(lanes):
+                if await self.handle_pausing_and_stopping():
+                    break
+                self.state["job"]["currentline"] = int(lane * facets_lane)
+                self.state["job"]["printingtime"] = round(time() - start_time)
+                await self.notify_listeners()
+                logger.info(f"Exposing lane {lane + 1} from {lanes}.")
+                if lane > 0:
+                    logger.info("Moving in y-direction for next lane.")
+                    await self.gotopoint([0, lane_width, 0], absolute=False)
+                if lane % 2 == 1:
+                    logger.info("Start exposing forward lane.")
+                else:
+                    logger.info("Start exposing back lane.")
+
+                total_facets = int(self.cfg.laser_timing["rpm"] / exposures)
+                if self.state["job"]["singlefacet"]:
+                    total_facets = int(total_facets / 4)
+
+                if exposures == 1:
+                    lines_chunk = self.cfg.hdl_cfg.lines_chunk
+                    for facet in range(0, facets_lane, lines_chunk):
+                        if facet % 1000 == 0:
+                            self.state["job"]["currentline"] = (
+                                int(lane * facets_lane) + facet
                             )
-                            await self.send_command(
-                                line_data,
-                                timeout=True,
+                            self.state["job"]["printingtime"] = round(
+                                time() - start_time
                             )
-                    else:
-                        for facet in range(facets_lane):
-                            if facet % total_facets == 0:
-                                self.state["job"]["currentline"] = (
-                                    int(lane * facets_lane) + facet
-                                )
-                                self.state["job"]["printingtime"] = round(
-                                    time() - start_time
-                                )
-                                await self.notify_listeners()
-                                if await self.handle_pausing_and_stopping():
-                                    break
-                            # Read the entire line's data into a buffer
-                            # change number of exposures in first word
-                            line_data = bytearray(
-                                d.read(words_scanline * bytes_command_word)
+                            await self.notify_listeners()
+                            if await self.handle_pausing_and_stopping():
+                                break
+                        last_facet = min(facet + lines_chunk, facets_lane)
+                        to_read = last_facet - facet
+                        line_data = d.read(
+                            words_scanline * bytes_command_word * to_read
+                        )
+                        await self.send_command(
+                            line_data,
+                            timeout=True,
+                        )
+                else:
+                    for facet in range(facets_lane):
+                        if facet % total_facets == 0:
+                            self.state["job"]["currentline"] = (
+                                int(lane * facets_lane) + facet
                             )
-                            if lane % 2 == 1:
-                                line_data[:bytes_command_word] = commands[0]
-                            else:
-                                line_data[:bytes_command_word] = commands[1]
-                            await self.send_command(
-                                list(line_data) * exposures,
-                                timeout=True,
+                            self.state["job"]["printingtime"] = round(
+                                time() - start_time
                             )
-                    # send stopline
-                    await self.write_line([])
+                            await self.notify_listeners()
+                            if await self.handle_pausing_and_stopping():
+                                break
+                        # Read the entire line's data into a buffer
+                        # change number of exposures in first word
+                        line_data = bytearray(
+                            d.read(words_scanline * bytes_command_word)
+                        )
+                        if lane % 2 == 1:
+                            line_data[:bytes_command_word] = commands[0]
+                        else:
+                            line_data[:bytes_command_word] = commands[1]
+                        await self.send_command(
+                            list(line_data) * exposures,
+                            timeout=True,
+                        )
+                # send stopline
+                await self.write_line([])
         # disable scanhead
         await self.notify_listeners()
         logger.info("Waiting for stopline to execute.")

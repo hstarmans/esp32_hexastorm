@@ -54,6 +54,10 @@ class BaseLaserhead:
         self.apply_motor_settings()
         self.reset_state()
 
+    def get_job_path(self, fname):
+        """Returns the full path for a job file in the webserver job folder."""
+        return f"{CONFIG['webserver']['job_folder']}/{fname}"
+
     def _save_position(self):
         """Saves the current machine coordinates and work offsets directly to NVS."""
         NVS_STORE.save_state(self.mpos, self._work_offset)

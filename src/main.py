@@ -4,7 +4,7 @@ import logging
 
 from control import bootlib, constants
 from control.webapp import app
-from control.laserhead import LASERHEAD as lh
+from control.laserhead import laserhead as lh
 
 logger = logging.getLogger(__name__)
 

@@ -13,7 +13,8 @@ from microdot.utemplate import Template
 import machine
 
 from . import bootlib, constants
-from .laserhead import LASERHEAD
+from .constants import CONFIG, CONFIG_FILE, NVS_FILE, update_config
+from .laserhead import laserhead
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +41,7 @@ def is_authorized(session):
     if not session:
         return False
     pwd = session.get("password")
-    return pass_to_sha(pwd) == constants.CONFIG["webserver"]["password"]
+    return pass_to_sha(pwd) == CONFIG["webserver"]["password"]
 
 
 def pass_to_sha(password):
@@ -56,7 +57,7 @@ def pass_to_sha(password):
     if not password:
         return ""
     h = hashlib.sha256()
-    h.update(constants.CONFIG["webserver"]["salt"].encode())
+    h.update(CONFIG["webserver"]["salt"].encode())
     h.update(password.encode())
     return binascii.hexlify(h.digest()).decode()
 
@@ -78,7 +79,7 @@ class DeviceState:
         """
         self.laserhead_update()
         try:
-            files = os.listdir(constants.CONFIG["webserver"]["job_folder"])
+            files = os.listdir(CONFIG["webserver"]["job_folder"])
         except OSError:
             files = []
 
@@ -86,9 +87,8 @@ class DeviceState:
             "files": files,
             "wifi": {
                 "connected": bootlib.is_connected(),
-                "available": bootlib.list_wlans(),  # <-- can be slow
-                "ssid": constants.CONFIG["wifi_login"]["ssid"],
-                "password": constants.CONFIG["wifi_login"]["password"],
+                "ssid": CONFIG["wifi_login"]["ssid"],
+                "password": CONFIG["wifi_login"]["password"],
             },
         }
         self.data.update(dct)
@@ -96,12 +96,12 @@ class DeviceState:
 
 # Configure Microdot
 app = Microdot()
-Session(app, secret_key=constants.CONFIG["webserver"]["salt"])
+Session(app, secret_key=CONFIG["webserver"]["salt"])
 Response.default_content_type = "text/html"
 Request.max_content_length = (
-    constants.CONFIG["webserver"]["max_content_length"] * 1024 * 1024
+    CONFIG["webserver"]["max_content_length"] * 1024 * 1024
 )
-devicestate = DeviceState(LASERHEAD)
+devicestate = DeviceState(laserhead)
 
 # --- AUTHENTICATION MIDDLEWARE ---
 
@@ -163,7 +163,7 @@ SAFE_FILENAME_PATTERN = re.compile(r"[^a-zA-Z0-9_.-]")
 @app.post("/upload")
 @with_session
 async def upload(request, session):
-    folder = constants.CONFIG["webserver"]["job_folder"]
+    folder = CONFIG["webserver"]["job_folder"]
 
     # We check if we can stat the folder; if not, we create it.
     try:
@@ -194,7 +194,7 @@ async def upload(request, session):
         )
 
         # Check if adding this file exceeds the limit
-        if (current_usage_mb + (content_len / 1024 / 1024)) > constants.CONFIG[
+        if (current_usage_mb + (content_len / 1024 / 1024)) > CONFIG[
             "webserver"
         ]["max_content_length"]:
             return {"error": "Storage quota exceeded"}, 413
@@ -214,7 +214,7 @@ async def upload(request, session):
     else:
         return {"error": "Missing filename in Content-Disposition"}, 400
 
-    filepath = f"{folder}/{filename}"
+    filepath = laserhead.get_job_path(filename)
 
     try:
         with open(filepath, "wb") as f:
@@ -266,8 +266,7 @@ async def delete_file(request, session):
         if not filename:
             return {"error": "Invalid filename"}, 400
 
-        folder = constants.CONFIG["webserver"]["job_folder"]
-        filepath = f"{folder}/{filename}"
+        filepath = laserhead.get_job_path(filename)
 
         # We use os.stat to check existence first, or just try remove
         try:
@@ -318,12 +317,12 @@ async def api_gotopoint(request, session):
     position = [float(x) for x in data.get("position", [0, 0, 0])]
     absolute = data["absolute"]
     workspace = data["workspace"]
-    state = LASERHEAD.enable_steppers
-    LASERHEAD.enable_steppers = True
-    await LASERHEAD.gotopoint(position=position, absolute=absolute, workspace=workspace)
+    state = laserhead.enable_steppers
+    laserhead.enable_steppers = True
+    await laserhead.gotopoint(position=position, absolute=absolute, workspace=workspace)
     if state is False:
-        await LASERHEAD.wait_fifo_empty()
-        LASERHEAD.enable_steppers = False
+        await laserhead.wait_fifo_empty()
+        laserhead.enable_steppers = False
     return devicestate.data
 
 
@@ -333,7 +332,7 @@ async def setworkspacezero(request, session):
     data = request.json
     axes = data["axes"]
 
-    await LASERHEAD.set_workspace_zero(axes=axes)
+    await laserhead.set_workspace_zero(axes=axes)
     return devicestate.data
 
 
@@ -343,7 +342,7 @@ async def control_spindle(request, session):
     data = request.json or {}
     value = data["value"]
 
-    await LASERHEAD.set_spindle(value)
+    await laserhead.set_spindle(value)
     return devicestate.data
 
 
@@ -353,7 +352,7 @@ async def control_fan(request, session):
     data = request.json
     value = data["value"]
 
-    await LASERHEAD.set_fan(value)
+    await laserhead.set_fan(value)
     return devicestate.data
 
 
@@ -362,12 +361,12 @@ async def control_fan(request, session):
 async def home(request, session):
     data = request.json
     axes = [int(x) for x in data.get("axes", [0, 0, 0])]
-    state = LASERHEAD.enable_steppers
-    LASERHEAD.enable_steppers = True
-    await LASERHEAD.home_axes(axes)
+    state = laserhead.enable_steppers
+    laserhead.enable_steppers = True
+    await laserhead.home_axes(axes)
     if state is False:
-        await LASERHEAD.wait_fifo_empty()
-        LASERHEAD.enable_steppers = False
+        await laserhead.wait_fifo_empty()
+        laserhead.enable_steppers = False
     return devicestate.data
 
 
@@ -375,9 +374,9 @@ async def home(request, session):
 @with_session
 async def toggle_laser(request, session):
     # Safety check: Don't toggle hardware while printing
-    if LASERHEAD.state["printing"]:
+    if laserhead.state["printing"]:
         return {"error": "Cannot toggle laser while printing"}, 409
-    await LASERHEAD.toggle_laser()
+    await laserhead.toggle_laser()
     # Return the new state immediately so the button updates color instantly
     return devicestate.data
 
@@ -385,23 +384,20 @@ async def toggle_laser(request, session):
 @app.post("/control/prism")
 @with_session
 async def toggle_prism(request, session):
-    if LASERHEAD.state["printing"]:
+    if laserhead.state["printing"]:
         return {"error": "Cannot toggle prism while printing"}, 409
-    await LASERHEAD.toggle_prism()
+    await laserhead.toggle_prism()
     return devicestate.data
 
 
 @app.post("/control/diodetest")
 @with_session
 async def diode_test(request, session):
-    if not is_authorized(session):
-        return {"error": "Unauthorized"}, 401
-
-    if LASERHEAD.state["printing"]:
+    if laserhead.state["printing"]:
         return {"error": "Busy printing"}, 409
 
     async def run_test_background():
-        await LASERHEAD.test_diode()
+        await laserhead.test_diode()
 
     asyncio.create_task(run_test_background())
     return {"status": "started"}
@@ -415,7 +411,7 @@ async def print_control(request, session):
     action = data["action"]
 
     if action == "start":
-        if LASERHEAD.state["printing"]:
+        if laserhead.state["printing"]:
             return {"error": "Already printing"}, 409
 
         # Let it raise a KeyError if "file" is missing
@@ -424,47 +420,42 @@ async def print_control(request, session):
         # Determine job type based on file extension
         is_gcode = filename.lower().endswith((".gcode", ".nc", ".tap"))
 
+        cfg_print = CONFIG["defaultprint"]
         if not is_gcode:
             # Only parse laser-specific settings for exposure jobs
             # Will raise KeyError or ValueError natively if inputs are bad
-            constants.CONFIG["defaultprint"]["laserpower"] = int(data["laserpower"])
-            constants.CONFIG["defaultprint"]["exposureperline"] = int(
-                data["exposureperline"]
-            )
-            constants.CONFIG["defaultprint"]["singlefacet"] = bool(data["singlefacet"])
+            cfg_print["laserpower"] = int(data["laserpower"])
+            cfg_print["exposureperline"] = int(data["exposureperline"])
+            cfg_print["singlefacet"] = bool(data["singlefacet"])
 
         # Shared settings
-        constants.CONFIG["defaultprint"]["workspace_origin"] = data["workspace_origin"]
-        constants.CONFIG["defaultprint"]["home_before_print"] = bool(
-            data["home_before_print"]
-        )
-        constants.CONFIG["defaultprint"]["use_custom_start"] = bool(
-            data["use_custom_start"]
-        )
+        cfg_print["workspace_origin"] = data["workspace_origin"]
+        cfg_print["home_before_print"] = bool(data["home_before_print"])
+        cfg_print["use_custom_start"] = bool(data["use_custom_start"])
 
-        constants.update_config()
+        update_config()
 
         # Start background task
         async def run_job():
             # No try/except block. Let any exception crash the task
             # and bubble up spectacularly to the event loop!
             if is_gcode:
-                if constants.CONFIG["defaultprint"]["home_before_print"]:
+                if cfg_print["home_before_print"]:
                     logger.info("Homing X and Y axes before G-code execution.")
-                    await LASERHEAD.home([1, 1, 0])
+                    await laserhead.home([1, 1, 0])
 
-                await LASERHEAD.execute_gcode(filename)
+                await laserhead.execute_gcode(filename)
             else:
-                await LASERHEAD.print_loop(filename)
+                await laserhead.print_loop(filename)
 
             devicestate.laserhead_update()
 
         asyncio.create_task(run_job())
 
     elif action == "stop":
-        LASERHEAD.stop_print()
+        laserhead.stop_print()
     elif action == "pause":
-        LASERHEAD.pause_print()
+        laserhead.pause_print()
 
     return devicestate.data
 
@@ -480,7 +471,7 @@ async def state(request, session, sse):
         try:
             # WAIT here forever until update_event.set() is called
             # This uses 0 CPU.
-            await LASERHEAD.statechange.wait()
+            await laserhead.statechange.wait()
             devicestate.laserhead_update()
             # We woke up! Send the data.
             await sse.send(devicestate.data, event="message")
@@ -497,9 +488,9 @@ async def get_settings(request, session):
     Exposes the active machine, network, and tool settings to the frontend.
     """
     return {
-        "wifi_login": constants.CONFIG.get("wifi_login", {}),
-        "motors": constants.CONFIG.get("motors", {}),
-        "tools": constants.CONFIG.get("tools", {}),
+        "wifi_login": CONFIG["wifi_login"],
+        "motors": CONFIG["motors"],
+        "tools": CONFIG["tools"],
     }
 
 
@@ -511,18 +502,13 @@ async def save_settings(request, session):
     """
     data = request.json
 
-    # Safely merge incoming structures into CONFIG
-    if "wifi_login" in data:
-        constants.CONFIG["wifi_login"] = data["wifi_login"]
-    if "motors" in data:
-        constants.CONFIG["motors"] = data["motors"]
-    if "tools" in data:
-        constants.CONFIG["tools"] = data["tools"]
+    for key in ("wifi_login", "motors", "tools"):
+        if key in data:
+            CONFIG[key] = data[key]
 
-    # Commit changes to config.json using existing helper
-    constants.update_config()
+    update_config()
 
-    LASERHEAD.apply_motor_settings()
+    laserhead.apply_motor_settings()
 
     logger.info("Configuration updated successfully.")
     return {"status": "success", "message": "Settings saved"}
@@ -536,7 +522,7 @@ async def api_check_update(request, session):
     """
     logger.info("Checking GitHub for firmware updates...")
 
-    current_version = constants.CONFIG.get("github", {}).get("version", "unknown")
+    current_version = CONFIG.get("github", {}).get("version", "unknown")
 
     # get_firmware_dct returns {} if no new update is found
     release_dct = bootlib.get_firmware_dct(require_new=True)
@@ -600,10 +586,8 @@ async def api_factory_reset(request, session):
     logger.warning("FACTORY RESET TARGETED! Wiping configuration...")
 
     # Delete active mutable configuration JSONs
-    for file_path in (constants.CONFIG_FILE, constants.NVS_FILE):
+    for file_path in (CONFIG_FILE, NVS_FILE):
         try:
-            import os
-
             os.remove(file_path)
             logger.info(f"Deleted {file_path}")
         except OSError:
@@ -612,7 +596,6 @@ async def api_factory_reset(request, session):
     # Trigger asynchronous reboot sequence
     async def delayed_reset():
         await asyncio.sleep(1)
-        import machine
 
         machine.reset()  # On ESP32 reboots hardware. On PC, triggers os._exit(0).
 
@@ -631,7 +614,7 @@ async def static(request, path):
 if __name__ == "__main__":
     from control.bootlib import set_log_level
 
-    LASERHEAD.debug = True
+    laserhead.debug = True
     set_log_level(logging.DEBUG)
     logger.info("Started logging")
 

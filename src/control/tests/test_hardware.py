@@ -3,7 +3,7 @@ from time import sleep
 
 import unittest
 
-from ..laserhead import LASERHEAD
+from ..laserhead import laserhead
 
 
 class Hardware(unittest.TestCase):
@@ -15,19 +15,19 @@ class Hardware(unittest.TestCase):
         """
         if flash:
             # generated via old/debug_spi/test_spi
-            LASERHEAD.flash("reply.bit")
+            laserhead.flash("reply.bit")
         print("The red led should be on")
         bts = [0, 210, 222, 230]
-        LASERHEAD.host.reset(blank=False)
+        laserhead.host.reset(blank=False)
         previous_byte = None
         for idx, byte in enumerate(bts):
-            LASERHEAD.host.chip_select.value(0)
+            laserhead.host.chip_select.value(0)
             sleep(1)
             response = bytearray([0])
             data = bytearray([byte])
-            LASERHEAD.host.spi.write_readinto(data, response)
+            laserhead.host.spi.write_readinto(data, response)
             byte_received = response[0]
-            LASERHEAD.host.chip_select.value(1)
+            laserhead.host.chip_select.value(1)
             if idx != 0:
                 try:
                     assert previous_byte == byte_received
@@ -45,7 +45,7 @@ class Hardware(unittest.TestCase):
         File is written to flash ram
         FPGA reset is released and should program itself
         """
-        LASERHEAD.flash("blink.bit")
+        laserhead.flash("blink.bit")
         res = input("Test wether led blinks, input y and enter for succes\n")
         assert res == "y"
 
