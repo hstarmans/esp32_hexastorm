@@ -54,17 +54,10 @@ uv run python -m src.control.webapp
 
 ## Building & Flashing
 
-Comprehensive installation, toolchain setup, and environment configuration instructions can be found in [developer.md](developer.md).
-
-Once your environment is set up and board directory paths in `src/build.py` are verified, connect your ESP32-S3 board and run:
+See [developer.md](developer.md) for full environment setup instructions. To build and flash a connected ESP32-S3 board, configure src/build.py:
 
 ```bash
 uv run build
 ```
 
-This automated workflow will:
-1. Detect your connected Espressif board.
-2. Put the board into bootloader mode.
-3. Build the custom MicroPython firmware.
-4. Flash the firmware image to the device.
-5. Reboot the board back into MicroPython.
+This automatically detects the board, enters bootloader mode, builds, flashes, and reboots back into MicroPython.
