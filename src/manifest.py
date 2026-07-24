@@ -78,6 +78,10 @@ try:
     build_id = f"build_{int(time.time())}"
     with open(frozen_output, "a") as f:
         f.write(f'\nBUILD_ID = "{build_id}"\n')
+        
+    build_info_output = code_dir / "build_info.py"
+    with open(build_info_output, "w") as f:
+        f.write(f'BUILD_ID = "{build_id}"\n')
 except subprocess.CalledProcessError as e:
     logging.error(f"Error during asset packing: {e}")
     sys.exit(1)

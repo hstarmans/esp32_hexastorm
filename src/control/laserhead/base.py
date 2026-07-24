@@ -211,22 +211,20 @@ class BaseLaserhead:
 
     async def enable_comp(
         self,
-        laser0=False,
-        laser1=False,
-        polygon=False,
-        synchronize=False,
-        singlefacet=False,
+        laser0=None,
+        laser1=None,
+        polygon=None,
+        synchronize=None,
+        singlefacet=None,
     ):
-        """enable components
-
-        laser0   -- True enables laser channel 0
-        laser1   -- True enables laser channel 1
-        polygon  -- False enables polygon motor
-        """
+        """enable components"""
         logger.debug(f"laser0, laser1, polygon set to {laser0, laser1, polygon}")
-        self.state["components"]["laser"] = laser0 or laser1
-        self.state["components"]["rotating"] = polygon
-        self.state["job"]["singlefacet"] = singlefacet
+        if laser0 is not None or laser1 is not None:
+            self.state["components"]["laser"] = bool(laser0) or bool(laser1)
+        if polygon is not None:
+            self.state["components"]["rotating"] = polygon
+        if singlefacet is not None:
+            self.state["job"]["singlefacet"] = singlefacet
 
     async def toggle_laser(self):
         laser = self.state["components"]["laser"]

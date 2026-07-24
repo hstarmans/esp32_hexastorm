@@ -112,14 +112,12 @@ def deploy_assets(overwrite=False):
     """Extracts frozen assets if firmware BUILD_ID differs from deployed version on disk."""
 
     try:
-        if "control.frozen_root" in sys.modules:
-            del sys.modules["control.frozen_root"]
-        from . import frozen_root
+        from . import build_info
     except ImportError:
-        logger.error("Could not import frozen_root. Is the build correct?")
+        logger.error("Could not import build_info. Is the build correct?")
         return
 
-    current_build_id = getattr(frozen_root, "BUILD_ID", None)
+    current_build_id = build_info.BUILD_ID
 
     # Read currently deployed build ID from disk
     deployed_build_id = None
@@ -143,20 +141,22 @@ def deploy_assets(overwrite=False):
         f"New firmware build detected ({current_build_id or 'first boot'}). Deploying assets..."
     )
 
-    # Back up active config to config_old.json so load_config() merges user settings
+    # Back up active config to a temporary file
+    has_old_config = False
     try:
         os.stat(CONFIG_FILE)
         try:
             os.rename(CONFIG_FILE, CONFIG_OLD_FILE)
+            has_old_config = True
             logger.info(
-                f"Backed up {CONFIG_FILE} to {CONFIG_OLD_FILE} before asset extraction."
+                f"Moved {CONFIG_FILE} to {CONFIG_OLD_FILE} before asset extraction."
             )
         except OSError:
             pass
     except OSError:
         pass
 
-    # Re-import frozen_root to trigger extraction
+    # Import frozen_root to trigger extraction (this extracts a fresh factory config.json)
     try:
         if "control.frozen_root" in sys.modules:
             del sys.modules["control.frozen_root"]
@@ -164,6 +164,29 @@ def deploy_assets(overwrite=False):
     except Exception as e:
         logger.error(f"Asset extraction failed: {e}")
         return
+
+    # Merge user settings back into the newly extracted config.json
+    if has_old_config:
+        try:
+            # Load new factory defaults
+            with open(CONFIG_FILE, "r") as f_new:
+                new_dct = json.load(f_new)
+            
+            # Load old user config
+            with open(CONFIG_OLD_FILE, "r") as f_old:
+                old_dct = json.load(f_old)
+                
+            logger.info("Migrating user settings into new configuration file...")
+            new_dct = merge_configs(new_dct, old_dct)
+            
+            # Save the merged config back to config.json
+            with open(CONFIG_FILE, "w") as f_out:
+                json.dump(new_dct, f_out)
+                
+            # Remove the temp backup after successful merge
+            os.remove(CONFIG_OLD_FILE)
+        except Exception as e:
+            logger.error(f"Failed to merge old configuration: {e}")
 
     # Record deployed build ID
     if current_build_id:
@@ -183,7 +206,7 @@ def recurse_dct(dct, target, replace):
 
 
 def load_config():
-    """Load json config settings and migrate old configs if present."""
+    """Load json config settings."""
 
     # Recreate mock_config.json from factory template if missing ---
     if not ESP32:
@@ -210,23 +233,7 @@ def load_config():
         logger.warning(f"Could not load {CONFIG_FILE}, using defaults")
         dct = {}
 
-    # Check if a migration/old config exists
-    try:
-        with open(CONFIG_OLD_FILE) as f_old:
-            logger.info(f"Found {CONFIG_OLD_FILE}. Migrating user settings...")
-            old_dct = json.load(f_old)
-            dct = merge_configs(dct, old_dct)
-
-        try:
-            os.rename(CONFIG_OLD_FILE, CONFIG_OLD_FILE + ".bak")
-        except OSError:
-            os.remove(CONFIG_OLD_FILE)
-
-        migration_happened = True
-    except OSError:
-        migration_happened = False
-
-    return dct, migration_happened
+    return dct
 
 
 def sanitize_types(obj):
@@ -311,12 +318,7 @@ def update_config():
 if ESP32:
     deploy_assets()  # Extracts fresh config.json if missing
 
-# Load config and capture the migration flag
-CONFIG, _migrated = load_config()
-
-if _migrated:
-    # Save the newly merged configuration to disk permanently
-    logger.info("Saving migrated configuration to disk.")
-    update_config()
+# Load config
+CONFIG = load_config()
 
 NVS_STORE = SafeNVS()

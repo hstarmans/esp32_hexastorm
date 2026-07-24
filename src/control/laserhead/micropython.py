@@ -156,31 +156,46 @@ class Laserhead(BaseLaserhead, ESP32Host):
         Args:
             value (bool): True to enable synchronization, False to disable.
         """
-        await super().synchronize(value)
+        res = await super().synchronize(value)
         if value:
             self.cur_facet_means = await self.measure_facet_means()
         else:
             self.cur_facet_means = None
+        return res
 
     async def test_diode(self):
         logger.debug("Starting diode test.")
         self.state["components"]["diodetest"] = None
         await self.notify_listeners()
-        # simulate time needed for measurement
-        await asyncio.sleep(3)
-        cur_sync = (await self.fpga_state)["synchronized"]
-        if not cur_sync:
-            await self.synchronize(True)
 
+        fpga_st = await self.fpga_state
+        cur_sync = fpga_st["synchronized"]
+        cur_polygon = bool(self._pin_state & (1 << 2))
+
+        if not cur_sync:
+            sync_success = await self.synchronize(True)
+            if not sync_success:
+                logger.error("Diode test failed: Laser cannot be synchronized.")
+                self.state["components"]["diodetest"] = False
+
+                # Restore synchronization and motor to their original states
+                await self.enable_comp(polygon=cur_polygon)
+
+                await self.notify_listeners()
+                return
         shift = find_shift(self.cur_facet_means, self.facet_means)[0]
 
         # 2. Pass the shift down to the parent for accurate logging
         self.state["components"]["diodetest"] = await super().test_laserhead(
             shift=shift
         )
-        await self.notify_listeners()
+
+        # Restore synchronization and motor to their original states
+
         if not cur_sync:
             await self.synchronize(False)
+            await self.enable_comp(polygon=cur_polygon)
+        await self.notify_listeners()
 
     async def execute_gcode(self, fname):
         """

@@ -46,11 +46,83 @@ def find_espressif_device(port_arg=None):
             
     return None, None
 
+
+def find_process_using_port(port):
+    """
+    Attempts to identify any process (other than current process) holding the port open on Linux.
+    Returns tuple of (pid, process_name) or (None, None).
+    """
+    try:
+        my_pid = os.getpid()
+        real_port = os.path.realpath(port)
+        if not os.path.exists("/proc"):
+            return None, None
+
+        for pid_str in os.listdir("/proc"):
+            if not pid_str.isdigit():
+                continue
+            proc_pid = int(pid_str)
+            if proc_pid == my_pid:
+                continue
+
+            fd_dir = os.path.join("/proc", pid_str, "fd")
+            if not os.path.exists(fd_dir):
+                continue
+
+            try:
+                for fd in os.listdir(fd_dir):
+                    fd_path = os.path.join(fd_dir, fd)
+                    try:
+                        if os.path.realpath(fd_path) == real_port:
+                            cmdline_path = os.path.join("/proc", pid_str, "cmdline")
+                            comm_path = os.path.join("/proc", pid_str, "comm")
+                            name = None
+                            if os.path.exists(comm_path):
+                                with open(comm_path, "r") as f:
+                                    name = f.read().strip()
+                            if not name and os.path.exists(cmdline_path):
+                                with open(cmdline_path, "r") as f:
+                                    name = f.read().replace("\x00", " ").strip()
+                            return proc_pid, name or f"PID {proc_pid}"
+                    except OSError:
+                        pass
+            except OSError:
+                pass
+    except Exception:
+        pass
+    return None, None
+
+
+def check_port_availability(port):
+    """
+    Verifies that the serial port is not currently in use by another application.
+    Exits with a clear error message if the port is occupied.
+    """
+    proc_pid, proc_name = find_process_using_port(port)
+    if proc_pid:
+        logger.error(f"Serial port {port} is currently in use by '{proc_name}' (PID {proc_pid}).")
+        logger.error("Please close Thonny or any active serial monitor/terminal connected to the board and try again.")
+        sys.exit(1)
+
+    try:
+        s = serial.Serial()
+        s.port = port
+        s.exclusive = True
+        s.open()
+        s.close()
+    except (serial.SerialException, OSError) as e:
+        logger.error(f"Cannot open serial port {port}: {e}")
+        logger.error("The port appears to be locked or in use by another application (e.g. Thonny).")
+        logger.error("Please close any application using the board and try again.")
+        sys.exit(1)
+
+
 def verify_and_prepare_device(port_arg=None):
     """
     Checks if an Espressif device is connected.
     If it's in MicroPython mode (PID 0x4001), attempts to connect.
-    If connection fails, aborts.
+    If connection fails due to port in use, aborts.
+    If connection fails due to unresponsive device, attempts recovery reset trick.
     If connection succeeds, reboots it into bootloader.
     If it's in Bootloader mode (PID 0x1001), proceeds.
     Returns the port to use, or exits if not possible.
@@ -67,6 +139,8 @@ def verify_and_prepare_device(port_arg=None):
         logger.error(f"Serial port {port} does not exist.")
         sys.exit(1)
 
+    check_port_availability(port)
+
     # PID 0x1001 (4097) is USB JTAG/serial debug unit (Bootloader)
     # PID 0x4001 (16385) is Espressif Device (usually TinyUSB / MicroPython)
     
@@ -78,7 +152,17 @@ def verify_and_prepare_device(port_arg=None):
         logger.info("Device appears to be in MicroPython mode. Attempting to connect...")
         try:
             ctrl = ESP32Controller(port=port, timeout=1.0)
-            logger.info("Successfully connected to MicroPython REPL.")
+            logger.info("Successfully connected to MicroPython REPL. Rebooting device to bootloader...")
+            try:
+                ctrl.exec_no_wait("import machine; machine.bootloader()")
+            except Exception:
+                pass
+            ctrl.close()
+        except serial.SerialException as e:
+            logger.error(f"Cannot access serial port {port}: {e}")
+            logger.error("The port is currently in use by another application (e.g., Thonny).")
+            logger.error("Please close Thonny or any serial monitor connected to the device and try again.")
+            sys.exit(1)
         except Exception as e:
             logger.error("Failed to get a prompt from the device. It is unresponsive!")
             logger.warning("\n*** RECOVERY TRICK INITIATED ***")
@@ -199,6 +283,7 @@ def main():
     )
 
     logger.info("--- Flashing Firmware ---")
+    check_port_availability(active_port)
     subprocess.run(flash_cmd, shell=True, cwd=ESP32_PORT_DIR, executable='/bin/bash', check=True)
 
     logger.info("Firmware flashed successfully!")
