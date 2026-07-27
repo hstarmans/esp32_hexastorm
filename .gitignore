@@ -6,6 +6,7 @@ todo.md
 
 # frozen root
 src/control/frozen_root.py
+src/control/build_info.py
 
 # don't track files in jobs or fpga
 src/root/sd/jobs/*

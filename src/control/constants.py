@@ -179,14 +179,37 @@ def deploy_assets(overwrite=False):
             logger.info("Migrating user settings into new configuration file...")
             new_dct = merge_configs(new_dct, old_dct)
             
-            # Save the merged config back to config.json
+            # Save the merged config back to config.json with pretty formatting
+            clean_dct = sanitize_types(new_dct)
             with open(CONFIG_FILE, "w") as f_out:
-                json.dump(new_dct, f_out)
+                if not ESP32:
+                    recurse_dct(clean_dct, "src/root/sd/", "sd/")
+                    json.dump(clean_dct, f_out, indent=4)
+                    recurse_dct(clean_dct, "sd/", "src/root/sd/")
+                else:
+                    dump_pretty_json(clean_dct, f_out, indent=4)
                 
             # Remove the temp backup after successful merge
             os.remove(CONFIG_OLD_FILE)
         except Exception as e:
             logger.error(f"Failed to merge old configuration: {e}")
+
+    # Clean up compiled utemplate .py files so newly deployed templates are forced to regenerate
+    try:
+        for f in os.listdir("templates"):
+            if f.endswith(".py"):
+                try:
+                    os.remove(f"templates/{f}")
+                except OSError:
+                    pass
+        try:
+            for f in os.listdir("templates/__pycache__"):
+                os.remove(f"templates/__pycache__/{f}")
+            os.rmdir("templates/__pycache__")
+        except OSError:
+            pass
+    except OSError:
+        pass
 
     # Record deployed build ID
     if current_build_id:

@@ -403,6 +403,41 @@ async def diode_test(request, session):
     return {"status": "started"}
 
 
+@app.post("/control/save_facet_means")
+@with_session
+async def save_facet_means(request, session):
+    """Saves the last measured diode test facet means as the new baseline reference in config.json."""
+    if laserhead.state["printing"]:
+        return {"error": "Busy printing"}, 409
+
+    diodetest = laserhead.state["components"].get("diodetest")
+    if not diodetest or not isinstance(diodetest, dict) or "facets" not in diodetest:
+        return {"error": "No valid diode test data available"}, 400
+
+    facets = diodetest["facets"]
+    # Safely parse integer or string keys from JSON/Dict
+    facet_dict = {int(k): v for k, v in facets.items()}
+    sorted_ids = sorted(facet_dict.keys())
+    new_means = [float(facet_dict[i]["mean_ms"]) for i in sorted_ids]
+
+    if not new_means:
+        return {"error": "No facet timing data to save"}, 400
+
+    if "laserhead" not in CONFIG:
+        CONFIG["laserhead"] = {}
+    CONFIG["laserhead"]["facetmeans"] = new_means
+    update_config()
+
+    # Update current diodetest report ref values so UI reflects the new reference instantly
+    for orig_k, facet_data in facets.items():
+        facet_data["ref_mean_ms"] = round(float(facet_data["mean_ms"]), 4)
+        facet_data["delta_mean_ms"] = 0.0000
+
+    await laserhead.notify_listeners()
+    logger.info(f"Saved new calibration reference facet means: {new_means}")
+    return laserhead.state
+
+
 @app.post("/print/control")
 @with_session
 async def print_control(request, session):

@@ -1,9 +1,3 @@
-declare var Alpine: any;
-// needed for to recognize Alpine.js global variable in home.js
-
-/**
- * Base properties and magics injected by Alpine.js into components.
- */
 interface AlpineComponent {
     $el: HTMLElement;
     $refs: Record<string, any>;
@@ -11,6 +5,24 @@ interface AlpineComponent {
     $watch(property: string, callback: (value: any, oldValue?: any) => void): void;
     $nextTick(callback: () => void): void;
     $dispatch(event: string, detail?: any): void;
+}
+
+type AlpineComponentFactory = (this: AlpineComponent & Record<string, any>, ...args: any[]) => Record<string, any>;
+
+interface Alpine {
+    store(name: string, value?: any): any;
+    data(name: string, callback: AlpineComponentFactory): void;
+}
+
+declare var Alpine: Alpine;
+
+interface Window {
+    api: {
+        post(url: string, payload?: any): Promise<void>;
+        gotopoint(position: number[], absolute?: boolean, workspace?: boolean): void;
+    };
+    diodeTest: () => void;
+    saveFacetMeans: () => void;
 }
 
 /**

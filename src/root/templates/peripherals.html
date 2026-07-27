@@ -38,7 +38,7 @@
                 
                 <div class="d-flex justify-content-between align-items-center mb-1">
                     <span class="small text-warning fw-bold">
-                        <i class="bi bi-gear-wide-connected"></i> Spindle Speed
+                        <i class="bi bi-gear-wide-connected" :class="$store.machine.components.spindle > 0 ? 'spin-animation' : ''"></i> Spindle Speed
                     </span>
                     <span class="badge bg-warning text-dark font-monospace" 
                           x-text="Math.round((tempSpindle / 255) * 100) + '%'"></span>
@@ -79,16 +79,47 @@
     <div class="modal fade" id="diodemodal" tabindex="-1" aria-hidden="true"
          x-data="{ 
              isTesting: false,  
+             savedRef: false,
+             elapsedSeconds: 0,
+             testDuration: null,
+             timerId: null,
              init() {
                  this.$watch('$store.machine.components.diodetest', (value) => {
                      if (this.isTesting && value !== null) {
+                         this.stopTimer();
+                         this.testDuration = this.elapsedSeconds;
                          this.isTesting = false;
                      }
                  });
              },
              startTest() {
                  this.isTesting = true;
-                 diodeTest();
+                 this.elapsedSeconds = 0;
+                 this.testDuration = null;
+                 this.startTimer();
+                 window.api.post('/control/diodetest');
+             },
+             startTimer() {
+                 this.stopTimer();
+                 this.timerId = setInterval(() => {
+                     this.elapsedSeconds++;
+                 }, 1000);
+             },
+             stopTimer() {
+                 if (this.timerId) {
+                     clearInterval(this.timerId);
+                     this.timerId = null;
+                 }
+             },
+             async saveFacetMeans() {
+                 await window.api.post('/control/save_facet_means');
+                 this.savedRef = true;
+                 setTimeout(() => { this.savedRef = false; }, 2500);
+             },
+             formatTime(sec) {
+                 const m = Math.floor(sec / 60);
+                 const s = sec % 60;
+                 return `${m}:${s < 10 ? '0' : ''}${s}`;
              }
          }">
         <div class="modal-dialog">
@@ -99,9 +130,13 @@
                 </div>
                 <div class="modal-body text-center p-4">
                     <div x-show="isTesting" class="py-4">
-                        <div class="spinner-border text-primary" role="status"></div>
-                        <h5 class="mt-3">Testing in progress...</h5>
-                        <p class="text-muted small">Measuring facet jitter profiles.<br>Do not open the laser enclosure.</p>
+                        <div class="spinner-border text-primary mb-3" role="status" style="width: 3rem; height: 3rem;"></div>
+                        <h5>Testing in progress...</h5>
+                        <div class="fs-4 font-monospace text-warning my-2">
+                            <i class="bi bi-stopwatch me-1"></i>
+                            <span x-text="formatTime(elapsedSeconds)">0:00</span>
+                        </div>
+                        <p class="text-muted small mb-0">Measuring facet jitter profiles (typically takes ~1 minute).<br>Do not open the laser enclosure.</p>
                     </div>
                     <div x-show="!isTesting">
                         <template x-if="$store.machine.components.diodetest === null">
@@ -115,7 +150,12 @@
                             <div class="text-start">
                                 <div class="text-center mb-4">
                                     <i class="bi display-1" :class="$store.machine.components.diodetest.passed ? 'bi-check-circle-fill text-success' : 'bi-exclamation-triangle-fill text-danger'"></i>
-                                    <h4 class="mt-2" :class="$store.machine.components.diodetest.passed ? 'text-success' : 'text-danger'" x-text="$store.machine.components.diodetest.passed ? 'System Passed' : 'Diagnostic Failed'"></h4>
+                                    <h4 class="mt-2" :class="$store.machine.components.diodetest.passed ? 'text-success' : 'text-danger'">
+                                        <span x-text="$store.machine.components.diodetest.passed ? 'System Passed' : 'Diagnostic Failed'"></span>
+                                        <template x-if="testDuration !== null">
+                                            <span class="fs-6 text-muted ms-2 font-monospace" x-text="`in ${testDuration}s`"></span>
+                                        </template>
+                                    </h4>
                                 </div>
                                 <div class="row text-center mb-4">
                                     <div class="col border-end border-secondary">
@@ -133,11 +173,20 @@
                                         <div class="list-group-item bg-transparent text-light border-secondary px-1 d-flex justify-content-between align-items-center">
                                             <div>
                                                 <span class="badge me-2" :class="data.passed ? 'bg-success' : 'bg-danger'" x-text="`Facet ${facetId}`"></span>
-                                                <small class="text-muted" x-text="`${data.mean_ms.toFixed(4)} ms`"></small>
+                                                <small class="font-monospace text-light me-1" x-text="`${data.mean_ms.toFixed(4)} ms`"></small>
+                                                <template x-if="data.ref_mean_ms !== undefined">
+                                                    <small class="text-muted font-monospace me-2" x-text="`(Ref: ${data.ref_mean_ms.toFixed(4)} ms)`"></small>
+                                                </template>
+                                                <template x-if="data.cpk !== undefined">
+                                                    <span class="badge bg-dark border border-secondary text-info" x-text="`Cpk ${data.cpk.toFixed(2)}`"></span>
+                                                </template>
                                             </div>
                                             <div class="text-end" :class="data.passed ? 'text-success' : 'text-danger'">
                                                 <i class="bi me-1" :class="data.passed ? 'bi-check2' : 'bi-x-lg'"></i>
                                                 <span class="font-monospace" x-text="`${data.jitter_perc.toFixed(4)}%`"></span>
+                                                <template x-if="data.pct_in_spec !== undefined">
+                                                    <div class="text-muted small" style="font-size: 0.7rem;" x-text="`${data.pct_in_spec.toFixed(1)}% in spec`"></div>
+                                                </template>
                                             </div>
                                         </div>
                                     </template>
@@ -147,6 +196,17 @@
                     </div>
                 </div>
                 <div class="modal-footer border-secondary">
+                    <button x-show="!isTesting && $store.machine.components.diodetest !== null" 
+                            type="button" 
+                            class="btn me-auto transition-all" 
+                            :class="savedRef ? 'btn-success text-white' : 'btn-outline-success'"
+                            data-bs-toggle="tooltip" 
+                            data-bs-placement="top" 
+                            title="Save measured facet means as calibration reference in config"
+                            @click="saveFacetMeans()">
+                        <i class="bi me-1" :class="savedRef ? 'bi-check-circle-fill' : 'bi-bookmark-check'"></i>
+                        <span x-text="savedRef ? 'Reference Saved!' : 'Save as Reference'"></span>
+                    </button>
                     <button x-show="!isTesting && $store.machine.components.diodetest !== null" type="button" class="btn btn-outline-primary" @click="startTest()">
                         <i class="bi bi-arrow-clockwise"></i> Remeasure
                     </button>
@@ -158,8 +218,8 @@
 </div>
 
 <style>
-    /* Alleen animeren als het expliciet de klasse 'spin-animation' heeft gekregen via Alpine! */
-    .bi-fan.spin-animation {
+    /* Animate any element given the 'spin-animation' class */
+    .spin-animation {
         animation: spin 1s linear infinite;
         display: inline-block;
         transform-origin: center; 

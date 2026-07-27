@@ -8,9 +8,11 @@
         {% include 'printingstate.html' %}
 
         <div id="controlstate"
-            class="container-fluid" style="max-width: 1200px;"
+            class="container-fluid"
+            {% if state.get('printing', False) %}style="max-width: 1200px; display: none;"{% else %}style="max-width: 1200px;"{% endif %}
             x-data="movement"
-            x-show="!$store.machine.printing">
+            x-show="!$store.machine.printing"
+            x-cloak>
 
             <div class="row g-2 mb-4">
                 <div class="col-12">

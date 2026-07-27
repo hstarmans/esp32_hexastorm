@@ -35,14 +35,15 @@
  * @property {number[]} mpos - Machine position mm [x, y, z]
  * @property {number[]} wpos - Workspace position mm [x, y, z]
  * @property {number} [notauthorized] - Optional flag if session is invalid
+ * @property {string} [status] - Optional operational status message
  */
 
 // --- MAIN LOGIC ---
 
 document.addEventListener("alpine:init", () => {
-    
+
     // 1. CENTRAL API HELPER
-    const api = {
+    window.api = {
         /**
          * Basic post request with error handling and state update
          * @param {string} url 
@@ -55,13 +56,12 @@ document.addEventListener("alpine:init", () => {
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify(payload),
                 });
-                
+
                 if (!res.ok) throw new Error(res.statusText);
-                
+
                 const data = await res.json();
-                // @ts-ignore
                 Alpine.store('machine').update(data);
-                
+
             } catch (err) {
                 console.error(url, err);
                 alert("Command failed: " + err);
@@ -78,6 +78,7 @@ document.addEventListener("alpine:init", () => {
             this.post('/gotopoint', { position, absolute, workspace });
         }
     };
+    const api = window.api;
 
     // 2. GLOBAL MACHINE STORE
     Alpine.store('machine', {
@@ -104,7 +105,7 @@ document.addEventListener("alpine:init", () => {
         },
         mpos: [0.00, 0.00, 0.00], // machine position in mm
         wpos: [0.00, 0.00, 0.00], // workspace position in mm
-        
+
         /**
          * Updates the store with data from the server
          * @param {MachineState} data - The JSON object from the backend
@@ -117,23 +118,31 @@ document.addEventListener("alpine:init", () => {
 
             const isValidPacket = (
                 typeof data.printing !== 'undefined' &&
-                data.job &&            
-                data.components &&     
-                data.mpos &&           
-                data.wpos              
+                data.job &&
+                data.components &&
+                data.mpos &&
+                data.wpos
             );
 
             if (!isValidPacket) {
-                console.warn("Ignored incomplete state packet:", data);
+                if (!data.status) {
+                    console.warn("Ignored incomplete state packet:", data);
+                }
                 return;
             }
 
             this.printing = data.printing;
-            this.paused = data.paused || false; 
+            this.paused = data.paused || false;
             this.job = data.job;
-            this.components = data.components;
             this.mpos = data.mpos;
             this.wpos = data.wpos;
+            if (data.components) {
+                this.components.rotating = data.components.rotating;
+                this.components.laser = data.components.laser;
+                this.components.spindle = data.components.spindle;
+                this.components.fan = data.components.fan;
+                this.components.diodetest = data.components.diodetest ? JSON.parse(JSON.stringify(data.components.diodetest)) : null;
+            }
         },
 
         /**
@@ -172,12 +181,12 @@ document.addEventListener("alpine:init", () => {
                 const axes = /** @type {number[]} */ (JSON.parse(button.dataset.axes));
                 api.post("/home", { axes: axes });
             }
-            else if (button.dataset.vector){
+            else if (button.dataset.vector) {
                 // Tell TypeScript this is definitely an array of numbers
                 const vector = /** @type {number[]} */ (JSON.parse(button.dataset.vector));
-                
+
                 const targetPos = vector.map(v => v * this.step);
-                
+
                 // Call central API with absolute=false for jogging
                 api.gotopoint(targetPos, false, false);
             }
@@ -186,39 +195,40 @@ document.addEventListener("alpine:init", () => {
 
     // 4. COMMANDS LOGIC (HARDWARE ACTIONS)
     Alpine.data("commands", () => ({
-        
+
         toggleLaser() { api.post('/control/laser'); },
         togglePrism() { api.post('/control/prism'); },
-        diodeTest()   { api.post('/control/diodetest'); },
-        
+        diodeTest() { api.post('/control/diodetest'); },
+        saveFacetMeans() { api.post('/control/save_facet_means'); },
+
         /** @param {number} value */
         setSpindle(value) { api.post('/control/spindle', { value: value }); },
-        
+
         /** @param {number} value */
-        setFan(value)     { api.post('/control/fan', { value: value }); },
-        
+        setFan(value) { api.post('/control/fan', { value: value }); },
+
         /** @param {number[]} [axes=[1, 1, 1]] */
         setWorkspaceZero(axes = [1, 1, 1]) { api.post('/setworkspacezero', { axes: axes }); },
-        
+
         /** * @param {number[]} position 
          * @param {boolean} [workspace=true] 
          */
-        goto(position, workspace = true) { 
-            api.gotopoint(position, true, workspace); 
+        goto(position, workspace = true) {
+            api.gotopoint(position, true, workspace);
         },
-        
-        stopPrint()   { api.post('/print/control', { action: 'stop' }); },
-        pausePrint()  { api.post('/print/control', { action: 'pause' }); },
-        
+
+        stopPrint() { api.post('/print/control', { action: 'stop' }); },
+        pausePrint() { api.post('/print/control', { action: 'pause' }); },
+
         async reboot() {
-            if(!confirm("Are you sure you want to reboot the system?")) return;
+            if (!confirm("Are you sure you want to reboot the system?")) return;
 
             try {
                 await fetch("/reset", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" }
                 });
-                
+
                 alert("System is rebooting. Page will reload in 10 seconds.");
                 setTimeout(() => window.location.reload(), 10000);
 
@@ -258,7 +268,7 @@ document.addEventListener("alpine:init", () => {
             this.errorMessage = '';
 
             this.xhr = new XMLHttpRequest();
-            
+
             if (this.xhr.upload) {
                 this.xhr.upload.addEventListener("progress", (e) => {
                     if (e.lengthComputable) {
@@ -272,7 +282,7 @@ document.addEventListener("alpine:init", () => {
 
                 if (this.xhr.status === 200) {
                     alert("Upload successful!");
-                    window.location.reload(); 
+                    window.location.reload();
                 } else {
                     this.handleError(`Server Error: ${this.xhr.status} - ${this.xhr.statusText}`);
                 }
@@ -316,7 +326,7 @@ document.addEventListener("alpine:init", () => {
             /** @type {HTMLSelectElement} */
             // @ts-ignore
             const select = this.$refs.fileSelector;
-            
+
             if (!select || !select.value) {
                 alert("Please select a file first.");
                 return;
@@ -369,7 +379,6 @@ document.addEventListener("alpine:init", () => {
         homeBeforePrint: true,
         useCustomStart: false,
 
-        /** @this {PrintLauncher} */
         init() {
             this.$nextTick(() => {
                 const select = /** @type {HTMLSelectElement | null} */ (this.$refs.fileSelect);
@@ -385,16 +394,16 @@ document.addEventListener("alpine:init", () => {
             });
         },
 
-        /** * @this {PrintLauncher}
+        /**
          * @param {string} filename 
          */
         detectMode(filename) {
             // Fallback check voor het geval de runtime toch iets geks doorgeeft
             if (!filename || typeof filename !== 'string') return;
-            
+
             const parts = filename.split('.');
-            const ext = parts.length > 1 ? parts.pop()?.toLowerCase() : '';
-            
+            const ext = (parts.length > 1 ? parts.pop() : '')?.toLowerCase() || '';
+
             if (ext && ['gcode', 'nc', 'tap'].includes(ext)) {
                 this.jobMode = 'cnc';
             } else {
@@ -402,7 +411,6 @@ document.addEventListener("alpine:init", () => {
             }
         },
 
-        /** @this {PrintLauncher} */
         async startPrint() {
             if (!this.selectedFile) {
                 alert("Please select a file.");
@@ -421,8 +429,8 @@ document.addEventListener("alpine:init", () => {
                     home_before_print: this.homeBeforePrint,
                     use_custom_start: this.useCustomStart,
                     workspace_origin: [
-                        Number(this.posX), 
-                        Number(this.posY), 
+                        Number(this.posX),
+                        Number(this.posY),
                         Number(this.posZ)
                     ]
                 };
@@ -471,7 +479,7 @@ document.addEventListener("alpine:init", () => {
                 const res = await fetch('/api/settings');
                 if (res.ok) {
                     const data = await res.json();
-                    
+
                     // Merge incoming data over the stubbed defaults
                     this.wifi_login = { ...this.wifi_login, ...data.wifi_login };
                     this.motors = { ...this.motors, ...data.motors };
@@ -513,7 +521,7 @@ document.addEventListener("alpine:init", () => {
 
         async factoryReset() {
             if (!confirm("WARNING: This will wipe all calibration and Wi-Fi data. Are you sure?")) return;
-            
+
             try {
                 await fetch('/api/settings/reset', { method: 'POST' });
                 alert("Factory reset triggered. Rebooting...");
@@ -525,7 +533,7 @@ document.addEventListener("alpine:init", () => {
     }));
 
     Alpine.data('firmwareUpdater', () => ({
-        currentVersion: 'Loading...', 
+        currentVersion: 'Loading...',
         latestVersion: '',
         checking: false,
         checked: false,
@@ -556,11 +564,11 @@ document.addEventListener("alpine:init", () => {
             this.errorMessage = '';
             this.checked = false;
             this.updateAvailable = false;
-            
+
             try {
                 const response = await fetch('/api/system/update/check');
                 if (!response.ok) throw new Error('Failed to check for updates');
-                
+
                 const data = await response.json();
                 this.currentVersion = data.current_version;
                 this.latestVersion = data.latest_version;
@@ -575,28 +583,28 @@ document.addEventListener("alpine:init", () => {
 
         /** @param {boolean} force */
         async applyUpdate(force = false) {
-            const msg = force 
+            const msg = force
                 ? "Force a reinstall of the current firmware? The machine will be unresponsive for 1-2 minutes and will reboot automatically."
                 : "Are you sure you want to update the firmware? The machine will be unresponsive for 1-2 minutes and will reboot automatically.";
 
             if (!confirm(msg)) {
                 return;
             }
-            
+
             this.isUpdating = true;
             this.errorMessage = '';
-            
+
             try {
-                const response = await fetch('/api/system/update/apply', { 
+                const response = await fetch('/api/system/update/apply', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({ force: force })
                 });
-                
+
                 if (!response.ok) throw new Error('Failed to start update');
-                
+
             } catch (error) {
                 this.isUpdating = false;
                 this.errorMessage = "Failed to trigger the update process.";
@@ -614,9 +622,9 @@ function initializeSocket() {
     if (stateSocket && stateSocket.readyState !== EventSource.CLOSED) return;
 
     stateSocket = new EventSource('/state');
-    
+
     stateSocket.onmessage = (event) => {
-        if(event.type === 'ping' || event.data === 'ping') return;
+        if (event.type === 'ping' || event.data === 'ping') return;
 
         const data = JSON.parse(event.data);
         // @ts-ignore
@@ -625,7 +633,7 @@ function initializeSocket() {
 
     stateSocket.onerror = (_err) => {
         console.log("SSE connection lost, retrying in 2s...");
-        if(stateSocket) stateSocket.close();
+        if (stateSocket) stateSocket.close();
         setTimeout(initializeSocket, 2000);
     };
 }

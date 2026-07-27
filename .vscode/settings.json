@@ -1,4 +1,5 @@
 {  "python.analysis.diagnosticSeverityOverrides": {
         "reportMissingModuleSource": "none"
     },
+    "cmake.ignoreCMakeListsMissing": true,
 }

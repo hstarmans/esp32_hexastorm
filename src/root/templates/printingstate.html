@@ -1,10 +1,11 @@
 <div id="printingstate" 
      class="container-fluid mb-4" 
-     style="max-width: 800px;"
+     {% if not state.get('printing', False) %}style="max-width: 800px; display: none;"{% else %}style="max-width: 800px;"{% endif %}
      x-data="commands"
      x-show="$store.machine.printing"
-     x-transition.opacity.duration.500ms
-     style="display: none;"> <div class="card bg-dark border-secondary shadow-lg">
+     x-cloak
+     x-transition.opacity.duration.500ms>
+     <div class="card bg-dark border-secondary shadow-lg">
         <div class="card-header border-secondary d-flex justify-content-between align-items-center">
             <span>
                 <i class="bi bi-printer-fill me-2"></i> 

@@ -185,9 +185,10 @@ class Laserhead(BaseLaserhead, ESP32Host):
                 return
         shift = find_shift(self.cur_facet_means, self.facet_means)[0]
 
-        # 2. Pass the shift down to the parent for accurate logging
+        # 2. Pass shift and stored calibration reference down to the parent
         self.state["components"]["diodetest"] = await super().test_laserhead(
-            shift=shift
+            shift=shift,
+            ref_facet_means=self.facet_means,
         )
 
         # Restore synchronization and motor to their original states
