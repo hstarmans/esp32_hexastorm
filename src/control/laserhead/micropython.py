@@ -157,7 +157,7 @@ class Laserhead(BaseLaserhead, ESP32Host):
             value (bool): True to enable synchronization, False to disable.
         """
         res = await super().synchronize(value)
-        if value:
+        if value and res:
             self.cur_facet_means = await self.measure_facet_means()
         else:
             self.cur_facet_means = None

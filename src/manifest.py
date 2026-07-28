@@ -4,7 +4,10 @@ import subprocess
 import sys
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING
+try:
+    from typing import TYPE_CHECKING
+except ImportError:
+    TYPE_CHECKING = False
 
 # Configure logging to standard output
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
