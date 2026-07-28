@@ -236,16 +236,152 @@ def verify_and_prepare_device(port_arg=None):
     return port
 
 
+def run_remote_ssh(remote_host, command_str, check=True, capture_output=True):
+    """Executes a shell command on the remote host via SSH."""
+    ssh_cmd = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", remote_host, command_str]
+    return subprocess.run(ssh_cmd, check=check, capture_output=capture_output, text=True)
+
+
+def run_remote_python(remote_host, script_content):
+    """Executes a Python script on the remote host via SSH stdin."""
+    ssh_cmd = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", remote_host, "python3 -"]
+    return subprocess.run(ssh_cmd, input=script_content, text=True, capture_output=True)
+
+
+
+def verify_and_prepare_remote_device(remote_host, port_arg=None):
+    """
+    Checks if an Espressif device is connected on the remote host over SSH.
+    Prepares it by rebooting into bootloader mode if needed.
+    Returns the port name on the remote host.
+    """
+    port_arg_repr = repr(port_arg) if port_arg else "None"
+    remote_script = f"""
+import sys, os, time, serial, serial.tools.list_ports
+
+port_arg = {port_arg_repr}
+ports = list(serial.tools.list_ports.comports())
+
+active_port = None
+pid = None
+
+if port_arg:
+    for p in ports:
+        if p.device == port_arg:
+            active_port, pid = p.device, p.pid
+            break
+    if not active_port:
+        active_port, pid = port_arg, None
+else:
+    for p in ports:
+        if p.vid == 0x303A:
+            active_port, pid = p.device, p.pid
+            break
+
+if not active_port:
+    print("NO_DEVICE")
+    sys.exit(1)
+
+if pid == 0x1001:
+    print(f"READY:{{active_port}}")
+    sys.exit(0)
+
+# Device is in MicroPython mode (0x4001) or unknown. Reboot to bootloader via REPL.
+try:
+    with serial.Serial(active_port, 115200, timeout=1.0) as s:
+        for _ in range(3):
+            s.write(b"\\r\\x03")
+            time.sleep(0.1)
+            s.write(b"\\x01")
+            time.sleep(0.1)
+        s.write(b"import machine; machine.bootloader()\\x04")
+        time.sleep(0.5)
+except Exception:
+    pass
+
+# Poll for device to enter bootloader mode (PID 0x1001 or port reset)
+start_time = time.time()
+while time.time() - start_time < 10:
+    time.sleep(0.5)
+    p_list = list(serial.tools.list_ports.comports())
+    for p in p_list:
+        if p.device == active_port and p.pid == 0x1001:
+            print(f"READY:{{active_port}}")
+            sys.exit(0)
+
+if os.path.exists(active_port):
+    print(f"READY:{{active_port}}")
+    sys.exit(0)
+
+print("TIMEOUT")
+sys.exit(1)
+"""
+
+    logger.info(f"Connecting to remote target {remote_host}...")
+    res = run_remote_python(remote_host, remote_script)
+
+    if res.returncode != 0:
+        if "NO_DEVICE" in res.stdout:
+            logger.error(f"No Espressif device found on remote host {remote_host}.")
+        else:
+            logger.error(f"Failed to prepare remote device on {remote_host}: {res.stderr or res.stdout}")
+        sys.exit(1)
+
+    for line in res.stdout.splitlines():
+        if line.startswith("READY:"):
+            remote_port = line.split(":", 1)[1].strip()
+            logger.info(f"Remote device on {remote_host} ready on port {remote_port}")
+            return remote_port
+
+    logger.error(f"Unexpected response from remote pre-flight check: {res.stdout}")
+    sys.exit(1)
+
+
+
+def transfer_binaries_remote(remote_host, local_build_dir, remote_dir="/tmp/esp32_build"):
+    """
+    Transfers the compiled ESP32 firmware binaries from local_build_dir to remote_host:remote_dir.
+    """
+    logger.info(f"Preparing remote directory {remote_dir} on {remote_host}...")
+    run_remote_ssh(remote_host, f"mkdir -p {remote_dir}")
+
+    bins = [
+        "bootloader/bootloader.bin",
+        "micropython.bin",
+        "partition_table/partition-table.bin",
+        "ota_data_initial.bin",
+    ]
+    local_files = [os.path.join(local_build_dir, b) for b in bins]
+
+    for f in local_files:
+        if not os.path.exists(f):
+            logger.error(f"Required build artifact missing: {f}")
+            sys.exit(1)
+
+    logger.info(f"Transferring firmware binaries to {remote_host}:{remote_dir}...")
+    scp_cmd = ["scp", "-q"] + local_files + [f"{remote_host}:{remote_dir}/"]
+    res = subprocess.run(scp_cmd, capture_output=True, text=True)
+    if res.returncode != 0:
+        logger.error(f"Failed to transfer binaries over scp: {res.stderr}")
+        sys.exit(1)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Build and flash ESP32 firmware")
     parser.add_argument(
         "--port", "-p", default=None, help="Serial port of the ESP32 (leave blank to auto-detect)"
     )
+    parser.add_argument(
+        "--remote", "-r", default=None, help="Remote host via SSH (e.g. hexastorm@pihome.home)"
+    )
     args = parser.parse_args()
 
     # Pre-flight check: ensure device is ready to be flashed BEFORE building.
     logger.info("--- Pre-flight Device Check ---")
-    active_port = verify_and_prepare_device(args.port)
+    if args.remote:
+        active_port = verify_and_prepare_remote_device(args.remote, args.port)
+    else:
+        active_port = verify_and_prepare_device(args.port)
 
     # Verify the micropython port directory exists
     if not os.path.exists(ESP32_PORT_DIR):
@@ -263,31 +399,51 @@ def main():
         "BOARD=ESP32_GENERIC_S3",
         "BOARD_VARIANT=SPIRAM_OCT",
         f"FROZEN_MANIFEST={MANIFEST_PATH}",
-        f"USER_C_MODULES={CMAKE_PATH}"
+        f"USER_C_MODULES={CMAKE_PATH}",
     ]
     build_cmd = f"source {IDF_EXPORT_PATH} && {' '.join(make_cmd)}"
 
     logger.info("--- Building Firmware ---")
     # executable='/bin/bash' is required because 'source' is a bash built-in
-    subprocess.run(build_cmd, shell=True, cwd=ESP32_PORT_DIR, executable='/bin/bash', check=True)
+    subprocess.run(build_cmd, shell=True, cwd=ESP32_PORT_DIR, executable="/bin/bash", check=True)
 
-    # Flash command
-    flash_cmd = (
-        f"source {IDF_EXPORT_PATH} && "
-        f"esptool.py --chip esp32s3 -p {active_port} -b 460800 --before=default_reset "
-        f"--after=watchdog_reset write_flash --flash_mode dio --flash_freq 80m "
-        f"--flash_size 32MB 0x0 build-ESP32_GENERIC_S3-SPIRAM_OCT/bootloader/bootloader.bin "
-        f"0x10000 build-ESP32_GENERIC_S3-SPIRAM_OCT/micropython.bin "
-        f"0x8000 build-ESP32_GENERIC_S3-SPIRAM_OCT/partition_table/partition-table.bin "
-        f"0xd000 build-ESP32_GENERIC_S3-SPIRAM_OCT/ota_data_initial.bin"
-    )
+    local_build_dir = os.path.join(ESP32_PORT_DIR, "build-ESP32_GENERIC_S3-SPIRAM_OCT")
 
-    logger.info("--- Flashing Firmware ---")
-    check_port_availability(active_port)
-    subprocess.run(flash_cmd, shell=True, cwd=ESP32_PORT_DIR, executable='/bin/bash', check=True)
+    if args.remote:
+        logger.info(f"--- Transferring Binaries to Remote Target ({args.remote}) ---")
+        transfer_binaries_remote(args.remote, local_build_dir)
+
+        remote_flash_cmd = (
+            f"export PATH=$HOME/.local/bin:$PATH && "
+            f"esptool --chip esp32s3 -p {active_port} -b 460800 --before=default_reset "
+            f"--after=hard_reset write_flash --flash_mode dio --flash_freq 80m "
+            f"--flash_size 32MB 0x0 /tmp/esp32_build/bootloader.bin "
+            f"0x10000 /tmp/esp32_build/micropython.bin "
+            f"0x8000 /tmp/esp32_build/partition-table.bin "
+            f"0xd000 /tmp/esp32_build/ota_data_initial.bin"
+        )
+
+        logger.info(f"--- Flashing Firmware Remotely on {args.remote} ---")
+        run_remote_ssh(args.remote, remote_flash_cmd, check=True, capture_output=False)
+    else:
+        # Local flash command
+        flash_cmd = (
+            f"source {IDF_EXPORT_PATH} && "
+            f"esptool.py --chip esp32s3 -p {active_port} -b 460800 --before=default_reset "
+            f"--after=watchdog_reset write_flash --flash_mode dio --flash_freq 80m "
+            f"--flash_size 32MB 0x0 build-ESP32_GENERIC_S3-SPIRAM_OCT/bootloader/bootloader.bin "
+            f"0x10000 build-ESP32_GENERIC_S3-SPIRAM_OCT/micropython.bin "
+            f"0x8000 build-ESP32_GENERIC_S3-SPIRAM_OCT/partition_table/partition-table.bin "
+            f"0xd000 build-ESP32_GENERIC_S3-SPIRAM_OCT/ota_data_initial.bin"
+        )
+
+        logger.info("--- Flashing Firmware ---")
+        check_port_availability(active_port)
+        subprocess.run(flash_cmd, shell=True, cwd=ESP32_PORT_DIR, executable="/bin/bash", check=True)
 
     logger.info("Firmware flashed successfully!")
 
 
 if __name__ == "__main__":
     main()
+
