@@ -455,6 +455,7 @@ class Laserhead(BaseLaserhead, ESP32Host):
                     self.enable_steppers = True
                 for lane in range(lanes):
                     if await self.handle_pausing_and_stopping():
+                        await self.write_line([])
                         break
                     self.state["job"]["currentline"] = int(lane * facets_lane)
                     self.state["job"]["printingtime"] = round(time() - start_time)
@@ -466,9 +467,9 @@ class Laserhead(BaseLaserhead, ESP32Host):
                             [0, -lane_width, 0], absolute=False, check_sensors=False
                         )
                     if lane % 2 == 1:
-                        logger.info("Start exposing forward lane.")
+                        logger.info("Start exposing backward lane.")
                     else:
-                        logger.info("Start exposing back lane.")
+                        logger.info("Start exposing forward lane.")
 
                     total_facets = int(self.cfg.laser_timing["rpm"] / exposures)
                     if self.state["job"]["singlefacet"]:
@@ -486,6 +487,8 @@ class Laserhead(BaseLaserhead, ESP32Host):
                                 )
                                 await self.notify_listeners()
                                 if await self.handle_pausing_and_stopping():
+                                    # send stopline
+                                    await self.write_line([])
                                     break
                             last_facet = min(facet + lines_chunk, facets_lane)
                             to_read = last_facet - facet
@@ -498,7 +501,7 @@ class Laserhead(BaseLaserhead, ESP32Host):
                             )
                     else:
                         for facet in range(facets_lane):
-                            if facet % total_facets == 0:
+                            if facet % 1000 == 0:
                                 self.state["job"]["currentline"] = (
                                     int(lane * facets_lane) + facet
                                 )
@@ -521,12 +524,11 @@ class Laserhead(BaseLaserhead, ESP32Host):
                                 list(line_data) * exposures,
                                 timeout=True,
                             )
+                    await self.write_line([])
 
         # disable scanhead
         await self.notify_listeners()
         logger.info("Waiting for stopline to execute.")
-        # send stopline
-        await self.write_line([])
         await self.wait_fifo_empty()
         await self.synchronize(False)
         self.enable_steppers = False

@@ -279,14 +279,29 @@
 </div>
 
 <div class="modal fade" id="gotoModal" tabindex="-1" aria-labelledby="gotoModalLabel" aria-hidden="true" x-data="commands">
-    <div class="modal-dialog modal-dialog-centered" x-data="{ targetX: 0, targetY: 0, targetZ: 0 }">
+    <div class="modal-dialog modal-dialog-centered" x-data="{ targetX: 0, targetY: 0, targetZ: 0, coordType: 'workspace' }">
         <div class="modal-content bg-dark border-secondary text-light">
             <div class="modal-header border-secondary">
-                <h5 class="modal-title" id="gotoModalLabel"><i class="bi bi-geo-alt"></i> Rapid Go To (WPOS)</h5>
+                <h5 class="modal-title" id="gotoModalLabel"><i class="bi bi-geo-alt"></i> Rapid Go To</h5>
                 <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-                <p class="small text-muted mb-3">Voer de absolute werkstuk-coördinaten in waarnaar de machine moet bewegen.</p>
+                <div class="mb-3">
+                    <label class="form-label small text-muted">Coördinatensysteem</label>
+                    <div class="btn-group w-100" role="group">
+                        <input type="radio" class="btn-check" name="coordType" id="coordWorkspace" value="workspace" x-model="coordType" checked>
+                        <label class="btn btn-outline-primary btn-sm" for="coordWorkspace">
+                            Workspace (WPOS)
+                        </label>
+
+                        <input type="radio" class="btn-check" name="coordType" id="coordMachine" value="machine" x-model="coordType">
+                        <label class="btn btn-outline-primary btn-sm" for="coordMachine">
+                            Machine (MPOS)
+                        </label>
+                    </div>
+                </div>
+
+                <p class="small text-muted mb-3" x-text="coordType === 'workspace' ? 'Voer de absolute werkstuk-coördinaten (WPOS) in waarnaar de machine moet bewegen.' : 'Voer de absolute machine-coördinaten (MPOS) in waarnaar de machine moet bewegen.'"></p>
                 
                 <div class="row g-2">
                     <div class="col-4">
@@ -311,7 +326,7 @@
             </div>
             <div class="modal-footer border-secondary">
                 <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-sm btn-primary" data-bs-dismiss="modal" @click="goto([targetX, targetY, targetZ], true)">
+                <button type="button" class="btn btn-sm btn-primary" data-bs-dismiss="modal" @click="goto([targetX, targetY, targetZ], coordType === 'workspace')">
                     <i class="bi bi-play-fill"></i> Execute Move
                 </button>
             </div>
