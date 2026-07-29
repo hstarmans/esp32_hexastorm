@@ -1,21 +1,22 @@
-import logging
 import asyncio
+import logging
 import struct
 from time import time
+
 import deflate
 
+from hexastorm.config import Spi
 from hexastorm.fpga_host.micropython import ESP32Host
 from hexastorm.fpga_host.syncwrap import syncable
 from hexastorm.fpga_host.tools import find_shift
-from hexastorm.config import Spi
 
 try:
     import numpy as np
 except ImportError:
     from ulab import numpy as np
 
-from .base import BaseLaserhead
 from .. import constants
+from .base import NP_FLOAT, BaseLaserhead
 
 logger = logging.getLogger(__name__)
 
@@ -46,12 +47,16 @@ class Laserhead(BaseLaserhead, ESP32Host):
 
         facet_id  -- facet_id to determine internal facet off
         """
-        # Calculate how many positions the facets have rotated
-        shift = find_shift(self.cur_facet_means, self.facet_means)[0]
+        # Calculate how many positions the facets have rotated and goodness-of-fit metrics
+        shift, corr, _rmse = find_shift(self.cur_facet_means, self.facet_means)
 
         # Apply the shift to find the new position
         num_facets = self.cfg.laser_timing["facets"]
         current_index = (facet_id + shift) % num_facets
+
+        logger.info(
+            f"Facet remap: facet_id {facet_id} mapped to index {current_index} (shift: {shift}, correlation: {corr:.4f})."
+        )
 
         return current_index
 
@@ -176,7 +181,15 @@ class Laserhead(BaseLaserhead, ESP32Host):
             sync_success = await self.synchronize(True)
             if not sync_success:
                 logger.error("Diode test failed: Laser cannot be synchronized.")
-                self.state["components"]["diodetest"] = False
+                self.state["components"]["diodetest"] = {
+                    "passed": False,
+                    "error_reason": "Laser cannot be synchronized",
+                    "global_mean_ms": 0.0,
+                    "global_deviation_perc": 0.0,
+                    "expected_rpm": self.cfg.laser_timing["rpm"],
+                    "measured_rpm": 0,
+                    "facets": {},
+                }
 
                 # Restore synchronization and motor to their original states
                 await self.enable_comp(polygon=cur_polygon)
@@ -225,7 +238,7 @@ class Laserhead(BaseLaserhead, ESP32Host):
 
         try:
             filepath = self.get_job_path(fname)
-            with open(filepath, "r") as f:
+            with open(filepath, "r") as f:  # noqa: ASYNC230, works in micropython
                 for line_num, line in enumerate(f):
                     # Check for pause/stop from the web UI
                     if await self.handle_pausing_and_stopping():
@@ -321,7 +334,7 @@ class Laserhead(BaseLaserhead, ESP32Host):
 
         except OSError:
             logger.error(f"G-code file not found: {fname}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001, all exceptions are caught
             logger.error(f"Error executing G-code at line {line_num}: {e}")
         finally:
             # Clean up
@@ -355,7 +368,7 @@ class Laserhead(BaseLaserhead, ESP32Host):
             cmd_lst = self.byte_to_cmd_list(line)
             commands[direction] = cmd_lst[0]
 
-        with open(self.get_job_path(fname), "rb") as f:
+        with open(self.get_job_path(fname), "rb") as f:  # noqa: SIM117, ASYNC230, in micropython this should be done
             with deflate.DeflateIO(f, deflate.ZLIB) as d:
                 # Header
                 correction = constants.CONFIG["defaultprint"]["lanewidth_correction"]
@@ -370,7 +383,15 @@ class Laserhead(BaseLaserhead, ESP32Host):
                 # position so laser is in focus
                 self.enable_steppers = True
                 laserpower = self.state["job"]["laserpower"]
-                self.laser_current = laserpower
+                try:
+                    self.laser_current = laserpower
+                except OSError as e:
+                    logger.error(f"Aborting print: {e}")
+                    await self.enable_comp(synchronize=False)
+                    self.enable_steppers = False
+                    self.state["printing"] = False
+                    await self.notify_listeners()
+                    return
 
                 # homing logic
 
@@ -387,18 +408,39 @@ class Laserhead(BaseLaserhead, ESP32Host):
                     logger.info(
                         f"Overriding workspace origin to custom MPOS: {custom_origin}"
                     )
-                    self._work_offset = np.array(custom_origin, dtype=float)
+                    self._work_offset = np.array(custom_origin, dtype=NP_FLOAT)
                     self._save_position()
 
-                logger.info("Moving to workspace origin (WPOS 0, 0, 0).")
-                await self.gotopoint([0.0, 0.0, 0.0], absolute=True, workspace=True)
+                logger.info("Moving to workspace origin (WPOS 0, 0).")
+                current_wpos_z = float(self.wpos[2])
+                await self.gotopoint(
+                    [0.0, 0.0, current_wpos_z],
+                    absolute=True,
+                    workspace=True,
+                    check_sensors=False,
+                )
 
-                # enable scanhead
+                # Ensure FPGA parsing is enabled so component commands take effect
+                await self.set_parsing(True)
+
+                # enable scanhead components including polygon motor
                 await self.enable_comp(
-                    synchronize=True,
                     singlefacet=self.state["job"]["singlefacet"],
                 )
                 await asyncio.sleep(2)  # wait for stabilization
+
+                # Synchronize and update facet means
+                sync_success = await self.synchronize(True)
+                if not sync_success:
+                    logger.error(
+                        "Laser synchronization failed: photodiode lock could not be established. Aborting print job."
+                    )
+                    await self.synchronize(False)
+                    self.enable_steppers = False
+                    self.state["printing"] = False
+                    await self.notify_listeners()
+                    raise RuntimeError("Laser synchronization failed.")
+
                 # ensure facet 0 is at the start
                 offset_0 = await self.remap(facet_id=0)
                 # internal facet counter needs to align with calibration table
@@ -420,7 +462,9 @@ class Laserhead(BaseLaserhead, ESP32Host):
                     logger.info(f"Exposing lane {lane + 1} from {lanes}.")
                     if lane > 0:
                         logger.info("Moving in y-direction for next lane.")
-                        await self.gotopoint([0, -lane_width, 0], absolute=False)
+                        await self.gotopoint(
+                            [0, -lane_width, 0], absolute=False, check_sensors=False
+                        )
                     if lane % 2 == 1:
                         logger.info("Start exposing forward lane.")
                     else:
@@ -477,13 +521,14 @@ class Laserhead(BaseLaserhead, ESP32Host):
                                 list(line_data) * exposures,
                                 timeout=True,
                             )
-                    # send stopline
-                    await self.write_line([])
+
         # disable scanhead
         await self.notify_listeners()
         logger.info("Waiting for stopline to execute.")
-        await self.enable_comp(synchronize=False)
+        # send stopline
+        await self.write_line([])
         await self.wait_fifo_empty()
+        await self.synchronize(False)
         self.enable_steppers = False
         if (await self.fpga_state)["error"]:
             logger.info("Error detected during printing")
