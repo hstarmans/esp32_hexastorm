@@ -115,6 +115,8 @@ document.addEventListener("alpine:init", () => {
         mpos: [0.00, 0.00, 0.00], // machine position in mm
         wpos: [0.00, 0.00, 0.00], // workspace position in mm
 
+        estimatedRemainingTime: 'Calculating...',
+
         /**
          * Updates the store with data from the server
          * @param {MachineState} data - The JSON object from the backend
@@ -145,6 +147,18 @@ document.addEventListener("alpine:init", () => {
             this.job = data.job;
             this.mpos = data.mpos;
             this.wpos = data.wpos;
+
+            if (this.job && this.job.currentline >= 50 && this.job.totallines && this.job.printingtime > 0) {
+                const timePerLine = this.job.printingtime / this.job.currentline;
+                const remainingSec = Math.max(0, Math.round((this.job.totallines - this.job.currentline) * timePerLine));
+                const hours = Math.floor(remainingSec / 3600);
+                const mins = Math.floor((remainingSec % 3600) / 60);
+                const secs = remainingSec % 60;
+                const pad = (/** @type {number} */ n) => String(n).padStart(2, '0');
+                this.estimatedRemainingTime = hours > 0 ? `${hours}:${pad(mins)}:${pad(secs)}` : `${pad(mins)}:${pad(secs)}`;
+            } else {
+                this.estimatedRemainingTime = 'Calculating...';
+            }
 
             if (typeof data.error_message !== 'undefined') {
                 const prevError = this.error_message;

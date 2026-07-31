@@ -666,6 +666,11 @@ class BaseLaserhead:
                     for _ in range(offset_0):
                         await self.write_line(dummy_line)
                     self.enable_steppers = True
+                scan_axis = self.cfg.motor_cfg["orth2lsrline"]
+                axis_idx = ["x", "y", "z"].index(scan_axis)
+                steps_per_mm = self.cfg.motor_cfg["steps_mm"][scan_axis]
+                mm_per_facet = (1.0 / exposures) / steps_per_mm
+
                 for lane in range(lanes):
                     if await self.handle_pausing_and_stopping():
                         await self.write_line([])
@@ -679,6 +684,8 @@ class BaseLaserhead:
                         await self.gotopoint(
                             [0, -lane_width, 0], absolute=False, check_sensors=False
                         )
+                    lane_start_x = float(self._position[axis_idx])
+                    direction_sign = 1 if (lane % 2 == 0) else -1
                     if lane % 2 == 1:
                         logger.info("Start exposing backward lane.")
                     else:
@@ -692,6 +699,10 @@ class BaseLaserhead:
                         lines_chunk = self.cfg.hdl_cfg.lines_chunk
                         for facet in range(0, facets_lane, lines_chunk):
                             if facet % 1000 == 0:
+                                self._position[axis_idx] = lane_start_x + (
+                                    direction_sign * facet * mm_per_facet
+                                )
+                                self._save_position()
                                 self.state["job"]["currentline"] = (
                                     int(lane * facets_lane) + facet
                                 )
@@ -715,6 +726,10 @@ class BaseLaserhead:
                     else:
                         for facet in range(facets_lane):
                             if facet % 1000 == 0:
+                                self._position[axis_idx] = lane_start_x + (
+                                    direction_sign * facet * mm_per_facet
+                                )
+                                self._save_position()
                                 self.state["job"]["currentline"] = (
                                     int(lane * facets_lane) + facet
                                 )
@@ -738,6 +753,10 @@ class BaseLaserhead:
                                 list(line_data) * exposures,
                                 timeout=True,
                             )
+                    self._position[axis_idx] = lane_start_x + (
+                        direction_sign * facets_lane * mm_per_facet
+                    )
+                    self._save_position()
                     await self.write_line([])
 
         # disable scanhead

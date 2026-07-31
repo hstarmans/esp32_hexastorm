@@ -19,17 +19,23 @@
         <div class="card-body">
             
             <div class="row mb-4 text-light">
-                <div class="col-md-6">
+                <div class="col-md-3">
                     <h5 class="text-muted small text-uppercase">File</h5>
                     <p class="fs-5 fw-bold text-break" x-text="$store.machine.job.filename"></p>
                 </div>
-                <div class="col-6 col-md-3">
+                <div class="col-4 col-md-3">
                     <h5 class="text-muted small text-uppercase">Time Elapsed</h5>
                     <p class="fs-5 font-monospace">
                         <span x-text="new Date($store.machine.job.printingtime * 1000).toISOString().substr(14, 5)"></span>
                     </p>
                 </div>
-                <div class="col-6 col-md-3">
+                <div class="col-4 col-md-3">
+                    <h5 class="text-muted small text-uppercase">Est. Remaining</h5>
+                    <p class="fs-5 font-monospace">
+                        <span x-text="$store.machine.estimatedRemainingTime"></span>
+                    </p>
+                </div>
+                <div class="col-4 col-md-3">
                     <h5 class="text-muted small text-uppercase">Lines</h5>
                     <p class="fs-5 font-monospace">
                         <span x-text="$store.machine.job.currentline"></span> / 
