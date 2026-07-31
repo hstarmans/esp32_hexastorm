@@ -80,12 +80,16 @@
         "non_tmc_keys": [
             "steps_mm", 
             "homing_dir", 
-            "offset_mm"
+            "offset_mm",
+            "min_mm",
+            "max_mm"
         ],
         "x": {
             "steps_mm": 100,
             "homing_dir": -1,
             "offset_mm": 0.0,
+            "min_mm": 0.0,
+            "max_mm": 200.0,
             "microstep_resolution": 2,
             "current": 400,
             "stallguard_threshold": 120,
@@ -96,6 +100,8 @@
             "steps_mm": 100,
             "homing_dir": -1,
             "offset_mm": 0.0,
+            "min_mm": 0.0,
+            "max_mm": 200.0,
             "microstep_resolution": 2,
             "current": 600,
             "stallguard_threshold": 80,
@@ -106,6 +112,8 @@
             "steps_mm": 100,
             "homing_dir": 1,
             "offset_mm": 0.0,
+            "min_mm": 0.0,
+            "max_mm": 100.0,
             "microstep_resolution": 2,
             "current": 400,
             "stallguard_threshold": 100,

@@ -324,10 +324,24 @@ async def api_gotopoint(request, session):
     workspace = data["workspace"]
     state = laserhead.enable_steppers
     laserhead.enable_steppers = True
-    await laserhead.gotopoint(position=position, absolute=absolute, workspace=workspace)
+    try:
+        await laserhead.gotopoint(position=position, absolute=absolute, workspace=workspace)
+    except ValueError as ve:
+        if state is False:
+            laserhead.enable_steppers = False
+        await laserhead.set_error(str(ve))
+        return {"error": str(ve)}, 400
+
     if state is False:
         await laserhead.wait_fifo_empty()
         laserhead.enable_steppers = False
+    return devicestate.data
+
+
+@app.post("/control/abort")
+@with_session
+async def api_abort(request, session):
+    await laserhead.emergency_stop()
     return devicestate.data
 
 

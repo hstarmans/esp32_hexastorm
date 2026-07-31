@@ -239,6 +239,7 @@ document.addEventListener("alpine:init", () => {
         togglePrism() { api.post('/control/prism'); },
         diodeTest() { api.post('/control/diodetest'); },
         saveFacetMeans() { api.post('/control/save_facet_means'); },
+        abort() { api.post('/control/abort'); },
 
         /** @param {number} value */
         setSpindle(value) { api.post('/control/spindle', { value: value }); },
@@ -511,9 +512,9 @@ document.addEventListener("alpine:init", () => {
         motors: {
             motor_globals: {},
             non_tmc_keys: [],
-            x: { steps_mm: 0, microstep_resolution: 16, current: 0, homing_dir: -1, offset_mm: 0, direction_inverted: false, stallguard_threshold: 0, coolstep_threshold: 0 },
-            y: { steps_mm: 0, microstep_resolution: 16, current: 0, homing_dir: -1, offset_mm: 0, direction_inverted: false, stallguard_threshold: 0, coolstep_threshold: 0 },
-            z: { steps_mm: 0, microstep_resolution: 16, current: 0, homing_dir: -1, offset_mm: 0, direction_inverted: false, stallguard_threshold: 0, coolstep_threshold: 0 }
+            x: { steps_mm: 0, microstep_resolution: 16, current: 0, homing_dir: -1, offset_mm: 0, min_mm: 0, max_mm: 200, direction_inverted: false, stallguard_threshold: 0, coolstep_threshold: 0 },
+            y: { steps_mm: 0, microstep_resolution: 16, current: 0, homing_dir: -1, offset_mm: 0, min_mm: 0, max_mm: 200, direction_inverted: false, stallguard_threshold: 0, coolstep_threshold: 0 },
+            z: { steps_mm: 0, microstep_resolution: 16, current: 0, homing_dir: -1, offset_mm: 0, min_mm: 0, max_mm: 100, direction_inverted: false, stallguard_threshold: 0, coolstep_threshold: 0 }
         },
         tools: {
             laser: { offset_x: 0, offset_y: 0 }

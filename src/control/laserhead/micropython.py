@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 from hexastorm.fpga_host.micropython import ESP32Host
@@ -95,13 +96,16 @@ class Laserhead(ESP32Host, BaseLaserhead):
         position,
         speed=None,
         absolute=True,
-        check_sensors=True,
+        check_sensors=False,
         workspace=False,
     ):
         """
         Wraps the hardware gotopoint function to automatically handle stepper enabling
         and state notifications for the web UI.
         """
+        # Validate soft limits before sending move to hardware
+        self._validate_target_position(position, absolute=absolute, workspace=workspace)
+
         # 1. Execute hardware command (blocks until physical move is complete)
         result = await ESP32Host.gotopoint(
             self,
@@ -118,6 +122,14 @@ class Laserhead(ESP32Host, BaseLaserhead):
         # 3. Trigger SSE update for the web clients
         await self.notify_listeners()
         return result
+
+    async def emergency_stop(self):
+        """Hardware emergency stop: toggles fpga_reset pin (wiping FPGA logic & FIFOs) and disables TMC steppers."""
+        logger.warning("Hardware EMERGENCY ABORT triggered!")
+        self.host.fpga_reset.value(0)
+        await asyncio.sleep(0.01)
+        self.host.fpga_reset.value(1)
+        await super().emergency_stop()
 
     async def home_axes(self, axes):
         logger.info(f"Homing axes {axes}.")

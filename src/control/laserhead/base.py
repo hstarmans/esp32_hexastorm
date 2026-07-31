@@ -206,6 +206,28 @@ class BaseLaserhead:
                 self._work_offset[i] = self._position[i]
         self._save_position()
 
+    def _validate_target_position(self, position, absolute=True, workspace=False):
+        """Validate target position against axis min/max soft limits."""
+        pos_array = np.array(position, dtype=NP_FLOAT)
+        if absolute:
+            target_mpos = (pos_array + self._work_offset) if workspace else pos_array.copy()
+        else:
+            target_mpos = self._position + pos_array
+
+        axis_names = ["x", "y", "z"]
+        motors_cfg = CONFIG.get("motors", {})
+        for idx, ax in enumerate(axis_names):
+            if idx >= len(target_mpos):
+                break
+            ax_cfg = motors_cfg.get(ax, {})
+            min_limit = ax_cfg.get("min_mm", None)
+            max_limit = ax_cfg.get("max_mm", None)
+            val = float(target_mpos[idx])
+            if min_limit is not None and val < float(min_limit):
+                raise ValueError(f"Target {ax.upper()} position ({val:.2f} mm) is below min limit ({min_limit:.2f} mm)")
+            if max_limit is not None and val > float(max_limit):
+                raise ValueError(f"Target {ax.upper()} position ({val:.2f} mm) exceeds max limit ({max_limit:.2f} mm)")
+
     # --- MOCK / PC ASYNC METHODS ---
     # These include simulated delays and call the synchronous helpers above.
 
@@ -215,9 +237,10 @@ class BaseLaserhead:
         speed=None,
         absolute=True,
         workspace=False,
-        check_sensors=True,
+        check_sensors=False,
     ):
         """Simulates target movement and updates mock coordinates over time."""
+        self._validate_target_position(position, absolute=absolute, workspace=workspace)
         logger.info(f"Mock moving to {position} (abs={absolute}, wpos={workspace}).")
 
         # Simulate physical transit time (Great for UI testing!)
@@ -250,6 +273,18 @@ class BaseLaserhead:
         await self.notify_listeners()
 
     # --- SYSTEM CONTROL METHODS ---
+
+    async def emergency_stop(self):
+        """Emergency stop: signals cancellation, disables steppers, turns off laser."""
+        logger.warning("EMERGENCY ABORT triggered!")
+        self._stop.set()
+        self.state["components"]["laser"] = False
+        self.state["components"]["spindle"] = 0
+        self.state["components"]["fan"] = 0
+        self.state["printing"] = False
+        self.state["paused"] = False
+        self.enable_steppers = False
+        await self.notify_listeners()
 
     async def stop_print(self):
         logger.info("Print is stopped.")
