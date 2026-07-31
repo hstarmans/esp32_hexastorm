@@ -36,6 +36,7 @@
  * @property {number[]} wpos - Workspace position mm [x, y, z]
  * @property {number} [notauthorized] - Optional flag if session is invalid
  * @property {string} [status] - Optional operational status message
+ * @property {string|null} [error_message] - Optional error message from print job
  */
 
 // --- MAIN LOGIC ---
@@ -76,6 +77,13 @@ document.addEventListener("alpine:init", () => {
          */
         gotopoint(position, absolute = true, workspace = false) {
             this.post('/gotopoint', { position, absolute, workspace });
+        },
+
+        /**
+         * Clears active error state
+         */
+        clearError() {
+            this.post('/clearerror');
         }
     };
     const api = window.api;
@@ -103,6 +111,7 @@ document.addEventListener("alpine:init", () => {
             spindle: 0,
             fan: 0
         },
+        error_message: null,
         mpos: [0.00, 0.00, 0.00], // machine position in mm
         wpos: [0.00, 0.00, 0.00], // workspace position in mm
 
@@ -136,6 +145,22 @@ document.addEventListener("alpine:init", () => {
             this.job = data.job;
             this.mpos = data.mpos;
             this.wpos = data.wpos;
+
+            if (typeof data.error_message !== 'undefined') {
+                const prevError = this.error_message;
+                this.error_message = data.error_message;
+                if (data.error_message && data.error_message !== prevError) {
+                    setTimeout(() => {
+                        const modalEl = document.getElementById('jobErrorModal');
+                        if (modalEl) {
+                            // @ts-ignore
+                            const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+                            modal.show();
+                        }
+                    }, 50);
+                }
+            }
+
             if (data.components) {
                 this.components.rotating = data.components.rotating;
                 this.components.laser = data.components.laser;
@@ -376,8 +401,9 @@ document.addEventListener("alpine:init", () => {
         posZ: 0,
         singleFacet: false,
         isStarting: false,
-        homeBeforePrint: true,
+        homeBeforePrint: false,
         useCustomStart: false,
+        canEditAdvancedSettings: true,
 
         init() {
             this.$nextTick(() => {
@@ -406,8 +432,15 @@ document.addEventListener("alpine:init", () => {
 
             if (ext && ['gcode', 'nc', 'tap'].includes(ext)) {
                 this.jobMode = 'cnc';
+                this.canEditAdvancedSettings = false;
             } else {
                 this.jobMode = 'laser';
+                const isUncorrectedSingleExp = /_e1(?:\.0)?_nocor(?:\.pat)?$/i.test(filename) || filename.includes('_e1.0_nocor') || filename.includes('_e1_nocor');
+                this.canEditAdvancedSettings = isUncorrectedSingleExp;
+                if (!isUncorrectedSingleExp) {
+                    this.exposure = 1;
+                    this.singleFacet = false;
+                }
             }
         },
 
@@ -638,5 +671,17 @@ function initializeSocket() {
     };
 }
 
-// Start SSE connection on window load
-window.addEventListener("load", initializeSocket);
+// Start SSE connection and attach modal listeners on window load
+window.addEventListener("load", () => {
+    initializeSocket();
+
+    const errorModalEl = document.getElementById('jobErrorModal');
+    if (errorModalEl) {
+        errorModalEl.addEventListener('hidden.bs.modal', () => {
+            // @ts-ignore
+            if (window.api && window.api.clearError) {
+                window.api.clearError();
+            }
+        });
+    }
+});

@@ -5,12 +5,11 @@ import logging
 import os
 import re
 
+import machine
 from microdot import Microdot, Request, Response, redirect, send_file
 from microdot.session import Session, with_session
 from microdot.sse import with_sse
 from microdot.utemplate import Template
-
-import machine
 
 from . import bootlib, constants
 from .constants import CONFIG, CONFIG_FILE, NVS_FILE, update_config
@@ -98,9 +97,7 @@ class DeviceState:
 app = Microdot()
 Session(app, secret_key=CONFIG["webserver"]["salt"])
 Response.default_content_type = "text/html"
-Request.max_content_length = (
-    CONFIG["webserver"]["max_content_length"] * 1024 * 1024
-)
+Request.max_content_length = CONFIG["webserver"]["max_content_length"] * 1024 * 1024
 devicestate = DeviceState(laserhead)
 
 # --- AUTHENTICATION MIDDLEWARE ---
@@ -129,6 +126,7 @@ async def authenticate(request, session):
             "/upload",
             "/deletefile",
             "/reset",
+            "/clearerror",
         )
         if request.path.startswith(api_paths):
             return {"error": "Unauthorized"}, 401
@@ -172,7 +170,7 @@ async def upload(request, session):
         try:
             os.mkdir(folder)
             logger.info(f"Created job folder: {folder}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             # If we can't create the folder, we really can't proceed
             logger.error(f"Failed to create folder: {e}")
             return {"error": "Cannot create upload folder"}, 500
@@ -194,9 +192,9 @@ async def upload(request, session):
         )
 
         # Check if adding this file exceeds the limit
-        if (current_usage_mb + (content_len / 1024 / 1024)) > CONFIG[
-            "webserver"
-        ]["max_content_length"]:
+        if (current_usage_mb + (content_len / 1024 / 1024)) > CONFIG["webserver"][
+            "max_content_length"
+        ]:
             return {"error": "Storage quota exceeded"}, 413
     except OSError:
         # Handle case where folder doesn't exist
@@ -217,7 +215,7 @@ async def upload(request, session):
     filepath = laserhead.get_job_path(filename)
 
     try:
-        with open(filepath, "wb") as f:
+        with open(filepath, "wb") as f:  # noqa: ASYNC230, fine in micropython
             bytes_remaining = content_len
             chunk_size = 4096
 
@@ -232,14 +230,14 @@ async def upload(request, session):
 
         logger.info(f"Upload complete: {filename} ({content_len} bytes)")
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001, capture everything just to be safe
         logger.error(f"Upload failed: {e}")
         # Clean up: delete the partial file so it doesn't waste space
         try:
             os.remove(filepath)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001, capture everything just to be safe
             logger.error(f"Removal failed: {e}")
-            pass
+
         return {"error": "Upload failed", "details": str(e)}, 500
 
     devicestate.update()
@@ -281,7 +279,7 @@ async def delete_file(request, session):
 
         return {"success": "File deleted"}, 200
 
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001, capture everything just to be safe
         logger.error(f"Delete failed: {e}")
         return {"error": "Server error processing delete"}, 500
 
@@ -429,7 +427,7 @@ async def save_facet_means(request, session):
     update_config()
 
     # Update current diodetest report ref values so UI reflects the new reference instantly
-    for orig_k, facet_data in facets.items():
+    for facet_data in facets.values():
         facet_data["ref_mean_ms"] = round(float(facet_data["mean_ms"]), 4)
         facet_data["delta_mean_ms"] = 0.0000
 
@@ -449,6 +447,9 @@ async def print_control(request, session):
         if laserhead.state["printing"]:
             return {"error": "Already printing"}, 409
 
+        # Reset any previous error state
+        laserhead.state["error_message"] = None
+
         # Let it raise a KeyError if "file" is missing
         filename = data["file"].replace("/", "_")
 
@@ -457,8 +458,6 @@ async def print_control(request, session):
 
         cfg_print = CONFIG["defaultprint"]
         if not is_gcode:
-            # Only parse laser-specific settings for exposure jobs
-            # Will raise KeyError or ValueError natively if inputs are bad
             cfg_print["laserpower"] = int(data["laserpower"])
             cfg_print["exposureperline"] = int(data["exposureperline"])
             cfg_print["singlefacet"] = bool(data["singlefacet"])
@@ -472,26 +471,40 @@ async def print_control(request, session):
 
         # Start background task
         async def run_job():
-            # No try/except block. Let any exception crash the task
-            # and bubble up spectacularly to the event loop!
-            if is_gcode:
-                if cfg_print["home_before_print"]:
-                    logger.info("Homing X and Y axes before G-code execution.")
-                    await laserhead.home([1, 1, 0])
+            try:
+                if is_gcode:
+                    if cfg_print["home_before_print"]:
+                        logger.info("Homing X and Y axes before G-code execution.")
+                        await laserhead.home_axes([1, 1, 0])
 
-                await laserhead.execute_gcode(filename)
-            else:
-                await laserhead.print_loop(filename)
-
-            devicestate.laserhead_update()
+                    await laserhead.execute_gcode(filename)
+                else:
+                    await laserhead.print_loop(filename)
+            except Exception as e:  # noqa: BLE001, just for certainty
+                logger.error(f"Print job failed with exception: {e}")
+                await laserhead.set_error(str(e))
+                await laserhead.notify_listeners()
+            finally:
+                devicestate.laserhead_update()
 
         asyncio.create_task(run_job())
 
     elif action == "stop":
-        laserhead.stop_print()
+        await laserhead.stop_print()
+        devicestate.laserhead_update()
     elif action == "pause":
-        laserhead.pause_print()
+        await laserhead.pause_print()
+        devicestate.laserhead_update()
 
+    return devicestate.data
+
+
+@app.post("/clearerror")
+@with_session
+async def clear_error_route(request, session):
+    logger.info("Clearing error state.")
+    await laserhead.clear_error()
+    devicestate.laserhead_update()
     return devicestate.data
 
 
@@ -512,7 +525,8 @@ async def state(request, session, sse):
             await sse.send(devicestate.data, event="message")
             # YIELD to ensure the data actually goes out before we wait again
             await asyncio.sleep(0)
-        except Exception:
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"State update failed: {e}")
             break
 
 

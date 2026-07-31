@@ -20,6 +20,7 @@ interface Window {
     api: {
         post(url: string, payload?: any): Promise<void>;
         gotopoint(position: number[], absolute?: boolean, workspace?: boolean): void;
+        clearError(): void;
     };
     diodeTest: () => void;
     saveFacetMeans: () => void;

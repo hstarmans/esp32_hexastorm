@@ -5,7 +5,7 @@
         "exposureperline": 4,
         "lanewidth_correction": 0.4,
         "singlefacet": false,
-        "home_before_print": true,
+        "home_before_print": false,
         "use_custom_start": false,
         "workspace_origin": [
             0,

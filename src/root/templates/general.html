@@ -85,20 +85,41 @@
                     </div>
 
                     <div x-show="jobMode === 'laser'" x-transition x-cloak>
+                        <div x-show="!canEditAdvancedSettings" class="alert alert-dark border-secondary small py-2 mb-3 text-warning">
+                            <i class="bi bi-lock-fill me-1"></i> Exposure count and single facet options are locked for pre-configured files. Custom exposures and single facet mode require a raw file ending in <code>_e1_nocor</code> (e.g. <code>pattern_e1_nocor.pat</code>).
+                        </div>
+
                         <div class="row g-3 mb-3">
                             <div class="col-6">
                                 <label for="laserpower" class="form-label text-muted small">Laser Power (PWM)</label>
                                 <input id="laserpower" class="form-control bg-black text-light border-secondary" type="number" x-model="laserPower" min="50" max="150"/>
                             </div>
                             <div class="col-6">
-                                <label for="exposureperline" class="form-label text-muted small">Exposure/Line</label>
-                                <input id="exposureperline" class="form-control bg-black text-light border-secondary" type="number" x-model="exposure" min="1" max="8"/>
+                                <label for="exposureperline" class="form-label text-muted small">
+                                    Exposure/Line
+                                    <span x-show="!canEditAdvancedSettings" class="text-warning small ms-1">(Locked)</span>
+                                </label>
+                                <input id="exposureperline" 
+                                       class="form-control bg-black text-light border-secondary" 
+                                       type="number" 
+                                       x-model="exposure" 
+                                       min="1" 
+                                       max="8"
+                                       :disabled="!canEditAdvancedSettings"/>
                             </div>
                         </div>
 
                         <div class="form-check form-switch mb-4">
-                            <input class="form-check-input" type="checkbox" role="switch" id="singlefacet" x-model="singleFacet">
-                            <label class="form-check-label text-light" for="singlefacet">Use single facet per rotation</label>
+                            <input class="form-check-input" 
+                                   type="checkbox" 
+                                   role="switch" 
+                                   id="singlefacet" 
+                                   x-model="singleFacet"
+                                   :disabled="!canEditAdvancedSettings">
+                            <label class="form-check-label text-light" for="singlefacet">
+                                Use single facet per rotation
+                                <span x-show="!canEditAdvancedSettings" class="text-warning small ms-1">(Locked)</span>
+                            </label>
                         </div>
                     </div>
 
