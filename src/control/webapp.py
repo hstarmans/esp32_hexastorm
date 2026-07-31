@@ -4,6 +4,8 @@ import hashlib
 import logging
 import os
 import re
+import sys
+from pathlib import Path
 
 import machine
 from microdot import Microdot, Request, Response, redirect, send_file
@@ -16,6 +18,11 @@ from .constants import CONFIG, CONFIG_FILE, NVS_FILE, update_config
 from .laserhead import laserhead
 
 logger = logging.getLogger(__name__)
+
+# Ensure workspace root is in sys.path when running as entry point (e.g. uv run webapp)
+workspace_root = str(Path(__file__).resolve().parent.parent.parent)
+if workspace_root not in sys.path:
+    sys.path.insert(0, workspace_root)
 
 # Template & static paths
 if not constants.ESP32:
@@ -461,6 +468,7 @@ async def print_control(request, session):
             cfg_print["laserpower"] = int(data["laserpower"])
             cfg_print["exposureperline"] = int(data["exposureperline"])
             cfg_print["singlefacet"] = bool(data["singlefacet"])
+            cfg_print["lanewidth_correction"] = float(data["lanewidth_correction"])
 
         # Shared settings
         cfg_print["workspace_origin"] = data["workspace_origin"]
@@ -540,6 +548,7 @@ async def get_settings(request, session):
         "wifi_login": CONFIG["wifi_login"],
         "motors": CONFIG["motors"],
         "tools": CONFIG["tools"],
+        "defaultprint": CONFIG["defaultprint"],
     }
 
 
@@ -551,7 +560,7 @@ async def save_settings(request, session):
     """
     data = request.json
 
-    for key in ("wifi_login", "motors", "tools"):
+    for key in ("wifi_login", "motors", "tools", "defaultprint"):
         if key in data:
             CONFIG[key] = data[key]
 
@@ -660,7 +669,7 @@ async def static(request, path):
     return send_file(f"{static_dir}/" + path, max_age=86400)  # cache for 1 day
 
 
-if __name__ == "__main__":
+def main():
     from control.bootlib import set_log_level
 
     laserhead.debug = True
@@ -672,3 +681,7 @@ if __name__ == "__main__":
         os.remove(temp_dir + "/" + f)
 
     asyncio.run(app.start_server(port=5000, debug=True))
+
+
+if __name__ == "__main__":
+    main()

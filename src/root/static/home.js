@@ -414,6 +414,7 @@ document.addEventListener("alpine:init", () => {
         posY: 0,
         posZ: 0,
         singleFacet: false,
+        laneWidthCorrection: 0,
         isStarting: false,
         homeBeforePrint: false,
         useCustomStart: false,
@@ -473,6 +474,7 @@ document.addEventListener("alpine:init", () => {
                     laserpower: Number(this.laserPower),
                     exposureperline: Number(this.exposure),
                     singlefacet: this.singleFacet,
+                    lanewidth_correction: Number(this.laneWidthCorrection),
                     home_before_print: this.homeBeforePrint,
                     use_custom_start: this.useCustomStart,
                     workspace_origin: [
@@ -516,6 +518,9 @@ document.addEventListener("alpine:init", () => {
         tools: {
             laser: { offset_x: 0, offset_y: 0 }
         },
+        defaultprint: {
+            lanewidth_correction: 0
+        },
         isLoading: false,
 
         /** * Automatically fetch settings from the backend when this component initializes 
@@ -531,6 +536,7 @@ document.addEventListener("alpine:init", () => {
                     this.wifi_login = { ...this.wifi_login, ...data.wifi_login };
                     this.motors = { ...this.motors, ...data.motors };
                     this.tools = { ...this.tools, ...data.tools };
+                    this.defaultprint = { ...this.defaultprint, ...data.defaultprint };
                 } else {
                     console.error("Failed to load configuration");
                 }
@@ -552,7 +558,8 @@ document.addEventListener("alpine:init", () => {
                     body: JSON.stringify({
                         wifi_login: this.wifi_login,
                         motors: this.motors,
-                        tools: this.tools
+                        tools: this.tools,
+                        defaultprint: this.defaultprint
                     })
                 });
 

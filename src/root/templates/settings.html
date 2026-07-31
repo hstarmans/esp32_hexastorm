@@ -209,6 +209,24 @@
                                     </div>
                                 </div>
                             </div>
+                            <div class="card bg-dark border-secondary mb-4">
+                                <div class="card-header border-secondary d-flex align-items-center">
+                                    <i class="bi bi-aspect-ratio text-info me-2"></i> Laser Scanhead Optics & Alignment
+                                </div>
+                                <div class="card-body">
+                                    <div class="row g-3">
+                                        <div class="col-md-6">
+                                            <label class="form-label small text-secondary mb-1">Lane Width Correction (mm)</label>
+                                            <div class="input-group input-group-sm">
+                                                <span class="input-group-text bg-dark text-secondary border-secondary">ΔY</span>
+                                                <input type="number" class="form-control bg-dark text-light border-secondary" 
+                                                       x-model.number="defaultprint.lanewidth_correction" step="0.01" placeholder="0.4">
+                                            </div>
+                                            <div class="form-text text-secondary" style="font-size: 0.7em;">Physical seam alignment correction between adjacent optical lanes. Ideally 0 mm.</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                     

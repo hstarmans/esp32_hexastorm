@@ -1,17 +1,21 @@
-from machine import Pin, SoftSPI
-from time import sleep
-
 import unittest
+from time import sleep
 
 from ..laserhead import laserhead
 
 
 class Hardware(unittest.TestCase):
-    def test_spirepeat(self, flash=False):
-        """test communciation with FPGA via SPI
+    """Hardware test suite for obscure hardware edge cases.
 
-        create the required binary via
-        hexastorm/old/debug_spi/test_spi.py
+    NOTE: These tests require connected physical hardware and specific
+    test bitstream binaries (e.g., reply.bit, blink.bit).
+    """
+
+    def test_spirepeat(self, flash=False):
+        """test communication with FPGA via SPI
+
+        Obscure test case: Requires special binary `reply.bit` created via
+        `hexastorm/old/debug_spi/test_spi.py`.
         """
         if flash:
             # generated via old/debug_spi/test_spi
@@ -34,9 +38,8 @@ class Hardware(unittest.TestCase):
                 except AssertionError:
                     print(previous_byte)
                     print(byte_received)
-                    raise Exception("Test failed: not equal")
+                    raise Exception("Test failed: not equal")  # noqa: TRY002
             previous_byte = byte
-
 
     def test_write_blink_toflash(self):
         """write blink test to flash ram and check blinking

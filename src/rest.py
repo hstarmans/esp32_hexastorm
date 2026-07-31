@@ -1,22 +1,23 @@
+import json
 import os
 import subprocess
-import json
 import time
 from pathlib import Path
 
 import requests
-from websocket import create_connection, enableTrace
 from sseclient import SSEClient
+from websocket import create_connection, enableTrace
 
 
 class WebApp:
     """class to interact with ESP32 hexastorm webserver
-    
+
     This is not the main webapp. It creates a webserver when
-    you start it. You can then connect to it using the other 
+    you start it. You can then connect to it using the other
     methods.
-    As such it can be use for debugging. 
+    As such it can be use for debugging.
     """
+
     def __init__(self):
         # export IP="192.168.1.8",
         # PORT=5000,
@@ -48,17 +49,13 @@ class WebApp:
             self.process.kill()
 
     def str_cookie(self):
-        return "".join(
-            [f"{k}={v}" for k, v in self.session.cookies.get_dict().items()]
-        )
+        return "".join([f"{k}={v}" for k, v in self.session.cookies.get_dict().items()])
 
     def login(self, password="wachtwoord"):
         session = requests.Session()
-        response = session.post(
-            self.base_url, data={"password": password}, timeout=3
-        )
+        response = session.post(self.base_url, data={"password": password}, timeout=3)
         if not response.ok:
-            raise Exception("Cannot login invalid password")
+            raise Exception("Cannot login invalid password")  # noqa: TRY002
         return session
 
     def get_state(self):
@@ -77,9 +74,7 @@ class WebApp:
         #   look at request headers webapp (webapp.request.header)
         #   socketio is not yet supported by microdot
         enableTrace(False)
-        ws = create_connection(
-            f"ws://{self.base}/command", cookie=self.str_cookie
-        )
+        ws = create_connection(f"ws://{self.base}/command", cookie=self.str_cookie)
         ws.send(json.dumps(command))
         return json.loads(ws.recv())
 

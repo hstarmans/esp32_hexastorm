@@ -1,9 +1,8 @@
 import io
-import sys
 import logging
+import sys
 
 from hexastorm.tests import test_mpy
-
 
 logger = logging.getLogger(__name__)
 
@@ -17,9 +16,7 @@ def run_test(class_name, function_name, *args, **kwargs):
         test_instance = test_class()
         test_instance.setUpClass()  # Call setUpClass
 
-        test_function = getattr(
-            test_instance, function_name
-        )  # Get the function
+        test_function = getattr(test_instance, function_name)  # Get the function
 
         if args or kwargs:
             logger.info(f"Got positional arguments: {args}")
@@ -29,7 +26,7 @@ def run_test(class_name, function_name, *args, **kwargs):
             test_function()  # Call without variable
     except KeyboardInterrupt:
         pass
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         # print exception in red
         s = io.StringIO()
         sys.print_exception(e, s)

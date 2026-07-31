@@ -37,6 +37,7 @@ quote-style = "double"
 
 [project.scripts]
 build = "build:main"
+webapp = "control.webapp:main"
 
 [dependency-groups]
 dev = [

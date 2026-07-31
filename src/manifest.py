@@ -1,9 +1,10 @@
-import time
+import logging
 import os
 import subprocess
 import sys
-import logging
+import time
 from pathlib import Path
+
 try:
     from typing import TYPE_CHECKING
 except ImportError:
@@ -11,6 +12,12 @@ except ImportError:
 
 # Configure logging to standard output
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+logger = logging.getLogger(__name__)
+
+
+class AssetGenerationError(Exception):
+    """Raised when frozen root asset generation fails."""
+
 
 # fixes pylance warnings about missing functions
 if TYPE_CHECKING:
@@ -46,7 +53,7 @@ try:
 
     # Check if folder exists and has files
     if job_folder.exists():
-        logging.info(f"Cleaning local test files from: {job_folder}")
+        logger.info(f"Cleaning local test files from: {job_folder}")
         for item in job_folder.iterdir():
             if item.is_file():
                 # Delete the file
@@ -81,16 +88,16 @@ try:
     build_id = f"build_{int(time.time())}"
     with open(frozen_output, "a") as f:
         f.write(f'\nBUILD_ID = "{build_id}"\n')
-        
+
     build_info_output = code_dir / "build_info.py"
     with open(build_info_output, "w") as f:
         f.write(f'BUILD_ID = "{build_id}"\n')
 except subprocess.CalledProcessError as e:
-    logging.error(f"Error during asset packing: {e}")
+    logger.error(f"Error during asset packing: {e}")
     sys.exit(1)
 
 if not frozen_output.is_file():
-    raise Exception(f"Failed to generate {frozen_output}")
+    raise AssetGenerationError(f"Failed to generate {frozen_output}")
 # We check if 'package' exists in the global scope to know if we are in 'make'
 if "package" in globals():
     include("$(PORT_DIR)/boards")

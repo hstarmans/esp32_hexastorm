@@ -37,6 +37,7 @@
             laserPower = {{ state['job']['laserpower'] }};
             exposure = {{ state['job']['exposureperline'] }};
             singleFacet = {{ 'true' if state['job']['singlefacet'] else 'false' }};
+            laneWidthCorrection = {{ state['job']['lanewidth_correction'] }};
             posX = {{ state['job']['workspace_origin'][0] }};
             posY = {{ state['job']['workspace_origin'][1] }};
             posZ = {{ state['job']['workspace_origin'][2] }};
@@ -90,11 +91,11 @@
                         </div>
 
                         <div class="row g-3 mb-3">
-                            <div class="col-6">
+                            <div class="col-4">
                                 <label for="laserpower" class="form-label text-muted small">Laser Power (PWM)</label>
                                 <input id="laserpower" class="form-control bg-black text-light border-secondary" type="number" x-model="laserPower" min="50" max="150"/>
                             </div>
-                            <div class="col-6">
+                            <div class="col-4">
                                 <label for="exposureperline" class="form-label text-muted small">
                                     Exposure/Line
                                     <span x-show="!canEditAdvancedSettings" class="text-warning small ms-1">(Locked)</span>
@@ -106,6 +107,17 @@
                                        min="1" 
                                        max="8"
                                        :disabled="!canEditAdvancedSettings"/>
+                            </div>
+                            <div class="col-4">
+                                <label for="lanewidthcorrection" class="form-label text-muted small" title="Physical seam alignment correction between adjacent lanes (ideally 0 mm)">
+                                    Lane Width (mm)
+                                    <i class="bi bi-info-circle ms-1 text-info" style="font-size: 0.85em;" title="Seam alignment correction between adjacent optical lanes. Ideally 0 mm."></i>
+                                </label>
+                                <input id="lanewidthcorrection" 
+                                       class="form-control bg-black text-light border-secondary" 
+                                       type="number" 
+                                       step="0.01"
+                                       x-model.number="laneWidthCorrection"/>
                             </div>
                         </div>
 

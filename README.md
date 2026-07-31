@@ -49,7 +49,7 @@ Install the project dependencies using [uv](https://docs.astral.sh/uv/), and the
 # Install dependencies
 uv sync
 # Run the webserver locally
-uv run python -m src.control.webapp
+uv run webapp
 ```
 
 ## Building & Flashing

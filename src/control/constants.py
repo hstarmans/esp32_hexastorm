@@ -1,10 +1,9 @@
 import json
 import logging
-import sys
 import os
+import sys
 
-
-ESP32 = False if sys.platform in ["linux", "win32", "darwin"] else True
+ESP32 = not sys.platform in ["linux", "win32", "darwin"]
 logger = logging.getLogger(__name__)
 
 if ESP32:
@@ -160,8 +159,8 @@ def deploy_assets(overwrite=False):
     try:
         if "control.frozen_root" in sys.modules:
             del sys.modules["control.frozen_root"]
-        from . import frozen_root
-    except Exception as e:
+        from . import frozen_root  # noqa: F401
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Asset extraction failed: {e}")
         return
 
@@ -171,14 +170,14 @@ def deploy_assets(overwrite=False):
             # Load new factory defaults
             with open(CONFIG_FILE, "r") as f_new:
                 new_dct = json.load(f_new)
-            
+
             # Load old user config
             with open(CONFIG_OLD_FILE, "r") as f_old:
                 old_dct = json.load(f_old)
-                
+
             logger.info("Migrating user settings into new configuration file...")
             new_dct = merge_configs(new_dct, old_dct)
-            
+
             # Save the merged config back to config.json with pretty formatting
             clean_dct = sanitize_types(new_dct)
             with open(CONFIG_FILE, "w") as f_out:
@@ -188,10 +187,10 @@ def deploy_assets(overwrite=False):
                     recurse_dct(clean_dct, "sd/", "src/root/sd/")
                 else:
                     dump_pretty_json(clean_dct, f_out, indent=4)
-                
+
             # Remove the temp backup after successful merge
             os.remove(CONFIG_OLD_FILE)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to merge old configuration: {e}")
 
     # Clean up compiled utemplate .py files so newly deployed templates are forced to regenerate
@@ -229,7 +228,15 @@ def recurse_dct(dct, target, replace):
 
 
 def load_config():
-    """Load json config settings."""
+    """Load json config settings, merging with factory defaults so all keys exist."""
+
+    factory_dct = {}
+    factory_path = FACTORY_CONFIG_FILE if not ESP32 else "config.json"
+    try:
+        with open(factory_path, "r") as f:
+            factory_dct = json.load(f)
+    except OSError:
+        pass
 
     # Recreate mock_config.json from factory template if missing ---
     if not ESP32:
@@ -240,21 +247,25 @@ def load_config():
                 "mock_config.json missing. Generating from factory config.json..."
             )
             try:
-                with open(FACTORY_CONFIG_FILE, "r") as src:
+                with open(FACTORY_CONFIG_FILE, "r") as src:  # noqa: SIM117 micropython not supporting multiple context managers
                     with open(CONFIG_FILE, "w") as dst:
                         dst.write(src.read())
             except OSError:
                 logger.error("Could not find factory config.json to copy!")
 
-    # Load the active config (which might be a fresh factory extraction)
+    # Load active config and merge with factory defaults
     try:
         with open(CONFIG_FILE) as f:
-            dct = json.load(f)
+            user_dct = json.load(f)
             if not ESP32:
-                recurse_dct(dct, "sd/", "src/root/sd/")
+                recurse_dct(user_dct, "sd/", "src/root/sd/")
+            if factory_dct:
+                dct = merge_configs(factory_dct, user_dct)
+            else:
+                dct = user_dct
     except OSError:
-        logger.warning(f"Could not load {CONFIG_FILE}, using defaults")
-        dct = {}
+        logger.warning(f"Could not load {CONFIG_FILE}, using factory defaults")
+        dct = factory_dct
 
     return dct
 
@@ -323,8 +334,6 @@ def dump_pretty_json(obj, fp, indent=4, level=0):
 
 def update_config():
     """Update the json settings."""
-    global CONFIG
-
     clean_cfg = sanitize_types(CONFIG)
     CONFIG.clear()
     CONFIG.update(clean_cfg)
