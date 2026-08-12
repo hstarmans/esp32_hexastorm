@@ -30,6 +30,7 @@
  * @typedef {Object} MachineState
  * @property {boolean} printing - Is the machine currently printing?
  * @property {boolean} paused - Is the print paused?
+ * @property {boolean} [estop] - Is the machine in emergency stop state?
  * @property {PrintJob} job - The current job details
  * @property {Components} components - Hardware status
  * @property {number[]} mpos - Machine position mm [x, y, z]
@@ -58,14 +59,29 @@ document.addEventListener("alpine:init", () => {
                     body: JSON.stringify(payload),
                 });
 
-                if (!res.ok) throw new Error(res.statusText);
+                let data = null;
+                try {
+                    data = await res.json();
+                } catch (_) {}
 
-                const data = await res.json();
-                Alpine.store('machine').update(data);
+                if (!res.ok) {
+                    const errorMsg = data?.error || data?.error_message || res.statusText || "Request failed";
+                    console.warn(`API ${url} returned ${res.status}:`, errorMsg);
+                    Alpine.store('machine').update({
+                        error_message: errorMsg
+                    });
+                    return;
+                }
+
+                if (data) {
+                    Alpine.store('machine').update(data);
+                }
 
             } catch (err) {
                 console.error(url, err);
-                alert("Command failed: " + err);
+                Alpine.store('machine').update({
+                    error_message: "Network Error: Could not connect to machine."
+                });
             }
         },
 
@@ -92,6 +108,7 @@ document.addEventListener("alpine:init", () => {
     Alpine.store('machine', {
         printing: false,
         paused: false,
+        estop: false,
         /** @type {PrintJob} */
         job: {
             filename: '',
@@ -144,6 +161,7 @@ document.addEventListener("alpine:init", () => {
 
             this.printing = data.printing;
             this.paused = data.paused || false;
+            this.estop = data.estop || false;
             this.job = data.job;
             this.mpos = data.mpos;
             this.wpos = data.wpos;
@@ -240,6 +258,7 @@ document.addEventListener("alpine:init", () => {
         diodeTest() { api.post('/control/diodetest'); },
         saveFacetMeans() { api.post('/control/save_facet_means'); },
         abort() { api.post('/control/abort'); },
+        resetEstop() { api.post('/control/reset'); },
 
         /** @param {number} value */
         setSpindle(value) { api.post('/control/spindle', { value: value }); },

@@ -16,8 +16,11 @@
                     System Online
                 </span>
                 
-                <button type="button" class="btn btn-sm btn-danger fw-bold shadow-sm me-1" @click="abort()" title="Emergency Abort: Halts all motors, resets FPGA FIFOs, and turns off laser">
+                <button type="button" class="btn btn-sm btn-danger fw-bold shadow-sm me-1" x-show="!$store.machine.estop" @click="abort()" title="Emergency Abort: Halts all motors, resets FPGA FIFOs, and turns off laser">
                     <i class="bi bi-octagon-fill me-1"></i> ABORT
+                </button>
+                <button type="button" class="btn btn-sm btn-warning fw-bold shadow-sm me-1" x-show="$store.machine.estop" @click="resetEstop()" title="Reset Emergency Stop and restore hardware">
+                    <i class="bi bi-arrow-counterclockwise me-1"></i> RESET / UNLOCK
                 </button>
                 
                 <button type="button" class="btn btn-sm btn-outline-info" data-bs-toggle="modal" data-bs-target="#settingsModal">

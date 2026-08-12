@@ -98,13 +98,17 @@ class Laserhead(ESP32Host, BaseLaserhead):
         absolute=True,
         check_sensors=False,
         workspace=False,
+        validate_limits=True,
     ):
         """
         Wraps the hardware gotopoint function to automatically handle stepper enabling
         and state notifications for the web UI.
         """
         # Validate soft limits before sending move to hardware
-        self._validate_target_position(position, absolute=absolute, workspace=workspace)
+        if validate_limits:
+            self._validate_target_position(
+                position, absolute=absolute, workspace=workspace
+            )
 
         # 1. Execute hardware command (blocks until physical move is complete)
         result = await ESP32Host.gotopoint(
@@ -114,6 +118,7 @@ class Laserhead(ESP32Host, BaseLaserhead):
             absolute=absolute,
             workspace=workspace,
             check_sensors=check_sensors,
+            validate_limits=validate_limits,
         )
 
         # 2. Update RAM and NVS instantly using the synchronous helper from base.py
@@ -124,14 +129,27 @@ class Laserhead(ESP32Host, BaseLaserhead):
         return result
 
     async def emergency_stop(self):
-        """Hardware emergency stop: toggles fpga_reset pin (wiping FPGA logic & FIFOs) and disables TMC steppers."""
+        """Hardware emergency stop: holds fpga_reset LOW to reset FPGA logic & FIFOs."""
         logger.warning("Hardware EMERGENCY ABORT triggered!")
-        self.host.fpga_reset.value(0)
-        await asyncio.sleep(0.01)
-        self.host.fpga_reset.value(1)
+        if hasattr(self, "fpga_reset") and self.fpga_reset is not None:
+            self.fpga_reset.value(0)
         await super().emergency_stop()
 
+    async def reset_estop(self):
+        """Re-flash FPGA bitstream, restore SPI/steppers, and clear E-Stop alarm state."""
+        logger.info("Resetting E-Stop state on hardware...")
+        try:
+            if hasattr(self, "fpga_reset") and self.fpga_reset is not None:
+                self.fpga_reset.value(1)
+            if hasattr(self, "reset"):
+                self.reset()
+        except Exception as e:
+            logger.error(f"Error during hardware reset: {e}")
+        await super().reset_estop()
+
     async def home_axes(self, axes):
+        if self.state.get("estop", False):
+            raise ValueError("Machine is locked in E-STOP state! Reset machine first.")
         logger.info(f"Homing axes {axes}.")
         await ESP32Host.home_axes(self, axes)
 

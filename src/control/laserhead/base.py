@@ -134,6 +134,7 @@ class BaseLaserhead:
         state = {
             "printing": False,
             "paused": False,
+            "estop": False,
             "error_message": None,
             "job": job,
             "components": components,
@@ -208,6 +209,8 @@ class BaseLaserhead:
 
     def _validate_target_position(self, position, absolute=True, workspace=False):
         """Validate target position against axis min/max soft limits."""
+        if self.state.get("estop", False):
+            raise ValueError("Machine is locked in E-STOP state! Reset machine first.")
         pos_array = np.array(position, dtype=NP_FLOAT)
         if absolute:
             target_mpos = (pos_array + self._work_offset) if workspace else pos_array.copy()
@@ -238,9 +241,13 @@ class BaseLaserhead:
         absolute=True,
         workspace=False,
         check_sensors=False,
+        validate_limits=True,
     ):
         """Simulates target movement and updates mock coordinates over time."""
-        self._validate_target_position(position, absolute=absolute, workspace=workspace)
+        if validate_limits:
+            self._validate_target_position(
+                position, absolute=absolute, workspace=workspace
+            )
         logger.info(f"Mock moving to {position} (abs={absolute}, wpos={workspace}).")
 
         # Simulate physical transit time (Great for UI testing!)
@@ -278,12 +285,21 @@ class BaseLaserhead:
         """Emergency stop: signals cancellation, disables steppers, turns off laser."""
         logger.warning("EMERGENCY ABORT triggered!")
         self._stop.set()
+        self.state["estop"] = True
+        self.state["error_message"] = "EMERGENCY ABORT! Machine locked in E-Stop state. Reset required."
         self.state["components"]["laser"] = False
         self.state["components"]["spindle"] = 0
         self.state["components"]["fan"] = 0
         self.state["printing"] = False
         self.state["paused"] = False
         self.enable_steppers = False
+        await self.notify_listeners()
+
+    async def reset_estop(self):
+        """Reset emergency stop state and clear errors."""
+        logger.info("Resetting E-Stop state...")
+        self.state["estop"] = False
+        self.state["error_message"] = None
         await self.notify_listeners()
 
     async def stop_print(self):

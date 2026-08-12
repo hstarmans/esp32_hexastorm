@@ -5,8 +5,6 @@ import logging
 import os
 import re
 import sys
-from pathlib import Path
-
 import machine
 from microdot import Microdot, Request, Response, redirect, send_file
 from microdot.session import Session, with_session
@@ -20,9 +18,14 @@ from .laserhead import laserhead
 logger = logging.getLogger(__name__)
 
 # Ensure workspace root is in sys.path when running as entry point (e.g. uv run webapp)
-workspace_root = str(Path(__file__).resolve().parent.parent.parent)
-if workspace_root not in sys.path:
-    sys.path.insert(0, workspace_root)
+try:
+    from pathlib import Path
+
+    workspace_root = str(Path(__file__).resolve().parent.parent.parent)
+    if workspace_root not in sys.path:
+        sys.path.insert(0, workspace_root)
+except ImportError:
+    pass
 
 # Template & static paths
 if not constants.ESP32:
@@ -345,6 +348,13 @@ async def api_abort(request, session):
     return devicestate.data
 
 
+@app.post("/control/reset")
+@with_session
+async def api_reset(request, session):
+    await laserhead.reset_estop()
+    return devicestate.data
+
+
 @app.post("/setworkspacezero")
 @with_session
 async def setworkspacezero(request, session):
@@ -382,7 +392,13 @@ async def home(request, session):
     axes = [int(x) for x in data.get("axes", [0, 0, 0])]
     state = laserhead.enable_steppers
     laserhead.enable_steppers = True
-    await laserhead.home_axes(axes)
+    try:
+        await laserhead.home_axes(axes)
+    except ValueError as ve:
+        if state is False:
+            laserhead.enable_steppers = False
+        await laserhead.set_error(str(ve))
+        return {"error": str(ve)}, 400
     if state is False:
         await laserhead.wait_fifo_empty()
         laserhead.enable_steppers = False

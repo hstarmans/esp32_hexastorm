@@ -94,7 +94,8 @@
                 <div class="modal-content bg-dark border-danger text-light shadow-lg">
                     <div class="modal-header border-danger bg-danger bg-opacity-10">
                         <h5 class="modal-title text-danger" id="jobErrorModalLabel">
-                            <i class="bi bi-exclamation-triangle-fill me-2"></i> Print Job Failed
+                            <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                            <span x-text="$store.machine.estop ? 'Emergency Stop Lock' : ($store.machine.printing ? 'Print Job Failed' : 'Command Error')"></span>
                         </h5>
                         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                     </div>
@@ -102,12 +103,15 @@
                         <div class="d-flex align-items-start gap-3">
                             <i class="bi bi-x-circle-fill text-danger fs-1 flex-shrink-0"></i>
                             <div>
-                                <h6 class="fw-bold mb-2">Reason for failure:</h6>
+                                <h6 class="fw-bold mb-2" x-text="$store.machine.estop ? 'System Status:' : 'Error Details:'"></h6>
                                 <p class="text-secondary mb-0 font-monospace text-break" x-text="$store.machine.error_message || 'An unexpected error occurred during execution.'"></p>
                             </div>
                         </div>
                     </div>
-                    <div class="modal-footer border-secondary">
+                    <div class="modal-footer border-secondary" x-data="commands">
+                        <button type="button" class="btn btn-warning me-auto" x-show="$store.machine.estop" @click="resetEstop()" data-bs-dismiss="modal">
+                            <i class="bi bi-arrow-counterclockwise me-1"></i> Reset E-Stop
+                        </button>
                         <button type="button" class="btn btn-danger px-4" data-bs-dismiss="modal">
                             <i class="bi bi-check-lg me-1"></i> Dismiss
                         </button>
