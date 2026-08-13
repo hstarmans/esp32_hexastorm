@@ -16,18 +16,20 @@
 
             <div class="row g-2 mb-4">
                 <div class="col-12">
-                    <div class="card bg-black border-secondary text-center shadow-sm">
-                        <div class="card-body py-2 font-monospace fs-4">
-                            <span class="text-secondary me-5 fw-bold">MPos</span>
-                            <span class="text-danger fw-bold me-4">X: <span x-text="$store.machine.mpos[0].toFixed(2)"></span></span>
-                            <span class="text-success fw-bold me-4">Y: <span x-text="$store.machine.mpos[1].toFixed(2)"></span></span>
-                            <span class="text-info fw-bold">Z: <span x-text="$store.machine.mpos[2].toFixed(2)"></span></span>
-                        </div>
-                        <div class="card-body py-2 font-monospace fs-4">
-                            <span class="text-primary me-5 fw-bold">WPos</span>
-                            <span class="text-danger fw-bold me-4">X: <span x-text="$store.machine.wpos[0].toFixed(2)"></span></span>
-                            <span class="text-success fw-bold me-4">Y: <span x-text="$store.machine.wpos[1].toFixed(2)"></span></span>
-                            <span class="text-info fw-bold">Z: <span x-text="$store.machine.wpos[2].toFixed(2)"></span></span>
+                    <div class="card bg-black border-secondary shadow-sm">
+                        <div class="card-body py-3 font-monospace fs-4">
+                            <div class="d-grid justify-content-center align-items-center" 
+                                 style="grid-template-columns: auto repeat(3, minmax(130px, auto)); column-gap: 1.5rem; row-gap: 0.5rem; font-variant-numeric: tabular-nums;">
+                                <div class="text-secondary fw-bold text-end pe-2">MPos</div>
+                                <div class="text-danger fw-bold text-start"><span class="me-1">X:</span><span x-text="$store.machine.mpos[0].toFixed(2)"></span></div>
+                                <div class="text-success fw-bold text-start"><span class="me-1">Y:</span><span x-text="$store.machine.mpos[1].toFixed(2)"></span></div>
+                                <div class="text-info fw-bold text-start"><span class="me-1">Z:</span><span x-text="$store.machine.mpos[2].toFixed(2)"></span></div>
+
+                                <div class="text-primary fw-bold text-end pe-2">WPos</div>
+                                <div class="text-danger fw-bold text-start"><span class="me-1">X:</span><span x-text="$store.machine.wpos[0].toFixed(2)"></span></div>
+                                <div class="text-success fw-bold text-start"><span class="me-1">Y:</span><span x-text="$store.machine.wpos[1].toFixed(2)"></span></div>
+                                <div class="text-info fw-bold text-start"><span class="me-1">Z:</span><span x-text="$store.machine.wpos[2].toFixed(2)"></span></div>
+                            </div>
                         </div>
                     </div>
                 </div>

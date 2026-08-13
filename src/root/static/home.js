@@ -298,12 +298,14 @@ document.addEventListener("alpine:init", () => {
     }));
 
     // 5. UPLOAD LOGIC
-    Alpine.data("fileUploader", () => ({
+    Alpine.data("fileUploader", (existingFiles = []) => ({
         /** @type {File | null} */
         file: null,
         isUploading: false,
+        isDuplicate: false,
         progress: 0,
         errorMessage: '',
+        existingFiles: Array.isArray(existingFiles) ? existingFiles : [],
         /** @type {XMLHttpRequest | null} */
         xhr: null,
 
@@ -312,11 +314,26 @@ document.addEventListener("alpine:init", () => {
             const target = /** @type {HTMLInputElement} */ (e.target);
             if (target.files && target.files.length > 0) {
                 this.file = target.files[0];
+                this.isDuplicate = this.existingFiles.includes(this.file.name);
             } else {
                 this.file = null;
+                this.isDuplicate = false;
             }
             this.errorMessage = '';
             this.progress = 0;
+        },
+
+        reset() {
+            this.file = null;
+            this.isDuplicate = false;
+            this.progress = 0;
+            this.isUploading = false;
+            this.errorMessage = '';
+            // @ts-ignore
+            if (this.$refs.fileInput) {
+                // @ts-ignore
+                this.$refs.fileInput.value = '';
+            }
         },
 
         upload() {
@@ -340,12 +357,15 @@ document.addEventListener("alpine:init", () => {
                 if (!this.xhr) return;
 
                 if (this.xhr.status === 200) {
-                    alert("Upload successful!");
-                    window.location.reload();
+                    this.progress = 100;
+                    setTimeout(() => {
+                        this.reset();
+                        window.location.reload();
+                    }, 500);
                 } else {
                     this.handleError(`Server Error: ${this.xhr.status} - ${this.xhr.statusText}`);
+                    this.isUploading = false;
                 }
-                this.isUploading = false;
             });
 
             this.xhr.addEventListener("error", () => {
@@ -380,40 +400,59 @@ document.addEventListener("alpine:init", () => {
     // 6. DELETE FILE LOGIC
     Alpine.data("fileDeleter", () => ({
         isDeleting: false,
+        confirming: false,
+        selectedFile: '',
+        errorMessage: '',
 
-        async deleteFile() {
+        init() {
+            this.$watch('$refs.fileSelector.value', (val) => {
+                this.selectedFile = val || '';
+                this.confirming = false;
+                this.errorMessage = '';
+            });
+        },
+
+        requestConfirm() {
             /** @type {HTMLSelectElement} */
             // @ts-ignore
             const select = this.$refs.fileSelector;
-
             if (!select || !select.value) {
-                alert("Please select a file first.");
+                this.errorMessage = 'Please select a file first.';
                 return;
             }
+            this.selectedFile = select.value;
+            this.errorMessage = '';
+            this.confirming = true;
+        },
 
-            const filename = select.value;
+        cancelConfirm() {
+            this.confirming = false;
+            this.errorMessage = '';
+        },
 
-            if (!confirm(`Are you sure you want to permanently delete "${filename}"?`)) {
-                return;
-            }
+        async deleteFile() {
+            if (!this.selectedFile) return;
 
             this.isDeleting = true;
+            this.errorMessage = '';
 
             try {
                 const res = await fetch('/deletefile', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ file: filename })
+                    body: JSON.stringify({ file: this.selectedFile })
                 });
 
                 if (res.ok) {
                     window.location.reload();
                 } else {
                     const err = await res.json();
-                    alert("Error: " + (err.error || res.statusText));
+                    this.errorMessage = "Error: " + (err.error || res.statusText);
+                    this.confirming = false;
                 }
             } catch (e) {
-                alert("Network error: " + e);
+                this.errorMessage = "Network error: " + e;
+                this.confirming = false;
             } finally {
                 this.isDeleting = false;
             }

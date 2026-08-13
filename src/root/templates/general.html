@@ -201,8 +201,14 @@
     [x-cloak] { display: none !important; }
 </style>
 
-<div class="modal fade" id="uploadfilemodal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog" x-data="fileUploader">
+<div class="modal fade" 
+     id="uploadfilemodal" 
+     tabindex="-1" 
+     aria-hidden="true" 
+     x-data="fileUploader([{% for file in state['files'] %}'{{ file }}',{% endfor %}])"
+     @show.bs.modal="reset()"
+     @hidden.bs.modal="reset()">
+    <div class="modal-dialog">
         <div class="modal-content bg-dark border-secondary text-light">
             
             <div class="modal-header border-secondary">
@@ -218,20 +224,28 @@
                 
                 <div x-show="errorMessage" class="alert alert-danger p-2 mb-3" x-text="errorMessage"></div>
 
-                <form x-show="!isUploading">
+                <form x-show="!isUploading" autocomplete="off" @submit.prevent>
                     <div class="mb-3">
                         <label for="uploadformFile" class="form-label text-muted small">Select Pattern File</label>
                         <input class="form-control bg-dark text-light border-secondary" 
                                type="file" 
                                id="uploadformFile"
+                               x-ref="fileInput"
+                               autocomplete="off"
                                @change="handleFileSelect">
+                        <div x-show="isDuplicate" class="form-text text-warning mt-2">
+                            <i class="bi bi-info-circle me-1"></i> A file named <strong x-text="file ? file.name : ''"></strong> already exists and will be overwritten.
+                        </div>
                     </div>
                 </form>
                 
                 <div x-show="isUploading" class="text-center">
-                    <p class="mb-2">Uploading <span x-text="file ? file.name : ''"></span>...</p>
+                    <p class="mb-2">
+                        <span x-text="progress < 100 ? `Uploading ${file ? file.name : ''}...` : 'Upload Successful!'"></span>
+                    </p>
                     <div class="progress bg-secondary" style="height: 25px;">
-                        <div class="progress-bar progress-bar-striped progress-bar-animated bg-success" 
+                        <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                             :class="progress === 100 ? 'bg-success' : 'bg-primary'"
                              role="progressbar" 
                              :style="`width: ${progress}%`" 
                              :aria-valuenow="progress" 
@@ -256,7 +270,7 @@
                 <button type="button" 
                         class="btn btn-primary"
                         x-show="!isUploading"
-                        :disabled="!file"
+                        :disabled="!file || isUploading"
                         @click="upload()">
                     <i class="bi bi-cloud-upload"></i> Upload File
                 </button>
@@ -272,41 +286,55 @@
             
             <div class="modal-header border-secondary">
                 <h1 class="modal-title fs-5">Delete File</h1>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close" :disabled="isDeleting"></button>
             </div>
             
             <div class="modal-body">
-                <form>
+                <div x-show="errorMessage" class="alert alert-danger p-2 mb-3" x-text="errorMessage"></div>
+
+                <form x-show="!confirming">
                     <div class="mb-3">
                         <label for="filetodelete" class="form-label text-muted small">Select File to Delete</label>
                         
                         <select id="filetodelete" 
                                 class="form-select bg-dark text-light border-secondary"
-                                x-ref="fileSelector">
+                                x-ref="fileSelector"
+                                @change="errorMessage = ''">
                             {% for file in state['files'] %}
                             <option value="{{file}}">{{file}}</option>
                             {% endfor %}
                         </select>
                     </div>
-                    
-                    <div class="alert alert-warning d-flex align-items-center" role="alert">
-                        <i class="bi bi-exclamation-triangle-fill flex-shrink-0 me-2"></i>
-                        <div class="small">
-                            This action cannot be undone.
-                        </div>
-                    </div>
                 </form>
+
+                <div x-show="confirming" class="alert alert-danger mb-0" role="alert">
+                    <div class="d-flex align-items-center mb-1">
+                        <i class="bi bi-exclamation-triangle-fill fs-5 me-2"></i>
+                        <strong class="fs-6">Confirm Deletion</strong>
+                    </div>
+                    <p class="mb-0 small">Are you sure you want to permanently delete <code class="text-white bg-dark px-1 py-0.5 rounded" x-text="selectedFile"></code>? This action cannot be undone.</p>
+                </div>
             </div>
             
             <div class="modal-footer border-secondary">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                
+                <!-- Step 1: Initial buttons -->
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" x-show="!confirming">Cancel</button>
                 <button type="button" 
                         class="btn btn-danger" 
-                        @click="deleteFile"
+                        x-show="!confirming"
+                        @click="requestConfirm()">
+                    <i class="bi bi-trash me-1"></i> Delete File
+                </button>
+
+                <!-- Step 2: Confirmation buttons -->
+                <button type="button" class="btn btn-secondary" x-show="confirming" @click="cancelConfirm()" :disabled="isDeleting">Back</button>
+                <button type="button" 
+                        class="btn btn-danger" 
+                        x-show="confirming"
+                        @click="deleteFile()"
                         :disabled="isDeleting">
-                    <span x-show="!isDeleting">Delete File</span>
-                    <span x-show="isDeleting" class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                    <span x-show="!isDeleting"><i class="bi bi-trash-fill me-1"></i> Yes, Permanently Delete</span>
+                    <span x-show="isDeleting"><span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> Deleting...</span>
                 </button>
             </div>
             
