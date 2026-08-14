@@ -1,4 +1,10 @@
+# Python Runtime & Tests
+
+- Use `uv` when running Python commands (e.g. `uv run ...`).
+- Do not run or look for `pytest` as it is not installed/defined.
+
 # Hardware Tests & Obscure Cases
+
 
 - `src/control/tests/test_hardware.py`:
   - Contains hardware-level verification tests for FPGA SPI communication and SPI Flash programming.

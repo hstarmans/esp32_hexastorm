@@ -815,6 +815,15 @@ class BaseLaserhead:
         logger.info("Waiting for stopline to execute.")
         await self.wait_fifo_empty()
         await self.synchronize(False)
+        logger.info("Returning laser head to workspace origin (WPOS 0, 0).")
+        current_wpos_z = float(self.wpos[2])
+        await self.gotopoint(
+            [0.0, 0.0, current_wpos_z],
+            absolute=True,
+            workspace=True,
+            check_sensors=False,
+        )
+        await self.wait_fifo_empty()
         self.enable_steppers = False
         if (await self.fpga_state)["error"]:
             logger.info("Error detected during printing")

@@ -84,10 +84,35 @@
 
                 <button type="button" 
                         class="btn btn-danger btn-lg w-25"
-                        @click="if(confirm('Are you sure you want to cancel this print?')) stopPrint()">
+                        data-bs-toggle="modal"
+                        data-bs-target="#confirmStopModal">
                     <i class="bi bi-stop-fill"></i> Stop
                 </button>
 
+            </div>
+        </div>
+    </div>
+
+    <!-- Stop Print Confirmation Modal -->
+    <div class="modal fade" id="confirmStopModal" tabindex="-1" aria-labelledby="confirmStopModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content bg-dark border-danger text-light shadow-lg">
+                <div class="modal-header border-danger bg-danger bg-opacity-10">
+                    <h5 class="modal-title text-danger" id="confirmStopModalLabel">
+                        <i class="bi bi-exclamation-triangle-fill me-2"></i> Stop Print Job
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body py-4">
+                    <p class="mb-1 fs-5">Are you sure you want to cancel the print job?</p>
+                    <small class="text-secondary">Exposure will be aborted and the laser head will return to origin.</small>
+                </div>
+                <div class="modal-footer border-secondary">
+                    <button type="button" class="btn btn-outline-secondary px-4" data-bs-dismiss="modal">Keep Printing</button>
+                    <button type="button" class="btn btn-danger px-4" data-bs-dismiss="modal" @click="stopPrint()">
+                        <i class="bi bi-stop-fill me-1"></i> Stop Print
+                    </button>
+                </div>
             </div>
         </div>
     </div>

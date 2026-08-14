@@ -2,28 +2,22 @@
     <div class="card-header border-secondary">
         <i class="bi bi-file-earmark-code"></i> Print Job
     </div>
-    
+
     <div class="card-body d-flex flex-column gap-3 justify-content-center">
-        
-        <button class="btn btn-success btn-lg w-100 py-3 shadow-sm" 
-                type="button" 
-                data-bs-toggle="modal" 
-                data-bs-target="#printjobmodal">
+
+        <button class="btn btn-success btn-lg w-100 py-3 shadow-sm" type="button" data-bs-toggle="modal"
+            data-bs-target="#printjobmodal">
             <i class="bi bi-play-circle-fill me-2"></i> Start Print Job
         </button>
 
         <div class="d-flex gap-2">
-            <button class="btn btn-outline-primary w-50" 
-                    type="button" 
-                    data-bs-toggle="modal" 
-                    data-bs-target="#uploadfilemodal">
+            <button class="btn btn-outline-primary w-50" type="button" data-bs-toggle="modal"
+                data-bs-target="#uploadfilemodal">
                 <i class="bi bi-upload"></i> Upload
             </button>
-            
-            <button class="btn btn-outline-danger w-50" 
-                    type="button" 
-                    data-bs-toggle="modal" 
-                    data-bs-target="#deletefilemodal">
+
+            <button class="btn btn-outline-danger w-50" type="button" data-bs-toggle="modal"
+                data-bs-target="#deletefilemodal">
                 <i class="bi bi-trash"></i> Delete
             </button>
         </div>
@@ -31,9 +25,7 @@
 </div>
 
 <div class="modal fade" id="printjobmodal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered" 
-         x-data="printLauncher"
-         x-init="
+    <div class="modal-dialog modal-dialog-centered" x-data="printLauncher" x-init="
             laserPower = {{ state['job']['laserpower'] }};
             exposure = {{ state['job']['exposureperline'] }};
             singleFacet = {{ 'true' if state['job']['singlefacet'] else 'false' }};
@@ -49,23 +41,22 @@
             // Watch for changes in the dropdown
             $watch('selectedFile', value => detectMode(value));
          ">
-         
+
         <div class="modal-content bg-dark border-secondary text-light">
             <div class="modal-header border-secondary">
                 <h1 class="modal-title fs-5"><i class="bi bi-play-circle"></i> Print Settings</h1>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
+                    aria-label="Close"></button>
             </div>
-            
+
             <div class="modal-body">
                 <form>
                     <div class="mb-4">
                         <label for="printjobfilename" class="form-label text-muted small">Select File</label>
-                        <select id="printjobfilename" 
-                                class="form-select bg-black text-light border-secondary"
-                                x-model="selectedFile"
-                                x-ref="fileSelect">
+                        <select id="printjobfilename" class="form-select bg-black text-light border-secondary"
+                            x-model="selectedFile" x-ref="fileSelect">
                             {% for file in state['files'] %}
-                                <option value="{{file}}">{{file}}</option>
+                            <option value="{{file}}">{{file}}</option>
                             {% endfor %}
                         </select>
                     </div>
@@ -73,12 +64,14 @@
                     <div class="mb-4">
                         <label class="form-label text-muted small">Job Type</label>
                         <div class="btn-group w-100" role="group">
-                            <input type="radio" class="btn-check" name="jobmode" id="modelaser" value="laser" x-model="jobMode">
+                            <input type="radio" class="btn-check" name="jobmode" id="modelaser" value="laser"
+                                x-model="jobMode">
                             <label class="btn btn-outline-primary border-secondary" for="modelaser">
                                 <i class="bi bi-brightness-high"></i> Laser Exposure
                             </label>
-                            
-                            <input type="radio" class="btn-check" name="jobmode" id="modecnc" value="cnc" x-model="jobMode">
+
+                            <input type="radio" class="btn-check" name="jobmode" id="modecnc" value="cnc"
+                                x-model="jobMode">
                             <label class="btn btn-outline-warning border-secondary" for="modecnc">
                                 <i class="bi bi-tools"></i> CNC Milling
                             </label>
@@ -86,48 +79,45 @@
                     </div>
 
                     <div x-show="jobMode === 'laser'" x-transition x-cloak>
-                        <div x-show="!canEditAdvancedSettings" class="alert alert-dark border-secondary small py-2 mb-3 text-warning">
-                            <i class="bi bi-lock-fill me-1"></i> Exposure count and single facet options are locked for pre-configured files. Custom exposures and single facet mode require a raw file ending in <code>_e1_nocor</code> (e.g. <code>pattern_e1_nocor.pat</code>).
+                        <div x-show="!canEditAdvancedSettings"
+                            class="alert alert-dark border-secondary small py-2 mb-3 text-warning">
+                            <i class="bi bi-lock-fill me-1"></i> Exposure count and single facet options are locked for
+                            pre-configured files. Custom exposures and single facet mode require a raw file ending in
+                            <code>_e1_nocor</code> (e.g. <code>pattern_e1_nocor.pat</code>).
                         </div>
 
                         <div class="row g-3 mb-3">
                             <div class="col-4">
                                 <label for="laserpower" class="form-label text-muted small">Laser Power (PWM)</label>
-                                <input id="laserpower" class="form-control bg-black text-light border-secondary" type="number" x-model="laserPower" min="50" max="150"/>
+                                <input id="laserpower" class="form-control bg-black text-light border-secondary"
+                                    type="number" x-model="laserPower" min="50" max="150" />
                             </div>
                             <div class="col-4">
                                 <label for="exposureperline" class="form-label text-muted small">
                                     Exposure/Line
-                                    <span x-show="!canEditAdvancedSettings" class="text-warning small ms-1">(Locked)</span>
+                                    <span x-show="!canEditAdvancedSettings"
+                                        class="text-warning small ms-1">(Locked)</span>
                                 </label>
-                                <input id="exposureperline" 
-                                       class="form-control bg-black text-light border-secondary" 
-                                       type="number" 
-                                       x-model="exposure" 
-                                       min="1" 
-                                       max="8"
-                                       :disabled="!canEditAdvancedSettings"/>
+                                <input id="exposureperline" class="form-control bg-black text-light border-secondary"
+                                    type="number" x-model="exposure" min="1" max="8"
+                                    :disabled="!canEditAdvancedSettings" />
                             </div>
                             <div class="col-4">
-                                <label for="lanewidthcorrection" class="form-label text-muted small" title="Physical seam alignment correction between adjacent lanes (ideally 0 mm)">
-                                    Lane Width (mm)
-                                    <i class="bi bi-info-circle ms-1 text-info" style="font-size: 0.85em;" title="Seam alignment correction between adjacent optical lanes. Ideally 0 mm."></i>
+                                <label for="lanewidthcorrection" class="form-label text-muted small"
+                                    title="Physical seam alignment correction between adjacent lanes (ideally 0 mm)">
+                                    Seam Adj. (mm)
+                                    <i class="bi bi-info-circle ms-1 text-info" style="font-size: 0.85em;"
+                                        title="Seam alignment correction between adjacent optical lanes. Ideally 0 mm."></i>
                                 </label>
-                                <input id="lanewidthcorrection" 
-                                       class="form-control bg-black text-light border-secondary" 
-                                       type="number" 
-                                       step="0.01"
-                                       x-model.number="laneWidthCorrection"/>
+                                <input id="lanewidthcorrection"
+                                    class="form-control bg-black text-light border-secondary" type="number" step="0.01"
+                                    x-model.number="laneWidthCorrection" />
                             </div>
                         </div>
 
                         <div class="form-check form-switch mb-4">
-                            <input class="form-check-input" 
-                                   type="checkbox" 
-                                   role="switch" 
-                                   id="singlefacet" 
-                                   x-model="singleFacet"
-                                   :disabled="!canEditAdvancedSettings">
+                            <input class="form-check-input" type="checkbox" role="switch" id="singlefacet"
+                                x-model="singleFacet" :disabled="!canEditAdvancedSettings">
                             <label class="form-check-label text-light" for="singlefacet">
                                 Use single facet per rotation
                                 <span x-show="!canEditAdvancedSettings" class="text-warning small ms-1">(Locked)</span>
@@ -138,56 +128,66 @@
                     <hr class="border-secondary opacity-50">
 
                     <div class="form-check form-switch mb-3">
-                        <input class="form-check-input" type="checkbox" role="switch" id="homebeforeprint" x-model="homeBeforePrint">
-                        <label class="form-check-label text-light" for="homebeforeprint">Home XY-axes before starting</label>
+                        <input class="form-check-input" type="checkbox" role="switch" id="homebeforeprint"
+                            x-model="homeBeforePrint">
+                        <label class="form-check-label text-light" for="homebeforeprint">Home XY-axes before
+                            starting</label>
                     </div>
 
                     <div class="form-check form-switch mb-3">
-                        <input class="form-check-input" type="checkbox" role="switch" id="usecustomstart" x-model="useCustomStart">
-                        <label class="form-check-label text-warning" for="usecustomstart">Override Start Position (MPOS)</label>
+                        <input class="form-check-input" type="checkbox" role="switch" id="usecustomstart"
+                            x-model="useCustomStart">
+                        <label class="form-check-label text-warning" for="usecustomstart">Override Start Position
+                            (MPOS)</label>
                     </div>
 
                     <div class="mt-3 p-3 bg-black rounded border border-secondary" x-show="useCustomStart" x-cloak>
-                        <label class="form-label text-warning small d-block mb-2">Custom Machine Coordinates (MPOS)</label>
+                        <label class="form-label text-warning small d-block mb-2">Custom Machine Coordinates
+                            (MPOS)</label>
                         <div class="row g-2">
                             <div class="col-4">
                                 <div class="input-group input-group-sm">
                                     <span class="input-group-text bg-danger border-danger text-white">X</span>
-                                    <input type="number" step="0.1" class="form-control bg-dark text-light border-secondary text-center" x-model.number="posX">
+                                    <input type="number" step="0.1"
+                                        class="form-control bg-dark text-light border-secondary text-center"
+                                        x-model.number="posX">
                                 </div>
                             </div>
                             <div class="col-4">
                                 <div class="input-group input-group-sm">
                                     <span class="input-group-text bg-success border-success text-white">Y</span>
-                                    <input type="number" step="0.1" class="form-control bg-dark text-light border-secondary text-center" x-model.number="posY">
+                                    <input type="number" step="0.1"
+                                        class="form-control bg-dark text-light border-secondary text-center"
+                                        x-model.number="posY">
                                 </div>
                             </div>
                             <div class="col-4">
-                                <div class="input-group input-group-sm" :title="jobMode === 'laser' ? 'Z axis is locked to maintain laser focus' : ''">
+                                <div class="input-group input-group-sm"
+                                    :title="jobMode === 'laser' ? 'Z axis is locked to maintain laser focus' : ''">
                                     <span class="input-group-text bg-info border-info text-dark">Z</span>
-                                    <input type="number" step="0.1" class="form-control bg-dark text-light border-secondary text-center" x-model.number="posZ" :disabled="jobMode === 'laser'">
+                                    <input type="number" step="0.1"
+                                        class="form-control bg-dark text-light border-secondary text-center"
+                                        x-model.number="posZ" :disabled="jobMode === 'laser'">
                                 </div>
                             </div>
                         </div>
                         <div class="form-text text-muted small mt-2" x-show="jobMode === 'laser'">
-                            <i class="bi bi-lock-fill text-warning me-1"></i> Z position is locked to maintain laser focus.
+                            <i class="bi bi-lock-fill text-warning me-1"></i> Z position is locked to maintain laser
+                            focus.
                         </div>
                     </div>
 
                     <div class="mt-3 text-success small" x-show="!useCustomStart">
-                        <i class="bi bi-info-circle"></i> The job will start at the current Workspace Origin (WPOS 0,0,0).
+                        <i class="bi bi-info-circle"></i> The job will start at the current Workspace Origin (WPOS
+                        0,0,0).
                     </div>
                 </form>
             </div>
-            
+
             <div class="modal-footer border-secondary">
                 <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button id="startprintbutton" 
-                        type="button" 
-                        class="btn btn-success"
-                        @click="startPrint()"
-                        :disabled="isStarting"
-                        data-bs-dismiss="modal">
+                <button id="startprintbutton" type="button" class="btn btn-success" @click="startPrint()"
+                    :disabled="isStarting" data-bs-dismiss="modal">
                     <i class="bi" :class="isStarting ? 'bi-hourglass-split' : 'bi-play-fill'"></i>
                     <span x-text="isStarting ? 'Starting...' : 'Start Job'"></span>
                 </button>
@@ -198,60 +198,49 @@
 
 <style>
     /* Zorgt dat x-show animaties niet flikkeren bij laden */
-    [x-cloak] { display: none !important; }
+    [x-cloak] {
+        display: none !important;
+    }
 </style>
 
-<div class="modal fade" 
-     id="uploadfilemodal" 
-     tabindex="-1" 
-     aria-hidden="true" 
-     x-data="fileUploader([{% for file in state['files'] %}'{{ file }}',{% endfor %}])"
-     @show.bs.modal="reset()"
-     @hidden.bs.modal="reset()">
+<div class="modal fade" id="uploadfilemodal" tabindex="-1" aria-hidden="true"
+    x-data="fileUploader([{% for file in state['files'] %}'{{ file }}',{% endfor %}])" @show.bs.modal="reset()"
+    @hidden.bs.modal="reset()">
     <div class="modal-dialog">
         <div class="modal-content bg-dark border-secondary text-light">
-            
+
             <div class="modal-header border-secondary">
                 <h1 class="modal-title fs-5">Upload File</h1>
-                <button type="button" 
-                        class="btn-close btn-close-white" 
-                        data-bs-dismiss="modal" 
-                        aria-label="Close"
-                        :disabled="isUploading"></button>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"
+                    :disabled="isUploading"></button>
             </div>
 
             <div class="modal-body">
-                
+
                 <div x-show="errorMessage" class="alert alert-danger p-2 mb-3" x-text="errorMessage"></div>
 
                 <form x-show="!isUploading" autocomplete="off" @submit.prevent>
                     <div class="mb-3">
                         <label for="uploadformFile" class="form-label text-muted small">Select Pattern File</label>
-                        <input class="form-control bg-dark text-light border-secondary" 
-                               type="file" 
-                               id="uploadformFile"
-                               x-ref="fileInput"
-                               autocomplete="off"
-                               @change="handleFileSelect">
+                        <input class="form-control bg-dark text-light border-secondary" type="file" id="uploadformFile"
+                            x-ref="fileInput" autocomplete="off" @change="handleFileSelect">
                         <div x-show="isDuplicate" class="form-text text-warning mt-2">
-                            <i class="bi bi-info-circle me-1"></i> A file named <strong x-text="file ? file.name : ''"></strong> already exists and will be overwritten.
+                            <i class="bi bi-info-circle me-1"></i> A file named <strong
+                                x-text="file ? file.name : ''"></strong> already exists and will be overwritten.
                         </div>
                     </div>
                 </form>
-                
+
                 <div x-show="isUploading" class="text-center">
                     <p class="mb-2">
-                        <span x-text="progress < 100 ? `Uploading ${file ? file.name : ''}...` : 'Upload Successful!'"></span>
+                        <span
+                            x-text="progress < 100 ? `Uploading ${file ? file.name : ''}...` : 'Upload Successful!'"></span>
                     </p>
                     <div class="progress bg-secondary" style="height: 25px;">
-                        <div class="progress-bar progress-bar-striped progress-bar-animated" 
-                             :class="progress === 100 ? 'bg-success' : 'bg-primary'"
-                             role="progressbar" 
-                             :style="`width: ${progress}%`" 
-                             :aria-valuenow="progress" 
-                             aria-valuemin="0" 
-                             aria-valuemax="100"
-                             x-text="progress + '%'">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated"
+                            :class="progress === 100 ? 'bg-success' : 'bg-primary'" role="progressbar"
+                            :style="`width: ${progress}%`" :aria-valuenow="progress" aria-valuemin="0"
+                            aria-valuemax="100" x-text="progress + '%'">
                         </div>
                     </div>
                 </div>
@@ -259,19 +248,14 @@
             </div>
 
             <div class="modal-footer border-secondary">
-                
-                <button type="button" 
-                        class="btn btn-secondary" 
-                        @click="isUploading ? cancel() : null" 
-                        :data-bs-dismiss="!isUploading ? 'modal' : ''">
+
+                <button type="button" class="btn btn-secondary" @click="isUploading ? cancel() : null"
+                    :data-bs-dismiss="!isUploading ? 'modal' : ''">
                     <span x-text="isUploading ? 'Abort Upload' : 'Cancel'"></span>
                 </button>
-                
-                <button type="button" 
-                        class="btn btn-primary"
-                        x-show="!isUploading"
-                        :disabled="!file || isUploading"
-                        @click="upload()">
+
+                <button type="button" class="btn btn-primary" x-show="!isUploading" :disabled="!file || isUploading"
+                    @click="upload()">
                     <i class="bi bi-cloud-upload"></i> Upload File
                 </button>
 
@@ -283,23 +267,22 @@
 <div class="modal fade" id="deletefilemodal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog" x-data="fileDeleter">
         <div class="modal-content bg-dark border-secondary text-light">
-            
+
             <div class="modal-header border-secondary">
                 <h1 class="modal-title fs-5">Delete File</h1>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close" :disabled="isDeleting"></button>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"
+                    :disabled="isDeleting"></button>
             </div>
-            
+
             <div class="modal-body">
                 <div x-show="errorMessage" class="alert alert-danger p-2 mb-3" x-text="errorMessage"></div>
 
                 <form x-show="!confirming">
                     <div class="mb-3">
                         <label for="filetodelete" class="form-label text-muted small">Select File to Delete</label>
-                        
-                        <select id="filetodelete" 
-                                class="form-select bg-dark text-light border-secondary"
-                                x-ref="fileSelector"
-                                @change="errorMessage = ''">
+
+                        <select id="filetodelete" class="form-select bg-dark text-light border-secondary"
+                            x-ref="fileSelector" @change="errorMessage = ''">
                             {% for file in state['files'] %}
                             <option value="{{file}}">{{file}}</option>
                             {% endfor %}
@@ -312,39 +295,38 @@
                         <i class="bi bi-exclamation-triangle-fill fs-5 me-2"></i>
                         <strong class="fs-6">Confirm Deletion</strong>
                     </div>
-                    <p class="mb-0 small">Are you sure you want to permanently delete <code class="text-white bg-dark px-1 py-0.5 rounded" x-text="selectedFile"></code>? This action cannot be undone.</p>
+                    <p class="mb-0 small">Are you sure you want to permanently delete <code
+                            class="text-white bg-dark px-1 py-0.5 rounded" x-text="selectedFile"></code>? This action
+                        cannot be undone.</p>
                 </div>
             </div>
-            
+
             <div class="modal-footer border-secondary">
                 <!-- Step 1: Initial buttons -->
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" x-show="!confirming">Cancel</button>
-                <button type="button" 
-                        class="btn btn-danger" 
-                        x-show="!confirming"
-                        @click="requestConfirm()">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"
+                    x-show="!confirming">Cancel</button>
+                <button type="button" class="btn btn-danger" x-show="!confirming" @click="requestConfirm()">
                     <i class="bi bi-trash me-1"></i> Delete File
                 </button>
 
                 <!-- Step 2: Confirmation buttons -->
-                <button type="button" class="btn btn-secondary" x-show="confirming" @click="cancelConfirm()" :disabled="isDeleting">Back</button>
-                <button type="button" 
-                        class="btn btn-danger" 
-                        x-show="confirming"
-                        @click="deleteFile()"
-                        :disabled="isDeleting">
+                <button type="button" class="btn btn-secondary" x-show="confirming" @click="cancelConfirm()"
+                    :disabled="isDeleting">Back</button>
+                <button type="button" class="btn btn-danger" x-show="confirming" @click="deleteFile()"
+                    :disabled="isDeleting">
                     <span x-show="!isDeleting"><i class="bi bi-trash-fill me-1"></i> Yes, Permanently Delete</span>
-                    <span x-show="isDeleting"><span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> Deleting...</span>
+                    <span x-show="isDeleting"><span class="spinner-border spinner-border-sm me-1" role="status"
+                            aria-hidden="true"></span> Deleting...</span>
                 </button>
             </div>
-            
+
         </div>
     </div>
 </div>
 
-<div class="modal fade" id="gotoModal" tabindex="-1" aria-labelledby="gotoModalLabel" aria-hidden="true" x-data="commands">
-    <div class="modal-dialog modal-dialog-centered" 
-         x-data="{ 
+<div class="modal fade" id="gotoModal" tabindex="-1" aria-labelledby="gotoModalLabel" aria-hidden="true"
+    x-data="commands">
+    <div class="modal-dialog modal-dialog-centered" x-data="{ 
             moveX: true, 
             moveY: true, 
             moveZ: false, 
@@ -360,80 +342,81 @@
                     this.targetZ = Number(current[2].toFixed(2));
                 }
             }
-         }"
-         x-init="
+         }" x-init="
             syncCurrentPos();
             $watch('coordType', () => syncCurrentPos());
          ">
         <div class="modal-content bg-dark border-secondary text-light">
             <div class="modal-header border-secondary">
                 <h5 class="modal-title" id="gotoModalLabel"><i class="bi bi-geo-alt"></i> Rapid Go To</h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
+                    aria-label="Close"></button>
             </div>
             <div class="modal-body">
                 <div class="mb-3">
                     <label class="form-label small text-muted">Coordinate System</label>
                     <div class="btn-group w-100" role="group">
-                        <input type="radio" class="btn-check" name="coordType" id="coordWorkspace" value="workspace" x-model="coordType" checked>
+                        <input type="radio" class="btn-check" name="coordType" id="coordWorkspace" value="workspace"
+                            x-model="coordType" checked>
                         <label class="btn btn-outline-primary btn-sm" for="coordWorkspace">
                             Workspace (WPOS)
                         </label>
 
-                        <input type="radio" class="btn-check" name="coordType" id="coordMachine" value="machine" x-model="coordType">
+                        <input type="radio" class="btn-check" name="coordType" id="coordMachine" value="machine"
+                            x-model="coordType">
                         <label class="btn btn-outline-primary btn-sm" for="coordMachine">
                             Machine (MPOS)
                         </label>
                     </div>
                 </div>
 
-                <p class="small text-muted mb-3" x-text="coordType === 'workspace' ? 'Select the axes you want to move and enter the target WPOS coordinates.' : 'Select the axes you want to move and enter the target MPOS coordinates.'"></p>
-                
+                <p class="small text-muted mb-3"
+                    x-text="coordType === 'workspace' ? 'Select the axes you want to move and enter the target WPOS coordinates.' : 'Select the axes you want to move and enter the target MPOS coordinates.'">
+                </p>
+
                 <div class="row g-2">
                     <div class="col-4">
                         <div class="input-group input-group-sm">
-                            <div class="input-group-text bg-dark border-secondary" title="Enable/disable X axis movement">
+                            <div class="input-group-text bg-dark border-secondary"
+                                title="Enable/disable X axis movement">
                                 <input class="form-check-input mt-0" type="checkbox" x-model="moveX">
                             </div>
                             <span class="input-group-text bg-danger border-danger text-white fw-bold">X</span>
-                            <input type="number" step="0.01" 
-                                   class="form-control bg-black text-light border-secondary font-monospace text-center" 
-                                   x-model.number="targetX" 
-                                   :disabled="!moveX">
+                            <input type="number" step="0.01"
+                                class="form-control bg-black text-light border-secondary font-monospace text-center"
+                                x-model.number="targetX" :disabled="!moveX">
                         </div>
                     </div>
                     <div class="col-4">
                         <div class="input-group input-group-sm">
-                            <div class="input-group-text bg-dark border-secondary" title="Enable/disable Y axis movement">
+                            <div class="input-group-text bg-dark border-secondary"
+                                title="Enable/disable Y axis movement">
                                 <input class="form-check-input mt-0" type="checkbox" x-model="moveY">
                             </div>
                             <span class="input-group-text bg-success border-success text-white fw-bold">Y</span>
-                            <input type="number" step="0.01" 
-                                   class="form-control bg-black text-light border-secondary font-monospace text-center" 
-                                   x-model.number="targetY" 
-                                   :disabled="!moveY">
+                            <input type="number" step="0.01"
+                                class="form-control bg-black text-light border-secondary font-monospace text-center"
+                                x-model.number="targetY" :disabled="!moveY">
                         </div>
                     </div>
                     <div class="col-4">
                         <div class="input-group input-group-sm">
-                            <div class="input-group-text bg-dark border-secondary" title="Enable/disable Z axis movement">
+                            <div class="input-group-text bg-dark border-secondary"
+                                title="Enable/disable Z axis movement">
                                 <input class="form-check-input mt-0" type="checkbox" x-model="moveZ">
                             </div>
                             <span class="input-group-text bg-info border-info text-black fw-bold">Z</span>
-                            <input type="number" step="0.01" 
-                                   class="form-control bg-black text-light border-secondary font-monospace text-center" 
-                                   x-model.number="targetZ" 
-                                   :disabled="!moveZ">
+                            <input type="number" step="0.01"
+                                class="form-control bg-black text-light border-secondary font-monospace text-center"
+                                x-model.number="targetZ" :disabled="!moveZ">
                         </div>
                     </div>
                 </div>
             </div>
             <div class="modal-footer border-secondary">
                 <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-                <button type="button" 
-                        class="btn btn-sm btn-primary" 
-                        data-bs-dismiss="modal" 
-                        :disabled="!moveX && !moveY && !moveZ"
-                        @click="
+                <button type="button" class="btn btn-sm btn-primary" data-bs-dismiss="modal"
+                    :disabled="!moveX && !moveY && !moveZ" @click="
                             const current = coordType === 'workspace' ? $store.machine.wpos : $store.machine.mpos;
                             const posX = moveX ? targetX : current[0];
                             const posY = moveY ? targetY : current[1];
