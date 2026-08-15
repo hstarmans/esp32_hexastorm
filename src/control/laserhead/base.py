@@ -733,7 +733,7 @@ class BaseLaserhead:
                     if lane > 0:
                         logger.info("Moving in y-direction for next lane.")
                         await self.gotopoint(
-                            [0, -lane_width, 0], absolute=False, check_sensors=False
+                            [0, lane_width, 0], absolute=False, check_sensors=False
                         )
                     lane_start_x = float(self._position[axis_idx])
                     direction_sign = 1 if (lane % 2 == 0) else -1

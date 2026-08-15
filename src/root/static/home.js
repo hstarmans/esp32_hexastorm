@@ -279,20 +279,76 @@ document.addEventListener("alpine:init", () => {
         stopPrint() { api.post('/print/control', { action: 'stop' }); },
         pausePrint() { api.post('/print/control', { action: 'pause' }); },
 
-        async reboot() {
-            if (!confirm("Are you sure you want to reboot the system?")) return;
+        // Reboot state & handlers
+        rebooting: false,
+        countdown: 10,
+        rebootError: null,
+        rebootInterval: null,
+
+        resetRebootState() {
+            this.rebooting = false;
+            this.countdown = 10;
+            this.rebootError = null;
+            if (this.rebootInterval) {
+                clearInterval(this.rebootInterval);
+                this.rebootInterval = null;
+            }
+        },
+
+        async confirmReboot() {
+            this.rebooting = true;
+            this.rebootError = null;
+            this.countdown = 10;
 
             try {
-                await fetch("/reset", {
+                const res = await fetch("/reset", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" }
                 });
 
-                alert("System is rebooting. Page will reload in 10 seconds.");
-                setTimeout(() => window.location.reload(), 10000);
+                if (!res.ok) {
+                    throw new Error(`Server returned error status ${res.status}`);
+                }
+
+                if (this.rebootInterval) {
+                    clearInterval(this.rebootInterval);
+                }
+
+                this.rebootInterval = setInterval(async () => {
+                    this.countdown--;
+
+                    if (this.countdown <= 7 && this.countdown > 0) {
+                        try {
+                            const ping = await fetch('/', { method: 'HEAD', cache: 'no-store' });
+                            if (ping.ok) {
+                                clearInterval(this.rebootInterval);
+                                window.location.reload();
+                                return;
+                            }
+                        } catch (_) {}
+                    }
+
+                    if (this.countdown <= 0) {
+                        clearInterval(this.rebootInterval);
+                        window.location.reload();
+                    }
+                }, 1000);
 
             } catch (err) {
-                alert("Reboot command failed: " + err);
+                this.rebooting = false;
+                this.rebootError = "Reboot command failed: " + (err instanceof Error ? err.message : String(err));
+            }
+        },
+
+        async reboot() {
+            const modalEl = document.getElementById('rebootModal');
+            if (modalEl) {
+                this.resetRebootState();
+                // @ts-ignore
+                const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+                modal.show();
+            } else {
+                this.confirmReboot();
             }
         },
     }));

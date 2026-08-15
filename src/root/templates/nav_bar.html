@@ -27,7 +27,7 @@
                     <i class="bi bi-gear-fill"></i> Settings
                 </button>
                 
-                <button type="button" class="btn btn-sm btn-outline-light" @click="reboot()">
+                <button type="button" class="btn btn-sm btn-outline-light" data-bs-toggle="modal" data-bs-target="#rebootModal" @click="resetRebootState()">
                     <i class="bi bi-arrow-counterclockwise"></i> Reboot
                 </button>
                 
@@ -37,6 +37,81 @@
             </div>
         </div>
     </nav>
+
+    <!-- Reboot System Confirmation & Progress Modal -->
+    <div class="modal fade" id="rebootModal" data-bs-backdrop="static" tabindex="-1" aria-labelledby="rebootModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content bg-dark text-light border-secondary shadow-lg">
+                <div class="modal-header border-secondary">
+                    <h5 class="modal-title d-flex align-items-center gap-2" id="rebootModalLabel">
+                        <i class="bi bi-arrow-counterclockwise text-warning fs-5"></i>
+                        <span class="fw-bold">Reboot System</span>
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close" :disabled="rebooting"></button>
+                </div>
+                
+                <div class="modal-body py-4">
+                    <!-- Error Alert -->
+                    <template x-if="rebootError">
+                        <div class="alert alert-danger d-flex align-items-center gap-2 mb-3" role="alert">
+                            <i class="bi bi-exclamation-triangle-fill fs-5 flex-shrink-0"></i>
+                            <div x-text="rebootError"></div>
+                        </div>
+                    </template>
+
+                    <!-- Initial Confirmation State -->
+                    <template x-if="!rebooting">
+                        <div class="d-flex align-items-start gap-3">
+                            <i class="bi bi-question-circle-fill text-warning fs-1 flex-shrink-0"></i>
+                            <div>
+                                <h6 class="fw-bold mb-2">Are you sure you want to reboot the system?</h6>
+                                <p class="text-secondary mb-0">
+                                    This will restart the ESP32 controller. Any active job or motion will be interrupted.
+                                </p>
+                            </div>
+                        </div>
+                    </template>
+
+                    <!-- Rebooting Countdown State -->
+                    <template x-if="rebooting">
+                        <div class="text-center py-2">
+                            <div class="spinner-border text-warning mb-3" style="width: 3rem; height: 3rem;" role="status">
+                                <span class="visually-hidden">Rebooting...</span>
+                            </div>
+                            <h5 class="fw-bold mb-2">Rebooting ESP32...</h5>
+                            <p class="text-secondary mb-3" x-text="'Reloading page in ' + countdown + ' second' + (countdown === 1 ? '' : 's') + '...'"></p>
+                            
+                            <div class="progress bg-secondary bg-opacity-50" style="height: 8px;">
+                                <div class="progress-bar progress-bar-striped progress-bar-animated bg-warning" 
+                                     role="progressbar" 
+                                     :style="{ width: Math.min(100, Math.max(5, ((10 - countdown) * 10))) + '%' }">
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+                </div>
+                
+                <div class="modal-footer border-secondary">
+                    <template x-if="!rebooting">
+                        <div class="d-flex gap-2 w-100 justify-content-end">
+                            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">
+                                Cancel
+                            </button>
+                            <button type="button" class="btn btn-warning fw-bold px-3 shadow-sm" @click="confirmReboot()">
+                                <i class="bi bi-arrow-counterclockwise me-1"></i> Reboot Now
+                            </button>
+                        </div>
+                    </template>
+                    <template x-if="rebooting">
+                        <div class="text-secondary small me-auto d-flex align-items-center gap-2">
+                            <i class="bi bi-info-circle text-info"></i>
+                            <span>Please wait while system restarts...</span>
+                        </div>
+                    </template>
+                </div>
+            </div>
+        </div>
+    </div>
 </div>
 
 
