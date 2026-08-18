@@ -151,7 +151,15 @@ class Laserhead(ESP32Host, BaseLaserhead):
         if self.state.get("estop", False):
             raise ValueError("Machine is locked in E-STOP state! Reset machine first.")
         logger.info(f"Homing axes {axes}.")
-        await ESP32Host.home_axes(self, axes)
+
+        for tmc in self.steppers.values():
+            tmc.spread_cycle = False
+
+        try:
+            await ESP32Host.home_axes(self, axes)
+        finally:
+            for tmc in self.steppers.values():
+                tmc.spread_cycle = True
 
         self._save_position()
         await self.notify_listeners()

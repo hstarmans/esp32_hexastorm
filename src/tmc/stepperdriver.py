@@ -397,27 +397,28 @@ class TMC_2209:
         """
         Reads the current spreadCycle chopper timing configuration from CHOPCONF.
         Returns:
-            dict: {"toff": int, "hstrt": int, "hend": int}
+            dict: {"toff": int, "hstrt": int, "hend": int, "tbl": int}
         """
         chopconf = self.tmc_uart.read_u32(reg.CHOPCONF)
 
         toff = (chopconf & reg.toff_mask) >> reg.TOFF_SHIFT
         hstrt = (chopconf & reg.hstrt_mask) >> reg.HSTRT_SHIFT
         hend = (chopconf & reg.hend_mask) >> reg.HEND_SHIFT
+        tbl = (chopconf & reg.tbl_mask) >> reg.TBL_SHIFT
 
-        return {"toff": toff, "hstrt": hstrt, "hend": hend}
+        return {"toff": toff, "hstrt": hstrt, "hend": hend, "tbl": tbl}
 
     @chopper_timings.setter
     def chopper_timings(self, timings):
         """
-        Sets the spreadCycle chopper timing configuration (TOFF, HSTRT, HEND).
+        Sets the spreadCycle chopper timing configuration (TOFF, HSTRT, HEND, TBL).
         Args:
-            timings (dict): Dictionary containing keys 'toff', 'hstrt', and/or 'hend'.
+            timings (dict): Dictionary containing keys 'toff', 'hstrt', 'hend', and/or 'tbl'.
                             Values not provided in the dict will retain their current settings.
         """
         if not isinstance(timings, dict):
             raise ValueError(
-                "chopper_timings must be a dictionary, e.g., {'toff': 5, 'hstrt': 4, 'hend': 1}"
+                "chopper_timings must be a dictionary, e.g., {'toff': 3, 'hstrt': 4, 'hend': 1, 'tbl': 2}"
             )
 
         # Read current CHOPCONF to preserve other bits
@@ -428,14 +429,16 @@ class TMC_2209:
         toff = int(timings.get("toff", current_timings["toff"])) & 0x0F
         hstrt = int(timings.get("hstrt", current_timings["hstrt"])) & 0x07
         hend = int(timings.get("hend", current_timings["hend"])) & 0x0F
+        tbl = int(timings.get("tbl", current_timings.get("tbl", 2))) & 0x03
 
         # Clear old chopper bits
-        chopconf &= ~(reg.toff_mask | reg.hstrt_mask | reg.hend_mask)
+        chopconf &= ~(reg.toff_mask | reg.hstrt_mask | reg.hend_mask | reg.tbl_mask)
 
         # Update with new bits
         chopconf |= toff << reg.TOFF_SHIFT
         chopconf |= hstrt << reg.HSTRT_SHIFT
         chopconf |= hend << reg.HEND_SHIFT
+        chopconf |= tbl << reg.TBL_SHIFT
 
         # Write back to driver
         self.tmc_uart.write_reg_check(reg.CHOPCONF, chopconf)

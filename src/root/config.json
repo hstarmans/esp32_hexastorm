@@ -68,7 +68,7 @@
             "vsense": false,
             "iscale_analog": false,
             "interpolation": true,
-            "spread_cycle": false,
+            "spread_cycle": true,
             "internal_rsense": false,
             "motor_enabled": false,
             "direction_inverted": false,

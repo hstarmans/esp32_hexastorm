@@ -56,10 +56,12 @@ MSRES_SHIFT = 24
 TOFF_SHIFT = 0
 HSTRT_SHIFT = 4
 HEND_SHIFT = 7
+TBL_SHIFT = 15
 
 toff_mask = 0x0F << TOFF_SHIFT  # bits [3:0] (0..15)
 hstrt_mask = 0x07 << HSTRT_SHIFT  # bits [6:4] (0..7)
 hend_mask = 0x0F << HEND_SHIFT  # bits [10:7] (0..15)
+tbl_mask = 0x03 << TBL_SHIFT  # bits [16:15] (0..3)
 
 # ------------------------ IOIN bits ------------------------------------
 io_enn = 1 << 0  # ENN pin level (1=high)

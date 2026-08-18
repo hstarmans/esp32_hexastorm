@@ -2,6 +2,7 @@
 
 - Use `uv` when running Python commands (e.g. `uv run ...`).
 - Do not run or look for `pytest` as it is not installed/defined.
+- Do not try to run unit tests (tests rely on MicroPython target environments and physical hardware).
 
 # Hardware Tests & Obscure Cases
 
