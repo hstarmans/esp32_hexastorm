@@ -17,8 +17,8 @@ except ImportError:
     import json
 
 try:
-    from inspect import iscoroutinefunction, iscoroutine
     from functools import partial
+    from inspect import iscoroutine, iscoroutinefunction
 
     async def invoke_handler(handler, *args, **kwargs):
         """Invoke a handler and return the result.

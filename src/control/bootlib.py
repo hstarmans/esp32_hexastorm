@@ -19,8 +19,6 @@ if constants.ESP32:
     import ntptime
     import webrepl
 
-    from ota.update import OTA
-
 _logging_configured = False
 logger = logging.getLogger(__name__)
 
@@ -161,20 +159,17 @@ def get_firmware_dct(require_new=True):
         return {}
 
     def clean(code):
-        if isinstance(code, bool):
-            logger.error("Version number invalid, boolean")
-            return 0
-        if not isinstance(code, str):
-            try:
-                return float(code)
-            except (ValueError, TypeError):
-                logger.error("Version number invalid, not convertable to float")
-                return 0.0
+        if isinstance(code, bool) or code is None:
+            return (0, 0, 0)
+        s = str(code).lower().replace("v", "").strip()
         try:
-            return float(code.lower().replace("v", ""))
+            parts = [int(p) for p in s.split(".") if p.isdigit()]
+            while len(parts) < 3:
+                parts.append(0)
+            return tuple(parts[:3])
         except (ValueError, TypeError):
-            logger.error("Version number invalid, not convertable to float")
-            return 0.0
+            logger.warning(f"Version number '{code}' invalid, fallback to (0, 0, 0)")
+            return (0, 0, 0)
 
     if (not require_new) or (clean(release_dct["tag_name"]) > clean(gh["version"])):
         return release_dct

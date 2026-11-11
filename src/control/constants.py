@@ -3,7 +3,7 @@ import logging
 import os
 import sys
 
-ESP32 = not sys.platform in ["linux", "win32", "darwin"]
+ESP32 = sys.platform not in ["linux", "win32", "darwin"]
 logger = logging.getLogger(__name__)
 
 if ESP32:
@@ -333,7 +333,7 @@ def dump_pretty_json(obj, fp, indent=4, level=0):
 
 
 def update_config():
-    """Update the json settings."""
+    """Update the json settings and synchronize active runtime components."""
     clean_cfg = sanitize_types(CONFIG)
     CONFIG.clear()
     CONFIG.update(clean_cfg)
@@ -345,6 +345,12 @@ def update_config():
             recurse_dct(CONFIG, "sd/", "src/root/sd/")
         else:
             dump_pretty_json(CONFIG, fp, indent=4)
+
+    # Automatically synchronize camera hardware if calibration exposure is configured
+    if "calibration" in CONFIG:
+        from .camera import camera
+
+        camera.set_exposure_ms(CONFIG["calibration"]["camera_exposure_ms"])
 
 
 if ESP32:

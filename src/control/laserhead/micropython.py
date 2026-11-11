@@ -1,4 +1,3 @@
-import asyncio
 import logging
 
 from hexastorm.fpga_host.micropython import ESP32Host

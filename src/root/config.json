@@ -126,5 +126,14 @@
             "offset_x": 35.0,
             "offset_y": -12.5
         }
+    },
+    "calibration": {
+        "camera_position": [
+            90.0,
+            0.0,
+            10.0
+        ],
+        "camera_exposure_ms": 200,
+        "alignment_laser_power": 30
     }
 }

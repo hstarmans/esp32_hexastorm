@@ -21,6 +21,10 @@ interface Window {
         post(url: string, payload?: any): Promise<void>;
         gotopoint(position: number[], absolute?: boolean, workspace?: boolean): void;
         clearError(): void;
+        saveCameraPos(position?: number[]): void;
+        moveToCamera(): void;
+        setCameraExposure(exposure_ms: number): void;
+        [key: string]: any;
     };
     diodeTest: () => void;
     saveFacetMeans: () => void;

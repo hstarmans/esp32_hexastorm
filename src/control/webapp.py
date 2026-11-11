@@ -101,6 +101,7 @@ class DeviceState:
                 "ssid": CONFIG["wifi_login"]["ssid"],
                 "password": CONFIG["wifi_login"]["password"],
             },
+            "calibration": CONFIG["calibration"],
         }
         self.data.update(dct)
 
@@ -583,6 +584,7 @@ async def get_settings(request, session):
         "motors": CONFIG["motors"],
         "tools": CONFIG["tools"],
         "defaultprint": CONFIG["defaultprint"],
+        "calibration": CONFIG["calibration"],
     }
 
 
@@ -594,13 +596,13 @@ async def save_settings(request, session):
     """
     data = request.json
 
-    for key in ("wifi_login", "motors", "tools", "defaultprint"):
+    for key in ("wifi_login", "motors", "tools", "defaultprint", "calibration"):
         if key in data:
             CONFIG[key] = data[key]
 
     update_config()
-
     laserhead.apply_motor_settings()
+    devicestate.update()
 
     logger.info("Configuration updated successfully.")
     return {"status": "success", "message": "Settings saved"}
@@ -719,6 +721,65 @@ async def camera_snapshot(request, session):
             "Cache-Control": "no-cache, no-store, must-revalidate",
         },
     )
+
+
+@app.post("/api/camera/settings")
+@with_session
+async def api_camera_settings(request, session):
+    """Update camera exposure and optical settings."""
+    if not is_authorized(session):
+        return Response("Unauthorized", status_code=401)
+
+    data = request.json or {}
+    if "exposure_ms" in data:
+        exp_ms = max(1, int(data["exposure_ms"]))
+        CONFIG["calibration"]["camera_exposure_ms"] = exp_ms
+        update_config()
+        devicestate.update()
+
+    return devicestate.data
+
+
+@app.post("/api/calibration/save_camera_pos")
+@with_session
+async def api_save_camera_pos(request, session):
+    """Save current (or specified) machine position as camera calibration target."""
+    if not is_authorized(session):
+        return Response("Unauthorized", status_code=401)
+
+    data = request.json or {}
+    pos = data.get("position", laserhead.mpos)
+    pos = [round(float(x), 2) for x in pos[:3]]
+
+    CONFIG["calibration"]["camera_position"] = pos
+    update_config()
+    devicestate.update()
+    return devicestate.data
+
+
+@app.post("/api/calibration/move_to_camera")
+@with_session
+async def api_move_to_camera(request, session):
+    """Move laser head directly to the saved camera calibration position."""
+    if not is_authorized(session):
+        return Response("Unauthorized", status_code=401)
+
+    target = CONFIG["calibration"]["camera_position"]
+
+    state = laserhead.enable_steppers
+    laserhead.enable_steppers = True
+    try:
+        await laserhead.gotopoint(position=target, absolute=True, workspace=False)
+    except ValueError as ve:
+        if state is False:
+            laserhead.enable_steppers = False
+        await laserhead.set_error(str(ve))
+        return {"error": str(ve)}, 400
+
+    if state is False:
+        await laserhead.wait_fifo_empty()
+        laserhead.enable_steppers = False
+    return devicestate.data
 
 
 @app.route("/static/<path:path>")

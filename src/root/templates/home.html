@@ -1,129 +1,156 @@
 {% args state, selected='Home' %}
 <!DOCTYPE html>
 <html lang="en" data-bs-theme="dark">
-    <head>{% include 'base_header.html' %}</head>
-    <body>
-        {% include 'nav_bar.html' %}
-        {% include 'settings.html' %}
-        {% include 'printingstate.html' %}
-        {% include 'camera_modal.html' %}
 
-        <div id="controlstate"
-            class="container-fluid"
-            {% if state.get('printing', False) %}style="max-width: 1200px; display: none;"{% else %}style="max-width: 1200px;"{% endif %}
-            x-data="movement"
-            x-show="!$store.machine.printing"
-            x-cloak>
+<head>{% include 'base_header.html' %}</head>
 
-            <div class="row g-2 mb-4">
-                <div class="col-12">
-                    <div class="card bg-black border-secondary shadow-sm">
-                        <div class="card-body py-3 font-monospace fs-4">
-                            <div class="d-grid justify-content-center align-items-center" 
-                                 style="grid-template-columns: auto repeat(3, minmax(130px, auto)); column-gap: 1.5rem; row-gap: 0.5rem; font-variant-numeric: tabular-nums;">
-                                <div class="text-secondary fw-bold text-end pe-2">MPos</div>
-                                <div class="text-danger fw-bold text-start"><span class="me-1">X:</span><span x-text="$store.machine.mpos[0].toFixed(2)"></span></div>
-                                <div class="text-success fw-bold text-start"><span class="me-1">Y:</span><span x-text="$store.machine.mpos[1].toFixed(2)"></span></div>
-                                <div class="text-info fw-bold text-start"><span class="me-1">Z:</span><span x-text="$store.machine.mpos[2].toFixed(2)"></span></div>
+<body>
+    {% include 'nav_bar.html' %}
+    {% include 'settings.html' %}
+    {% include 'printingstate.html' %}
 
-                                <div class="text-primary fw-bold text-end pe-2">WPos</div>
-                                <div class="text-danger fw-bold text-start"><span class="me-1">X:</span><span x-text="$store.machine.wpos[0].toFixed(2)"></span></div>
-                                <div class="text-success fw-bold text-start"><span class="me-1">Y:</span><span x-text="$store.machine.wpos[1].toFixed(2)"></span></div>
-                                <div class="text-info fw-bold text-start"><span class="me-1">Z:</span><span x-text="$store.machine.wpos[2].toFixed(2)"></span></div>
-                            </div>
+    <div id="controlstate"
+        class="container-fluid"
+        {% if state.get('printing', False) %}style="max-width: 1200px; display: none;"{% else %}style="max-width: 1200px;"{% endif %}
+        x-data="movement"
+        x-show="!$store.machine.printing"
+        x-cloak>
+
+        <div class="row g-2 mb-4">
+            <div class="col-12">
+                <div class="card bg-black border-secondary shadow-sm">
+                    <div class="card-body py-3 font-monospace fs-4">
+                        <div class="d-grid justify-content-center align-items-center"
+                            style="grid-template-columns: auto repeat(3, minmax(130px, auto)); column-gap: 1.5rem; row-gap: 0.5rem; font-variant-numeric: tabular-nums;">
+                            <div class="text-secondary fw-bold text-end pe-2">MPos</div>
+                            <div class="text-danger fw-bold text-start"><span class="me-1">X:</span><span
+                                    x-text="$store.machine.mpos[0].toFixed(2)"></span></div>
+                            <div class="text-success fw-bold text-start"><span class="me-1">Y:</span><span
+                                    x-text="$store.machine.mpos[1].toFixed(2)"></span></div>
+                            <div class="text-info fw-bold text-start"><span class="me-1">Z:</span><span
+                                    x-text="$store.machine.mpos[2].toFixed(2)"></span></div>
+
+                            <div class="text-primary fw-bold text-end pe-2">WPos</div>
+                            <div class="text-danger fw-bold text-start"><span class="me-1">X:</span><span
+                                    x-text="$store.machine.wpos[0].toFixed(2)"></span></div>
+                            <div class="text-success fw-bold text-start"><span class="me-1">Y:</span><span
+                                    x-text="$store.machine.wpos[1].toFixed(2)"></span></div>
+                            <div class="text-info fw-bold text-start"><span class="me-1">Z:</span><span
+                                    x-text="$store.machine.wpos[2].toFixed(2)"></span></div>
                         </div>
-                    </div>
-                </div>
-            </div>
-            <div class="row g-4 justify-content-center">
-                <div class="col-12 col-lg-5">
-                    <div class="card h-100 bg-dark border-secondary" x-data="commands">
-                        <div class="card-header border-secondary d-flex justify-content-between align-items-center">
-                            <span><i class="bi bi-arrows-move"></i> Motion Control</span>
-                            <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#gotoModal">
-                                <i class="bi bi-box-arrow-in-right"></i> Go To...
-                            </button>
-                        </div>
-                        <div class="card-body">
-                            <div class="d-flex justify-content-center align-items-center gap-3 mb-4 mt-2">
-                                <div style="width: 180px;">
-                                    {% include 'XYmovement.html' %}
-                                </div>
-                                
-                                <div style="width: 60px;">
-                                    {% include 'Zmovement.html' %}
-                                </div>
-
-                                <div class="d-flex flex-column gap-1 justify-content-center" style="width: 3.5rem;">
-                                    <button type="button" class="btn btn-sm btn-outline-danger d-flex align-items-center justify-content-center" 
-                                            style="height: 2.4rem;" @click="setWorkspaceZero([1,0,0])" title="Zero Workspace X">
-                                        <span class="fw-bold text-uppercase" style="font-size: 0.75rem;">X=0</span>
-                                    </button>
-                                    <button type="button" class="btn btn-sm btn-outline-success d-flex align-items-center justify-content-center" 
-                                            style="height: 2.4rem;" @click="setWorkspaceZero([0,1,0])" title="Zero Workspace Y">
-                                        <span class="fw-bold text-uppercase" style="font-size: 0.75rem;">Y=0</span>
-                                    </button>
-                                    <button type="button" class="btn btn-sm btn-outline-info d-flex align-items-center justify-content-center" 
-                                            style="height: 2.4rem;" @click="setWorkspaceZero([0,0,1])" title="Zero Workspace Z">
-                                        <span class="fw-bold text-uppercase" style="font-size: 0.75rem;">Z=0</span>
-                                    </button>
-                                    <button type="button" class="btn btn-sm btn-primary d-flex align-items-center justify-content-center" 
-                                            style="height: 2.4rem;" @click="setWorkspaceZero([1,1,1])" title="Zero Workspace All Axes">
-                                        <i class="bi bi-geo-alt-fill" style="font-size: 0.85rem;"></i>
-                                    </button>
-                                </div>
-                            </div>
-                            
-                            <hr class="border-secondary opacity-25">
-                            {% include 'steps.html' %}
-                        </div>
-                    </div>
-                </div>
-
-                <div class="col-12 col-lg-4">
-                    {% include 'peripherals.html' %}
-                </div>
-
-                <div class="col-12 col-lg-3">
-                    {% include 'general.html' %}
-                </div>
-                
-            </div>
-        </div>
-
-        <!-- Job Failure Error Modal -->
-        <div class="modal fade" id="jobErrorModal" x-data tabindex="-1" aria-labelledby="jobErrorModalLabel" aria-hidden="true">
-            <div class="modal-dialog modal-dialog-centered">
-                <div class="modal-content bg-dark border-danger text-light shadow-lg">
-                    <div class="modal-header border-danger bg-danger bg-opacity-10">
-                        <h5 class="modal-title text-danger" id="jobErrorModalLabel">
-                            <i class="bi bi-exclamation-triangle-fill me-2"></i>
-                            <span x-text="$store.machine.estop ? 'Emergency Stop Lock' : ($store.machine.printing ? 'Print Job Failed' : 'Command Error')"></span>
-                        </h5>
-                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-                    </div>
-                    <div class="modal-body py-4">
-                        <div class="d-flex align-items-start gap-3">
-                            <i class="bi bi-x-circle-fill text-danger fs-1 flex-shrink-0"></i>
-                            <div>
-                                <h6 class="fw-bold mb-2" x-text="$store.machine.estop ? 'System Status:' : 'Error Details:'"></h6>
-                                <p class="text-secondary mb-0 font-monospace text-break" x-text="$store.machine.error_message || 'An unexpected error occurred during execution.'"></p>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="modal-footer border-secondary" x-data="commands">
-                        <button type="button" class="btn btn-warning me-auto" x-show="$store.machine.estop" @click="resetEstop()" data-bs-dismiss="modal">
-                            <i class="bi bi-arrow-counterclockwise me-1"></i> Reset E-Stop
-                        </button>
-                        <button type="button" class="btn btn-danger px-4" data-bs-dismiss="modal">
-                            <i class="bi bi-check-lg me-1"></i> Dismiss
-                        </button>
                     </div>
                 </div>
             </div>
         </div>
+        <div class="row g-4 justify-content-center">
+            <div class="col-12 col-lg-5">
+                <div class="card h-100 bg-dark border-secondary" x-data="commands">
+                    <div class="card-header border-secondary d-flex justify-content-between align-items-center">
+                        <span><i class="bi bi-arrows-move"></i> Motion Control</span>
+                        <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal"
+                            data-bs-target="#gotoModal">
+                            <i class="bi bi-box-arrow-in-right"></i> Go To...
+                        </button>
+                    </div>
+                    <div class="card-body">
+                        <div class="d-flex justify-content-center align-items-center gap-3 mb-4 mt-2">
+                            <div style="width: 180px;">
+                                {% include 'XYmovement.html' %}
+                            </div>
 
-        <script src="static/home.js"></script>
-        {% include 'base_footer.html' %}
-    </body>
+                            <div style="width: 60px;">
+                                {% include 'Zmovement.html' %}
+                            </div>
+
+                            <div class="d-flex flex-column gap-1 justify-content-center" style="width: 3.5rem;">
+                                <button type="button"
+                                    class="btn btn-sm btn-outline-danger d-flex align-items-center justify-content-center"
+                                    style="height: 2.4rem;" @click="setWorkspaceZero([1,0,0])" title="Zero Workspace X">
+                                    <span class="fw-bold text-uppercase" style="font-size: 0.75rem;">X=0</span>
+                                </button>
+                                <button type="button"
+                                    class="btn btn-sm btn-outline-success d-flex align-items-center justify-content-center"
+                                    style="height: 2.4rem;" @click="setWorkspaceZero([0,1,0])" title="Zero Workspace Y">
+                                    <span class="fw-bold text-uppercase" style="font-size: 0.75rem;">Y=0</span>
+                                </button>
+                                <button type="button"
+                                    class="btn btn-sm btn-outline-info d-flex align-items-center justify-content-center"
+                                    style="height: 2.4rem;" @click="setWorkspaceZero([0,0,1])" title="Zero Workspace Z">
+                                    <span class="fw-bold text-uppercase" style="font-size: 0.75rem;">Z=0</span>
+                                </button>
+                                <button type="button"
+                                    class="btn btn-sm btn-primary d-flex align-items-center justify-content-center"
+                                    style="height: 2.4rem;" @click="setWorkspaceZero([1,1,1])"
+                                    title="Zero Workspace All Axes">
+                                    <i class="bi bi-geo-alt-fill" style="font-size: 0.85rem;"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <hr class="border-secondary opacity-25">
+                        {% include 'steps.html' %}
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-12 col-lg-4">
+                {% include 'peripherals.html' %}
+            </div>
+
+            <div class="col-12 col-lg-3">
+                {% include 'general.html' %}
+            </div>
+
+        </div>
+
+        <div class="row g-4 justify-content-center mt-1">
+            <div class="col-12">
+                {% include 'camera_panel.html' %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Job Failure Error Modal -->
+    <div class="modal fade" id="jobErrorModal" x-data tabindex="-1" aria-labelledby="jobErrorModalLabel"
+        aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content bg-dark border-danger text-light shadow-lg">
+                <div class="modal-header border-danger bg-danger bg-opacity-10">
+                    <h5 class="modal-title text-danger" id="jobErrorModalLabel">
+                        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                        <span
+                            x-text="$store.machine.estop ? 'Emergency Stop Lock' : ($store.machine.printing ? 'Print Job Failed' : 'Command Error')"></span>
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"
+                        aria-label="Close"></button>
+                </div>
+                <div class="modal-body py-4">
+                    <div class="d-flex align-items-start gap-3">
+                        <i class="bi bi-x-circle-fill text-danger fs-1 flex-shrink-0"></i>
+                        <div>
+                            <h6 class="fw-bold mb-2"
+                                x-text="$store.machine.estop ? 'System Status:' : 'Error Details:'"></h6>
+                            <p class="text-secondary mb-0 font-monospace text-break"
+                                x-text="$store.machine.error_message || 'An unexpected error occurred during execution.'">
+                            </p>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer border-secondary" x-data="commands">
+                    <button type="button" class="btn btn-warning me-auto" x-show="$store.machine.estop"
+                        @click="resetEstop()" data-bs-dismiss="modal">
+                        <i class="bi bi-arrow-counterclockwise me-1"></i> Reset E-Stop
+                    </button>
+                    <button type="button" class="btn btn-danger px-4" data-bs-dismiss="modal">
+                        <i class="bi bi-check-lg me-1"></i> Dismiss
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="static/home.js?v=4"></script>
+    {% include 'base_footer.html' %}
+</body>
+
 </html>

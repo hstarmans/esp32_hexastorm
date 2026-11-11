@@ -39,9 +39,14 @@ class Camera:
 
     def __init__(self, *args, **kwargs):
         self.exposure_ctrl = False
+        self.aec2 = False
         self.gain_ctrl = False
-        self.aec_value = 150
         self.agc_gain = 0
+        self.whitebal = False
+        self.awb_gain = False
+        self.bpc = False
+        self.wpc = False
+        self.aec_value = 1200
         self._capture_count = 0
 
     def capture(self):
@@ -58,13 +63,27 @@ class Camera:
             draw.line([(0, y), (w, y)], fill=(25, 25, 35), width=1)
 
         # Center crosshair
-        draw.line([(w // 2, h // 2 - 25), (w // 2, h // 2 + 25)], fill=(60, 60, 80), width=1)
-        draw.line([(w // 2 - 25, h // 2), (w // 2 + 25, h // 2)], fill=(60, 60, 80), width=1)
+        draw.line(
+            [(w // 2, h // 2 - 25), (w // 2, h // 2 + 25)], fill=(60, 60, 80), width=1
+        )
+        draw.line(
+            [(w // 2 - 25, h // 2), (w // 2 + 25, h // 2)], fill=(60, 60, 80), width=1
+        )
 
         now_str = datetime.now().strftime("%H:%M:%S.%f")[:-3]
-        draw.text((15, 15), f"MOCK CAMERA TEST - FRAME #{self._capture_count}", fill=(0, 255, 160))
-        draw.text((15, 32), f"Timestamp: {now_str}  |  PlatformConfig Pins OK", fill=(200, 200, 200))
-        draw.text((15, 48), "F1..F4 = Facets of rotating polygon mirror", fill=(130, 150, 180))
+        draw.text(
+            (15, 15),
+            f"MOCK CAMERA TEST - FRAME #{self._capture_count}",
+            fill=(0, 255, 160),
+        )
+        draw.text(
+            (15, 32),
+            f"Time: {now_str}  |  PlatformConfig Pins OK",
+            fill=(200, 200, 200),
+        )
+        draw.text(
+            (15, 48), "F1..F4 = Facets of rotating polygon mirror", fill=(130, 150, 180)
+        )
 
         # Animated facet sweep lines (F1..F4)
         base_ys = [180, 220, 260, 300]

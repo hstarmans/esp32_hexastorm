@@ -27,12 +27,20 @@
  */
 
 /**
+ * @typedef {Object} Calibration
+ * @property {number[]} [camera_position] - Camera target position [x, y, z]
+ * @property {number} [camera_exposure_ms] - Camera exposure time in ms
+ * @property {number} [alignment_laser_power] - Optional alignment laser power
+ */
+
+/**
  * @typedef {Object} MachineState
  * @property {boolean} printing - Is the machine currently printing?
  * @property {boolean} paused - Is the print paused?
  * @property {boolean} [estop] - Is the machine in emergency stop state?
  * @property {PrintJob} job - The current job details
  * @property {Components} components - Hardware status
+ * @property {Calibration} [calibration] - Camera calibration & offsets
  * @property {number[]} mpos - Machine position mm [x, y, z]
  * @property {number[]} wpos - Workspace position mm [x, y, z]
  * @property {number} [notauthorized] - Optional flag if session is invalid
@@ -100,6 +108,29 @@ document.addEventListener("alpine:init", () => {
          */
         clearError() {
             this.post('/clearerror');
+        },
+
+        /**
+         * Save camera calibration position (machine coordinates)
+         * @param {number[]} [position]
+         */
+        saveCameraPos(position) {
+            this.post('/api/calibration/save_camera_pos', position ? { position } : {});
+        },
+
+        /**
+         * Move laser head directly to camera calibration position
+         */
+        moveToCamera() {
+            this.post('/api/calibration/move_to_camera');
+        },
+
+        /**
+         * Set camera exposure in milliseconds
+         * @param {number} exposure_ms
+         */
+        setCameraExposure(exposure_ms) {
+            this.post('/api/camera/settings', { exposure_ms: Number(exposure_ms) });
         }
     };
     const api = window.api;
@@ -109,6 +140,25 @@ document.addEventListener("alpine:init", () => {
         printing: false,
         paused: false,
         estop: false,
+        showCamera: false,
+
+        toggleCamera() {
+            this.showCamera = !this.showCamera;
+            if (this.showCamera) {
+                setTimeout(() => {
+                    const el = document.getElementById('cameraPanel');
+                    if (el) {
+                        el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    }
+                }, 80);
+            }
+        },
+
+        calibration: {
+            camera_position: [90.0, 0.0, 10.0],
+            camera_exposure_ms: 200,
+            alignment_laser_power: 30
+        },
         /** @type {PrintJob} */
         job: {
             filename: '',
@@ -199,6 +249,10 @@ document.addEventListener("alpine:init", () => {
                 this.components.spindle = data.components.spindle;
                 this.components.fan = data.components.fan;
                 this.components.diodetest = data.components.diodetest ? JSON.parse(JSON.stringify(data.components.diodetest)) : null;
+            }
+
+            if (data.calibration) {
+                this.calibration = data.calibration;
             }
         },
 
@@ -633,6 +687,11 @@ document.addEventListener("alpine:init", () => {
         tools: {
             laser: { offset_x: 0, offset_y: 0 }
         },
+        calibration: {
+            camera_position: [90.0, 0.0, 10.0],
+            camera_exposure_ms: 200,
+            alignment_laser_power: 30
+        },
         defaultprint: {
             lanewidth_correction: 0
         },
@@ -651,6 +710,9 @@ document.addEventListener("alpine:init", () => {
                     this.wifi_login = { ...this.wifi_login, ...data.wifi_login };
                     this.motors = { ...this.motors, ...data.motors };
                     this.tools = { ...this.tools, ...data.tools };
+                    if (data.calibration) {
+                        this.calibration = { ...this.calibration, ...data.calibration };
+                    }
                     this.defaultprint = { ...this.defaultprint, ...data.defaultprint };
                 } else {
                     console.error("Failed to load configuration");
@@ -674,12 +736,16 @@ document.addEventListener("alpine:init", () => {
                         wifi_login: this.wifi_login,
                         motors: this.motors,
                         tools: this.tools,
+                        calibration: this.calibration,
                         defaultprint: this.defaultprint
                     })
                 });
 
                 if (res.ok) {
-                    alert("Settings saved successfully! For network changes, a reboot is  requiredfor changes to take effect.");
+                    // Keep Alpine global store in sync
+                    // @ts-ignore
+                    Alpine.store('machine').calibration = JSON.parse(JSON.stringify(this.calibration));
+                    alert("Settings saved successfully! For network changes, a reboot is required for changes to take effect.");
                 } else {
                     alert("Failed to save settings.");
                 }
@@ -777,6 +843,83 @@ document.addEventListener("alpine:init", () => {
             } catch (error) {
                 this.isUpdating = false;
                 this.errorMessage = "Failed to trigger the update process.";
+            }
+        }
+    }));
+
+    // 8. CAMERA & CALIBRATION PANEL LOGIC
+    Alpine.data("cameraPanel", () => ({
+        imgUrl: '',
+        currentBlobUrl: '',
+        autoRefresh: false,
+        intervalId: null,
+        refreshInterval: 5,
+        loading: false,
+        errorMsg: null,
+        lastUpdated: 'Not yet captured',
+
+        async refresh() {
+            if (this.loading) return;
+            this.loading = true;
+            this.errorMsg = null;
+            try {
+                const res = await fetch('/api/camera/snapshot?t=' + Date.now());
+                if (!res.ok) {
+                    const txt = await res.text();
+                    this.errorMsg = txt || ('Camera error (HTTP ' + res.status + ')');
+                    return;
+                }
+                const blob = await res.blob();
+                if (this.currentBlobUrl) {
+                    URL.revokeObjectURL(this.currentBlobUrl);
+                }
+                this.currentBlobUrl = URL.createObjectURL(blob);
+                this.imgUrl = this.currentBlobUrl;
+                const now = new Date();
+                this.lastUpdated = now.toLocaleTimeString();
+            } catch (err) {
+                this.errorMsg = 'Connection error: ' + (err.message || 'Could not reach server');
+            } finally {
+                this.loading = false;
+            }
+        },
+
+        toggleAuto() {
+            this.autoRefresh = !this.autoRefresh;
+            if (this.autoRefresh) {
+                this.startAuto();
+            } else {
+                this.stopAuto();
+            }
+        },
+
+        startAuto() {
+            this.stopAuto();
+            this.autoRefresh = true;
+            this.refresh();
+            const sec = Math.max(1, Number(this.refreshInterval || 5));
+            this.intervalId = setInterval(() => this.refresh(), sec * 1000);
+        },
+
+        restartAuto() {
+            if (this.autoRefresh) {
+                this.startAuto();
+            }
+        },
+
+        stopAuto() {
+            this.autoRefresh = false;
+            if (this.intervalId) {
+                clearInterval(this.intervalId);
+                this.intervalId = null;
+            }
+        },
+
+        destroy() {
+            this.stopAuto();
+            if (this.currentBlobUrl) {
+                URL.revokeObjectURL(this.currentBlobUrl);
+                this.currentBlobUrl = '';
             }
         }
     }));

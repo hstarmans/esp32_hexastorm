@@ -1,6 +1,7 @@
 import os
 from random import choice
-from microdot import abort, iscoroutine, AsyncBytesIO
+
+from microdot import AsyncBytesIO, abort, iscoroutine
 from microdot.helpers import wraps
 
 
