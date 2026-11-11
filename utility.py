@@ -20,9 +20,9 @@ Prerequisites:
 """
 
 import argparse
+import logging
 import subprocess
 import sys
-import logging
 from pathlib import Path
 
 # Configure logging: Time - Level - Message

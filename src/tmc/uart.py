@@ -1,10 +1,10 @@
-import time
-import struct
 import logging
-
-from .reg import GSTAT, IFCNT
+import struct
+import time
 
 from machine import UART
+
+from .reg import GSTAT, IFCNT
 
 logger = logging.getLogger(__name__)
 

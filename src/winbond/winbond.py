@@ -7,8 +7,10 @@ Credits & kudos to crizeo
 Taken from https://forum.micropython.org/viewtopic.php?f=16&t=3899
 """
 
-from micropython import const
 import time
+
+from micropython import const
+
 from machine import SPI, Pin
 
 

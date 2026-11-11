@@ -1,6 +1,7 @@
-import machine
-from time import sleep
 import time
+from time import sleep
+
+import machine
 from machine import Pin
 
 # --- Configuration ---

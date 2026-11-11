@@ -1,4 +1,5 @@
 import sys
+
 from tmc.stepperdriver import *
 
 pin_en = 16  # enable pin
@@ -16,19 +17,19 @@ settings = [
     ("motor_enabled", False),
 ]
 
-uart_dct = dict(
-    id=2,
-    ctor=dict(
-        baudrate=115200,
-        tx=15,
-        rx=7,
-    ),
-    init=dict(
-        bits=8,
-        parity=None,
-        stop=1,
-    ),
-)
+uart_dct = {
+    "id": 2,
+    "ctor": {
+        "baudrate": 115200,
+        "tx": 15,
+        "rx": 7,
+    },
+    "init": {
+        "bits": 8,
+        "parity": None,
+        "stop": 1,
+    },
+}
 
 for mtr_id in mtr_ids:
     try:

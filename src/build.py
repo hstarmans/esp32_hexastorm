@@ -1,9 +1,10 @@
-import os
-import sys
-import time
-import subprocess
 import argparse
 import logging
+import os
+import subprocess
+import sys
+import time
+
 import serial
 import serial.tools.list_ports
 

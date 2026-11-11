@@ -1,7 +1,8 @@
 # --- boot.py ---
-import os
 import json
 import logging
+import os
+
 import ota.rollback
 from control import bootlib, constants
 

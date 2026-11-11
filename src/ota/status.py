@@ -10,10 +10,11 @@ import struct
 import sys
 import time
 
-import machine
 from esp32 import Partition
 from flashbdev import bdev
 from micropython import const
+
+import machine
 
 OTA_UNSUPPORTED = const(-261)
 ESP_ERR_OTA_VALIDATE_FAILED = const(-5379)

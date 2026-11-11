@@ -39,8 +39,8 @@ Notes & limitations:
 - Frozen/native modules cannot be reloaded.
 """
 
-import sys
 import logging
+import sys
 
 logger = logging.getLogger(__name__)
 

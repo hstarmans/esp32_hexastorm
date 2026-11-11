@@ -1,5 +1,6 @@
-from machine import UART, Pin
 import time
+
+from machine import UART, Pin
 
 # check chip outputs 5V and 29V is vmot
 # internal diode voltage vref is 1.52V

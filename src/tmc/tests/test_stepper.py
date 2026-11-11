@@ -1,9 +1,9 @@
 import unittest
 
-from ..stepperdriver import TMC_2209
-from hexastorm.config import PlatformConfig
 from control.unittest_runner import run
+from hexastorm.config import PlatformConfig
 
+from ..stepperdriver import TMC_2209
 
 esp32_cfg = PlatformConfig(test=False).esp32_cfg
 

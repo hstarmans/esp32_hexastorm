@@ -1,0 +1,149 @@
+<!-- Facet Calibration Camera Modal -->
+<div class="modal fade" id="cameraModal" tabindex="-1" aria-labelledby="cameraModalLabel" aria-hidden="true"
+     x-data="{
+         imgUrl: '',
+         currentBlobUrl: '',
+         autoRefresh: false,
+         intervalId: null,
+         loading: false,
+         errorMsg: null,
+         lastUpdated: 'Not yet captured',
+         async refresh() {
+             if (this.loading) return;
+             this.loading = true;
+             this.errorMsg = null;
+             try {
+                 const res = await fetch('/api/camera/snapshot?t=' + Date.now());
+                 if (!res.ok) {
+                     const txt = await res.text();
+                     this.errorMsg = txt || ('Camera error (HTTP ' + res.status + ')');
+                     return;
+                 }
+                 const blob = await res.blob();
+                 if (this.currentBlobUrl) {
+                     URL.revokeObjectURL(this.currentBlobUrl);
+                 }
+                 this.currentBlobUrl = URL.createObjectURL(blob);
+                 this.imgUrl = this.currentBlobUrl;
+                 const now = new Date();
+                 this.lastUpdated = now.toLocaleTimeString();
+             } catch (err) {
+                 this.errorMsg = 'Connection error: ' + (err.message || 'Could not reach server');
+             } finally {
+                 this.loading = false;
+             }
+         },
+         toggleAuto() {
+             this.autoRefresh = !this.autoRefresh;
+             if (this.autoRefresh) {
+                 this.refresh();
+                 this.intervalId = setInterval(() => this.refresh(), 10000);
+             } else {
+                 if (this.intervalId) {
+                     clearInterval(this.intervalId);
+                     this.intervalId = null;
+                 }
+             }
+         },
+         stopAuto() {
+             if (this.autoRefresh) {
+                 this.autoRefresh = false;
+                 if (this.intervalId) {
+                     clearInterval(this.intervalId);
+                     this.intervalId = null;
+                 }
+             }
+         }
+     }"
+     x-init="
+         $el.addEventListener('shown.bs.modal', () => { if (!imgUrl) refresh(); });
+         $el.addEventListener('hidden.bs.modal', () => { stopAuto(); });
+     ">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content bg-dark border-secondary text-light shadow-lg">
+            
+            <div class="modal-header border-secondary py-2">
+                <h5 class="modal-title d-flex align-items-center gap-2 fs-6" id="cameraModalLabel">
+                    <i class="bi bi-camera-fill text-warning"></i>
+                    <span class="fw-bold">Facet Calibration View</span>
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close" @click="stopAuto()"></button>
+            </div>
+            
+            <div class="modal-body p-2 bg-black text-center d-flex flex-column align-items-center justify-content-center" style="min-height: 400px;">
+                
+                <!-- Hardware / Connection Error Alert -->
+                <template x-if="errorMsg">
+                    <div class="alert alert-danger d-flex align-items-center gap-2 w-100 mb-2 shadow text-start" role="alert">
+                        <i class="bi bi-exclamation-triangle-fill fs-4 flex-shrink-0"></i>
+                        <div>
+                            <div class="fw-bold">Camera Initialization / Capture Error</div>
+                            <div class="small font-monospace" x-text="errorMsg"></div>
+                        </div>
+                    </div>
+                </template>
+
+                <!-- Clean Image Container (No overlays blocking the picture) -->
+                <div class="w-100 d-flex justify-content-center align-items-center">
+                    <template x-if="imgUrl">
+                        <img :src="imgUrl" 
+                             class="img-fluid rounded border border-secondary shadow-sm" 
+                             alt="Camera Frame" 
+                             style="max-height: 65vh; max-width: 100%; object-fit: contain;">
+                    </template>
+
+                    <template x-if="!imgUrl && !errorMsg">
+                        <div class="text-secondary py-5">
+                            <i class="bi bi-camera fs-1 d-block mb-2 opacity-50"></i>
+                            <span class="small">Click "Capture Now" to take a snapshot</span>
+                        </div>
+                    </template>
+                </div>
+            </div>
+
+            <div class="modal-footer border-secondary py-2 d-flex justify-content-between align-items-center">
+                <div class="d-flex align-items-center gap-2 small text-secondary">
+                    <i class="bi bi-clock-history"></i>
+                    <span>Updated: <strong class="text-light font-monospace" x-text="lastUpdated"></strong></span>
+                    
+                    <!-- Subtle loading text in footer instead of center overlay -->
+                    <template x-if="loading">
+                        <span class="text-warning ms-2 small d-inline-flex align-items-center gap-1">
+                            <span class="spinner-border spinner-border-sm" role="status" style="width: 0.8rem; height: 0.8rem;"></span> Capturing...
+                        </span>
+                    </template>
+                    
+                    <template x-if="autoRefresh && !loading">
+                        <span class="badge bg-success ms-2 d-inline-flex align-items-center gap-1">
+                            <i class="bi bi-arrow-repeat spin-animation"></i> Auto (10s) active
+                        </span>
+                    </template>
+                </div>
+                
+                <div class="d-flex gap-2">
+                    <button type="button" 
+                            class="btn btn-sm d-flex align-items-center gap-1"
+                            :class="autoRefresh ? 'btn-success' : 'btn-outline-secondary'" 
+                            @click="toggleAuto()"
+                            title="Toggle automatic frame refresh every 10 seconds">
+                        <i class="bi" :class="autoRefresh ? 'bi-stop-circle-fill' : 'bi-arrow-repeat'"></i>
+                        <span x-text="autoRefresh ? 'Stop Auto' : 'Auto (10s)'"></span>
+                    </button>
+                    
+                    <button type="button" 
+                            class="btn btn-sm btn-primary d-flex align-items-center gap-1"
+                            :disabled="loading"
+                            @click="refresh()">
+                        <template x-if="loading">
+                            <span class="spinner-border spinner-border-sm" role="status"></span>
+                        </template>
+                        <template x-if="!loading">
+                            <i class="bi bi-camera"></i>
+                        </template>
+                        <span x-text="loading ? 'Capturing...' : 'Capture Now'"></span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

@@ -1,5 +1,6 @@
-from machine import Pin, I2C, PWM
 import time
+
+from machine import I2C, PWM, Pin
 
 # --- YOUR EXACT PINS FROM THE SCHEMATIC ---
 PIN_SIOD = 18  # SDA

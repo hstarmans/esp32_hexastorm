@@ -23,9 +23,9 @@ Returns:
     A summary dict with totals, counts, and per-case details.
 """
 
-import unittest
 import logging
 import sys
+import unittest
 
 logger = logging.getLogger(__name__)
 

@@ -1,10 +1,9 @@
 import asyncio
 import logging
 
-
 from control import bootlib, constants
-from control.webapp import app
 from control.laserhead import laserhead as lh
+from control.webapp import app
 
 logger = logging.getLogger(__name__)
 

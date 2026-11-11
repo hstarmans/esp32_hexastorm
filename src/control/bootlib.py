@@ -6,17 +6,19 @@ try:
 except ImportError:
     import requests
 import json
-import os
 import logging
+import os
 
-from . import constants
 import machine
 
+from . import constants
+
 if constants.ESP32:
-    import ntptime
-    import network
     import esp
+    import network
+    import ntptime
     import webrepl
+
     from ota.update import OTA
 
 _logging_configured = False

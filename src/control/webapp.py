@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import sys
+
 import machine
 from microdot import Microdot, Request, Response, redirect, send_file
 from microdot.session import Session, with_session
@@ -12,6 +13,7 @@ from microdot.sse import with_sse
 from microdot.utemplate import Template
 
 from . import bootlib, constants
+from .camera import camera
 from .constants import CONFIG, CONFIG_FILE, NVS_FILE, update_config
 from .laserhead import laserhead
 
@@ -328,7 +330,9 @@ async def api_gotopoint(request, session):
     state = laserhead.enable_steppers
     laserhead.enable_steppers = True
     try:
-        await laserhead.gotopoint(position=position, absolute=absolute, workspace=workspace)
+        await laserhead.gotopoint(
+            position=position, absolute=absolute, workspace=workspace
+        )
     except ValueError as ve:
         if state is False:
             laserhead.enable_steppers = False
@@ -689,6 +693,32 @@ async def api_factory_reset(request, session):
 
     asyncio.create_task(delayed_reset())
     return {"status": "success", "message": "Factory reset initiated, rebooting..."}
+
+
+@app.get("/api/camera/snapshot")
+@with_session
+async def camera_snapshot(request, session):
+    """
+    Return a single JPEG snapshot from the camera.
+    Uses OV2640 hardware JPEG on ESP32 or simulated mock on PC.
+    """
+    if not is_authorized(session):
+        return Response("Unauthorized", status_code=401)
+
+    jpeg_data = camera.capture()
+    if not jpeg_data:
+        err_msg = camera.last_error or "Camera hardware capture failed"
+        return Response(
+            err_msg, status_code=500, headers={"Content-Type": "text/plain"}
+        )
+
+    return Response(
+        body=jpeg_data,
+        headers={
+            "Content-Type": "image/jpeg",
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+        },
+    )
 
 
 @app.route("/static/<path:path>")

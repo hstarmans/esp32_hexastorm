@@ -1,10 +1,10 @@
-import math
 import logging
+import math
+
 from machine import Pin as GPIO
 
 from . import reg
 from .uart import TMC_UART
-
 
 logger = logging.getLogger(__name__)
 

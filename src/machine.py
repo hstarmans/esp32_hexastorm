@@ -6,9 +6,8 @@ this class creates a simplified mock implementation. This allows developers to e
 certain aspects of their MicroPython code on a Linux machine without requiring an actual ESP32 device.
 """
 
-import os
 import logging
-
+import os
 
 logger = logging.getLogger(__name__)
 

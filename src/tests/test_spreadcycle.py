@@ -12,9 +12,10 @@ Usage in MicroPython REPL:
     tune_spreadcycle(axis="y", speed=3.0, dist=3.0)
 """
 
+import json
 import sys
 import time
-import json
+
 from tmc import reg
 from tools import lh
 
