@@ -73,13 +73,18 @@ class CORS:
         """
         cors_headers = {}
         origin = request.headers.get("Origin")
+        vary_origin = False
         if self.allowed_origins == "*":
             cors_headers["Access-Control-Allow-Origin"] = origin or "*"
             if origin:
-                cors_headers["Vary"] = "Origin"
+                vary_origin = True
         elif origin in (self.allowed_origins or []):
             cors_headers["Access-Control-Allow-Origin"] = origin
-            cors_headers["Vary"] = "Origin"
+            vary_origin = True
+        if vary_origin:
+            if not hasattr(request.g, "_vary"):
+                request.g._vary = set()
+            request.g._vary.add("Origin")
         if self.allow_credentials and "Access-Control-Allow-Origin" in cors_headers:
             cors_headers["Access-Control-Allow-Credentials"] = "true"
         if self.expose_headers:
@@ -110,8 +115,5 @@ class CORS:
         return cors_headers
 
     def after_request(self, request, response):
-        saved_vary = response.headers.get("Vary")
         if request:  # pragma: no branch
             response.headers.update(self.get_cors_headers(request))
-        if saved_vary and saved_vary != response.headers.get("Vary"):
-            response.headers["Vary"] = saved_vary + ", " + response.headers["Vary"]

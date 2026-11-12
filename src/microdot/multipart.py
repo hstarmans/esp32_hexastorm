@@ -42,8 +42,9 @@ class FormDataIter:
     def __init__(self, request):
         self.request = request
         self.buffer = None
+        content_type = request.content_type or ""
         try:
-            mimetype, boundary = request.content_type.rsplit("; boundary=", 1)
+            mimetype, boundary = content_type.rsplit("; boundary=", 1)
         except ValueError:
             return  # not a multipart request
         if mimetype.split(";", 1)[0] == "multipart/form-data":  # pragma: no branch

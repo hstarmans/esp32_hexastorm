@@ -8,6 +8,18 @@ from microdot.microdot import (
     iscoroutine,
     redirect,
     send_file,
-)  # noqa: F401
+)
 
-__version__ = "2.6.1.dev0"
+__version__ = "2.7.0"
+
+__all__ = [
+    "AsyncBytesIO",
+    "Microdot",
+    "Request",
+    "Response",
+    "URLPattern",
+    "abort",
+    "iscoroutine",
+    "redirect",
+    "send_file",
+]

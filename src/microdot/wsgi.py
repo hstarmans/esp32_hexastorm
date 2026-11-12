@@ -3,14 +3,8 @@ import os
 import signal
 
 from microdot import *  # noqa: F401, F403
-from microdot.microdot import (
-    MUTED_SOCKET_ERRORS,
-    NoCaseDict,
-    Request,
-)
-from microdot.microdot import (
-    Microdot as BaseMicrodot,
-)
+from microdot.microdot import MUTED_SOCKET_ERRORS, NoCaseDict, Request
+from microdot.microdot import Microdot as BaseMicrodot
 from microdot.websocket import (  # noqa: F401
     WebSocket,
     websocket_upgrade,

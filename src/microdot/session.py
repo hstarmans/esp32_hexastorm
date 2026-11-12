@@ -66,6 +66,9 @@ class Session:
             raise ValueError("The session secret key is not configured")
         if hasattr(request.g, "_session"):
             return request.g._session
+        if not hasattr(request.g, "_vary"):  # pragma: no branch
+            request.g._vary = set()
+        request.g._vary.add("Cookie")
         session = request.cookies.get("session")
         if session is None:
             request.g._session = SessionDict(request, {})
