@@ -469,7 +469,7 @@
                                         <input class="form-check-input mt-0" type="checkbox" role="switch" id="applyCorrSwitch"
                                             :checked="$store.machine.calibration?.apply_correction !== false"
                                             @change="saveCustomFacets($event.target.checked)">
-                                        <label class="form-check-label text-secondary font-monospace" for="applyCorrSwitch" style="font-size: 0.68rem;">Correctie</label>
+                                        <label class="form-check-label text-secondary font-monospace" for="applyCorrSwitch" style="font-size: 0.68rem;">Correction</label>
                                     </div>
                                     <span class="badge font-monospace"
                                         :class="activeReport.passed ? 'bg-success' : 'bg-danger'"
@@ -482,9 +482,9 @@
                                     <thead>
                                         <tr class="text-secondary">
                                             <th>F</th>
-                                            <th>Voor (S/O)</th>
-                                            <th>Correctie (Scan / Orth µm)</th>
-                                            <th>Na (S/O)</th>
+                                            <th>Before (S/O)</th>
+                                            <th>Correction (S/O)</th>
+                                            <th>After (S/O)</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -492,22 +492,7 @@
                                             <tr>
                                                 <td class="fw-bold text-info" x-text="'F' + (f.facet + 1)"></td>
                                                 <td class="text-warning" x-text="f.before_scan_um.toFixed(1) + ' / ' + f.before_orth_um.toFixed(1)"></td>
-                                                <td class="p-1">
-                                                    <div class="d-flex gap-1 justify-content-center">
-                                                        <input type="number" step="0.5"
-                                                            class="form-control form-control-sm bg-black text-info border-secondary text-center p-0 font-monospace"
-                                                            style="width: 3.4rem; font-size: 0.68rem; height: 1.4rem;"
-                                                            x-model.number="f.corr_scan_um"
-                                                            @change="saveCustomFacets(true)"
-                                                            title="Scan shift correctie (µm)">
-                                                        <input type="number" step="0.5"
-                                                            class="form-control form-control-sm bg-black text-info border-secondary text-center p-0 font-monospace"
-                                                            style="width: 3.4rem; font-size: 0.68rem; height: 1.4rem;"
-                                                            x-model.number="f.corr_orth_um"
-                                                            @change="saveCustomFacets(true)"
-                                                            title="Orthogonale shift correctie (µm)">
-                                                    </div>
-                                                </td>
+                                                <td class="text-info" x-text="f.corr_scan_um.toFixed(1) + ' / ' + f.corr_orth_um.toFixed(1)"></td>
                                                 <td class="fw-bold"
                                                     :class="(Math.abs(f.after_scan_um) <= activeReport.tolerance_um && Math.abs(f.after_orth_um) <= activeReport.tolerance_um) ? 'text-success' : 'text-danger'"
                                                     x-text="f.after_scan_um.toFixed(1) + ' / ' + f.after_orth_um.toFixed(1)">
@@ -517,18 +502,11 @@
                                     </tbody>
                                 </table>
                             </div>
-                            <div class="d-flex justify-content-between align-items-center text-secondary font-monospace mb-2" style="font-size: 0.68rem;">
-                                <span>Max Voor: <strong class="text-warning" x-text="activeReport.max_error_before_um.toFixed(1) + ' µm'"></strong></span>
-                                <span>Max Na: <strong :class="activeReport.passed ? 'text-success' : 'text-danger'" x-text="activeReport.max_error_after_um.toFixed(1) + ' µm'"></strong></span>
+                            <div class="d-flex justify-content-between align-items-center text-secondary font-monospace" style="font-size: 0.68rem;">
+                                <span>Max Before: <strong class="text-warning" x-text="activeReport.max_error_before_um.toFixed(1) + ' µm'"></strong></span>
+                                <span>Max After: <strong :class="activeReport.passed ? 'text-success' : 'text-danger'" x-text="activeReport.max_error_after_um.toFixed(1) + ' µm'"></strong></span>
                                 <span>Spot: <strong class="text-light" x-text="(activeReport.facets[0]?.spot_size_um ?? 0).toFixed(1) + ' µm'"></strong></span>
                             </div>
-                            <button type="button" class="btn btn-sm btn-outline-info w-100 py-1 d-flex align-items-center justify-content-center gap-1"
-                                style="font-size: 0.74rem;"
-                                :disabled="scanning || calibrating" @click="runVerifyCalibration(false)"
-                                title="Test en verifieer de hierboven ingevoerde Correctie (Scan / Orth) waarden met de camera">
-                                <i class="bi bi-sliders"></i>
-                                <span>Test Custom Correctie (Herverifieer 2D)</span>
-                            </button>
                         </div>
                     </template>
                 </div>
