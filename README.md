@@ -4,7 +4,7 @@ This project provides a Microdot webserver running on an ESP32-S3 microcontrolle
 
 The system is designed to take you from a raw copper-clad board to a finished prototype by supporting two powerful fabrication methods on a single machine:
 
-1. **UV Laser Lithography (Exposure):** High-speed, high-resolution direct imaging onto photoresist-coated substrates using a synchronized rotating polygon mirror.
+1. **UV Laser Lithography (Exposure):** High-speed, high-resolution direct imaging onto photoresist-coated substrates using a synchronized rotating polygon prism.
 2. **Mechanical CNC Milling (Spindle Routing):** Physical trace carving, via drilling, and board contour routing using a spindle motor and standard G-code.
 
 The core of the machine's motion control is handled by a Lattice iCE40 UP5K FPGA, running pipelined Discrete Forward Differencing programmed with the [Hexastorm](https://github.com/hstarmans/hexastorm) Amaranth HDL toolchain.
@@ -19,9 +19,22 @@ The core of the machine's motion control is handled by a Lattice iCE40 UP5K FPGA
   * **CNC Mode:** Leverages a lightweight on-board G-code parser supporting absolute/relative positioning (`G90`/`G91`), millimeter mode (`G21`), spindle speed control (`M3`/`M5`), and feedrates.
   * **Laser Mode:** Seamlessly streams high-frequency packed scanlines and manages precise polygon sync.
 * **Peripherals Control:** Remote control over UV laser state, rotating prism, spindle speed, cooling fans, and led diagnostics.
+* **Camera & Optical Calibration:** Live OV2640 camera inspection with manual exposure control, saved alignment coordinates, scanline FOV detection, and on-board 2D polygon facet calibration.
 * **Workspace Operations:** Easily set local workspace zeros (WPOS) and home axes against physical limit switches.
 * **Comprehensive Machine Configuration:** A dedicated Settings UI to manage Wi-Fi credentials, static IP allocation, TMC motor driver calibrations, and tool offsets without recompiling code.
 * **Over-The-Air (OTA) Updates:** Check for and apply the latest firmware releases directly from GitHub via the web interface, completely bypassing physical USB connections and button presses.
+
+---
+
+## Camera & Optical Calibration
+
+The **Camera & Calibration** panel in the web UI provides tools for optical inspection and automated polygon-prism alignment using an on-board OV2640 camera:
+
+* **Live View & Manual Exposure:** Capture on-demand UXGA snapshots or enable periodic auto-refresh. Automatic exposure, gain, and white balance (AEC/AGC/AWB) are disabled so laser spot intensity remains consistent across manual shutter presets (`5ms`–`1s`).
+* **Camera Position Target:** Save the current machine position (`Set Current MPos as Target`) and return directly to the camera inspection location (`Go to Camera Position`).
+* **Scan Visibility:** Sweeps across the scanline to detect which laser pixels fall inside the camera sensor's field of view (`visible_pixels`).
+* **Preview Dots (`F1`–`F4` / `All`):** Projects evenly spaced calibration dots onto a single facet or all facets simultaneously to inspect focus and facet spacing in the live feed.
+* **Calibrate & Verify (2D):** Runs on-board `ulab` sub-pixel centroid detection across all 4 facets, computes optimal Scan and Orthogonal corrections in µm, persists them to `config.json`, and verifies that the residual error is within the 30 µm tolerance. A live **Correction** toggle lets you compare uncorrected vs. corrected alignment directly in the camera view.
 
 ---
 
