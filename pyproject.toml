@@ -30,7 +30,11 @@ where = ["src"]
 [tool.ruff]
 line-length = 88
 # exist in micropython  - see manifest.py
-builtins = ["include", "package", "module", "require", "options"]
+builtins = ["include", "package", "module", "require", "options", "const"]
+extend-exclude = [
+    "src/control/frozen_root.py",
+    "src/root/templates",
+]
 
 [tool.ruff.format]
 quote-style = "double"
@@ -46,3 +50,8 @@ dev = [
     "nbqa>=1.9.1",
     "ruff>=0.11.5",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["src/tests"]
+python_files = ["test_cameracontroller.py"]
+

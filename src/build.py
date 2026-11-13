@@ -89,7 +89,7 @@ def find_process_using_port(port):
                         pass
             except OSError:
                 pass
-    except Exception:
+    except OSError:
         pass
     return None, None
 
@@ -156,7 +156,7 @@ def verify_and_prepare_device(port_arg=None):
             logger.info("Successfully connected to MicroPython REPL. Rebooting device to bootloader...")
             try:
                 ctrl.exec_no_wait("import machine; machine.bootloader()")
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
             ctrl.close()
         except serial.SerialException as e:
@@ -164,8 +164,8 @@ def verify_and_prepare_device(port_arg=None):
             logger.error("The port is currently in use by another application (e.g., Thonny).")
             logger.error("Please close Thonny or any serial monitor connected to the device and try again.")
             sys.exit(1)
-        except Exception as e:
-            logger.error("Failed to get a prompt from the device. It is unresponsive!")
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"Failed to get a prompt from the device: {e}. It is unresponsive!")
             logger.warning("\n*** RECOVERY TRICK INITIATED ***")
             logger.warning("Attempting automatic hardware reset via DTR/RTS...")
             
@@ -179,7 +179,7 @@ def verify_and_prepare_device(port_arg=None):
                     time.sleep(0.1)
                     s.setDTR(False)
                     s.setRTS(False)
-            except Exception:
+            except (serial.SerialException, OSError):
                 pass
                 
             time.sleep(0.5)
@@ -209,7 +209,7 @@ def verify_and_prepare_device(port_arg=None):
                             s.write(b"import machine; machine.bootloader()\x04")
                             caught = True
                             break
-                except Exception:
+                except (serial.SerialException, OSError):
                     pass
                 time.sleep(0.05)
                 
@@ -246,7 +246,9 @@ def run_remote_ssh(remote_host, command_str, check=True, capture_output=True):
 def run_remote_python(remote_host, script_content):
     """Executes a Python script on the remote host via SSH stdin."""
     ssh_cmd = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", remote_host, "python3 -"]
-    return subprocess.run(ssh_cmd, input=script_content, text=True, capture_output=True)
+    return subprocess.run(
+        ssh_cmd, input=script_content, text=True, capture_output=True, check=False
+    )
 
 
 
@@ -361,7 +363,7 @@ def transfer_binaries_remote(remote_host, local_build_dir, remote_dir="/tmp/esp3
 
     logger.info(f"Transferring firmware binaries to {remote_host}:{remote_dir}...")
     scp_cmd = ["scp", "-q"] + local_files + [f"{remote_host}:{remote_dir}/"]
-    res = subprocess.run(scp_cmd, capture_output=True, text=True)
+    res = subprocess.run(scp_cmd, capture_output=True, text=True, check=False)
     if res.returncode != 0:
         logger.error(f"Failed to transfer binaries over scp: {res.stderr}")
         sys.exit(1)
@@ -396,7 +398,7 @@ def main():
     # Build command
     make_cmd = [
         "make",
-        f"-j $(nproc)",
+        "-j $(nproc)",
         "BOARD=ESP32_GENERIC_S3",
         "BOARD_VARIANT=SPIRAM_OCT",
         f"FROZEN_MANIFEST={MANIFEST_PATH}",

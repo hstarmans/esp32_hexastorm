@@ -16,6 +16,13 @@ else:
     CONFIG_OLD_FILE = "src/root/mock_config_old.json"
     NVS_FILE = "src/root/nvs_mock.json"
 
+# --- Physical & Optical Calibration Constants ---
+# OV2640 native sensor pixel pitch is 2.2 um (at UXGA 1600x1200).
+# In SVGA analysis mode (800x600, 2x2 binning), effective pixel pitch is 2 * 2.2 = 4.4 um.
+OV2640_PIXEL_SIZE_UM = 2.2
+SVGA_PIXEL_SIZE_UM = OV2640_PIXEL_SIZE_UM * 2.0
+CALIBRATION_TOLERANCE_UM = 30.0
+
 
 class SafeNVS:
     """

@@ -1,6 +1,6 @@
 import sys
 
-from tmc.stepperdriver import *
+from tmc.stepperdriver import TMC_2209
 
 pin_en = 16  # enable pin
 mtr_ids = [0, 1, 2, 3]  # uart id
@@ -37,6 +37,6 @@ for mtr_id in mtr_ids:
         for key, value in settings:
             setattr(tmc, key, value)
         print(f"success mtr_ids {mtr_id}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         sys.print_exception(e)
         print(f"fail mtr_ids {mtr_id}")

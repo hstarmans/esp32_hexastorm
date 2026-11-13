@@ -131,6 +131,106 @@ document.addEventListener("alpine:init", () => {
          */
         setCameraExposure(exposure_ms) {
             this.post('/api/camera/settings', { exposure_ms: Number(exposure_ms) });
+        },
+
+        /**
+         * Run optical scan visibility calibration
+         * @param {number} [facet=0]
+         * @param {number} [step=20]
+         * @returns {Promise<any>}
+         */
+        async runScanVisibility(facet = 0, step = 20) {
+            try {
+                const res = await fetch('/api/calibration/scan_visibility', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ facet, step })
+                });
+                if (!res.ok) {
+                    const err = await res.text();
+                    throw new Error(err || `HTTP ${res.status}`);
+                }
+                return await res.json();
+            } catch (e) {
+                console.error("Scan visibility error:", e);
+                throw e;
+            }
+        },
+
+        /**
+         * Toggle or configure dot preview ("Preview Dots")
+         * @param {boolean} [enabled]
+         * @param {string|number} [facet]
+         * @returns {Promise<any>}
+         */
+        async showBounds(enabled, facet) {
+            try {
+                /** @type {Record<string, any>} */
+                const payload = {};
+                if (enabled !== undefined) payload.enabled = enabled;
+                if (facet !== undefined) payload.facet = facet;
+                const res = await fetch('/api/calibration/show_bounds', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (!res.ok) {
+                    const err = await res.text();
+                    throw new Error(err || `HTTP ${res.status}`);
+                }
+                return await res.json();
+            } catch (e) {
+                console.error("Preview dots error:", e);
+                throw e;
+            }
+        },
+
+        /**
+         * Run multi-facet dot calibration on-board
+         * @param {number} [iterations=2]
+         * @param {number} [num_dots=6]
+         * @returns {Promise<any>}
+         */
+        async runCalibration(iterations = 2, num_dots = 6) {
+            try {
+                const res = await fetch('/api/calibration/calibrate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ iterations, num_dots })
+                });
+                if (!res.ok) {
+                    const err = await res.text();
+                    throw new Error(err || `HTTP ${res.status}`);
+                }
+                return await res.json();
+            } catch (e) {
+                console.error("Facet calibration error:", e);
+                throw e;
+            }
+        },
+
+        /**
+         * Run Verified Calibration (pattern_error) comparing Before vs After 2D errors
+         * @param {number} [num_dots=6]
+         * @param {boolean} [calibrate_first=true]
+         * @returns {Promise<any>}
+         */
+        async runPatternError(num_dots = 6, calibrate_first = true) {
+            try {
+                const res = await fetch('/api/calibration/pattern_error', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ num_dots, calibrate_first })
+                });
+                if (!res.ok) {
+                    const err = await res.text();
+                    throw new Error(err || `HTTP ${res.status}`);
+                }
+                return await res.json();
+            } catch (e) {
+                console.error("Pattern error verification failed:", e);
+                throw e;
+            }
         }
     };
     const api = window.api;
@@ -157,7 +257,11 @@ document.addEventListener("alpine:init", () => {
         calibration: {
             camera_position: [90.0, 0.0, 10.0],
             camera_exposure_ms: 200,
-            alignment_laser_power: 30
+            alignment_laser_power: 30,
+            visible_pixels: null,
+            bounds_active: false,
+            facets: {},
+            last_report: null
         },
         /** @type {PrintJob} */
         job: {

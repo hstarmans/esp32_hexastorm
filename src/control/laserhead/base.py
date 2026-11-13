@@ -213,7 +213,9 @@ class BaseLaserhead:
             raise ValueError("Machine is locked in E-STOP state! Reset machine first.")
         pos_array = np.array(position, dtype=NP_FLOAT)
         if absolute:
-            target_mpos = (pos_array + self._work_offset) if workspace else pos_array.copy()
+            target_mpos = (
+                (pos_array + self._work_offset) if workspace else pos_array.copy()
+            )
         else:
             target_mpos = self._position + pos_array
 
@@ -227,9 +229,13 @@ class BaseLaserhead:
             max_limit = ax_cfg.get("max_mm", None)
             val = float(target_mpos[idx])
             if min_limit is not None and val < float(min_limit):
-                raise ValueError(f"Target {ax.upper()} position ({val:.2f} mm) is below min limit ({min_limit:.2f} mm)")
+                raise ValueError(
+                    f"Target {ax.upper()} position ({val:.2f} mm) is below min limit ({min_limit:.2f} mm)"
+                )
             if max_limit is not None and val > float(max_limit):
-                raise ValueError(f"Target {ax.upper()} position ({val:.2f} mm) exceeds max limit ({max_limit:.2f} mm)")
+                raise ValueError(
+                    f"Target {ax.upper()} position ({val:.2f} mm) exceeds max limit ({max_limit:.2f} mm)"
+                )
 
     # --- MOCK / PC ASYNC METHODS ---
     # These include simulated delays and call the synchronous helpers above.
@@ -286,7 +292,9 @@ class BaseLaserhead:
         logger.warning("EMERGENCY ABORT triggered!")
         self._stop.set()
         self.state["estop"] = True
-        self.state["error_message"] = "EMERGENCY ABORT! Machine locked in E-Stop state. Reset required."
+        self.state["error_message"] = (
+            "EMERGENCY ABORT! Machine locked in E-Stop state. Reset required."
+        )
         self.state["components"]["laser"] = False
         self.state["components"]["spindle"] = 0
         self.state["components"]["fan"] = 0
@@ -485,8 +493,10 @@ class BaseLaserhead:
         return True
 
     async def remap(self, facet_id=0):
-        logger.debug(f"Mock remap: facet_id {facet_id} -> 0")
-        return 0
+        num_facets = int(self.cfg.laser_timing.get("facets", 4))
+        mapped = int(facet_id) % num_facets
+        logger.debug(f"Mock remap: facet_id {facet_id} -> {mapped}")
+        return mapped
 
     async def send_command(self, command, timeout=0):
         if hasattr(command, "__len__") and len(command) > 0:

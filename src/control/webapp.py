@@ -13,6 +13,16 @@ from microdot.sse import with_sse
 from microdot.utemplate import Template
 
 from . import bootlib, constants
+from .calibration import (
+    capture_jpeg_with_preview,
+    get_preview_facet,
+    is_bounds_active,
+    run_facet_calibration,
+    run_pattern_error,
+    run_scan_visibility,
+    set_bounds_preview,
+    update_custom_facets,
+)
 from .camera import camera
 from .constants import CONFIG, CONFIG_FILE, NVS_FILE, update_config
 from .laserhead import laserhead
@@ -94,6 +104,10 @@ class DeviceState:
         except OSError:
             files = []
 
+        calib_dict = dict(CONFIG["calibration"])
+        calib_dict["bounds_active"] = is_bounds_active()
+        calib_dict["preview_facet"] = get_preview_facet()
+
         dct = {
             "files": files,
             "wifi": {
@@ -101,7 +115,7 @@ class DeviceState:
                 "ssid": CONFIG["wifi_login"]["ssid"],
                 "password": CONFIG["wifi_login"]["password"],
             },
-            "calibration": CONFIG["calibration"],
+            "calibration": calib_dict,
         }
         self.data.update(dct)
 
@@ -707,7 +721,7 @@ async def camera_snapshot(request, session):
     if not is_authorized(session):
         return Response("Unauthorized", status_code=401)
 
-    jpeg_data = camera.capture()
+    jpeg_data = await capture_jpeg_with_preview(laserhead, camera)
     if not jpeg_data:
         err_msg = camera.last_error or "Camera hardware capture failed"
         return Response(
@@ -730,12 +744,11 @@ async def api_camera_settings(request, session):
     if not is_authorized(session):
         return Response("Unauthorized", status_code=401)
 
-    data = request.json or {}
-    if "exposure_ms" in data:
-        exp_ms = max(1, int(data["exposure_ms"]))
-        CONFIG["calibration"]["camera_exposure_ms"] = exp_ms
-        update_config()
-        devicestate.update()
+    data = request.json
+    exp_ms = max(1, int(data["exposure_ms"]))
+    CONFIG["calibration"]["camera_exposure_ms"] = exp_ms
+    update_config()
+    devicestate.update()
 
     return devicestate.data
 
@@ -747,8 +760,8 @@ async def api_save_camera_pos(request, session):
     if not is_authorized(session):
         return Response("Unauthorized", status_code=401)
 
-    data = request.json or {}
-    pos = data.get("position", laserhead.mpos)
+    data = request.json
+    pos = data["position"]
     pos = [round(float(x), 2) for x in pos[:3]]
 
     CONFIG["calibration"]["camera_position"] = pos
@@ -782,12 +795,142 @@ async def api_move_to_camera(request, session):
     return devicestate.data
 
 
+@app.post("/api/calibration/scan_visibility")
+@with_session
+async def api_scan_visibility(request, session):
+    """Run optical scan visibility calibration across scanline length."""
+    if not is_authorized(session):
+        return Response("Unauthorized", status_code=401)
+
+    if laserhead.state["printing"]:
+        return {"error": "Busy printing"}, 409
+
+    data = request.json
+    facet = int(data["facet"])
+    step = max(1, int(data["step"]))
+
+    try:
+        result = await run_scan_visibility(
+            laserhead=laserhead,
+            camera=camera,
+            facet=facet,
+            step=step,
+        )
+        devicestate.update()
+        await laserhead.notify_listeners()
+        return result
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"Scan visibility routine failed: {e}")
+        return {"error": str(e)}, 500
+
+
+@app.post("/api/calibration/show_bounds")
+@with_session
+async def api_show_bounds(request, session):
+    """Toggle or configure projection of calibration dots (1 facet or all facets)."""
+    if not is_authorized(session):
+        return Response("Unauthorized", status_code=401)
+
+    data = request.json
+    enabled = data["enabled"]
+    facet = data["facet"]
+    active = set_bounds_preview(laserhead=laserhead, enabled=enabled, facet=facet)
+
+    devicestate.update()
+    await laserhead.notify_listeners()
+    return {
+        "status": "success",
+        "bounds_active": active,
+        "preview_facet": get_preview_facet(),
+        "visible_pixels": CONFIG["calibration"]["visible_pixels"],
+    }
+
+
+@app.post("/api/calibration/calibrate")
+@with_session
+async def api_calibrate_facets(request, session):
+    """Run multi-facet dot calibration on-board."""
+    if not is_authorized(session):
+        return Response("Unauthorized", status_code=401)
+
+    if laserhead.state["printing"]:
+        return {"error": "Busy printing"}, 409
+
+    data = request.json
+    iterations = max(1, int(data["iterations"]))
+    num_dots = max(2, int(data["num_dots"]))
+
+    try:
+        result = await run_facet_calibration(
+            laserhead=laserhead,
+            camera=camera,
+            iterations=iterations,
+            num_dots=num_dots,
+        )
+        devicestate.update()
+        await laserhead.notify_listeners()
+        return result
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"Facet calibration failed: {e}")
+        return {"error": str(e)}, 500
+
+
+@app.post("/api/calibration/pattern_error")
+@with_session
+async def api_pattern_error(request, session):
+    """Run Verified Calibration (pattern_error) comparing Before vs After 2D errors."""
+    if not is_authorized(session):
+        return Response("Unauthorized", status_code=401)
+
+    if laserhead.state["printing"]:
+        return {"error": "Busy printing"}, 409
+
+    data = request.json
+    num_dots = max(2, int(data["num_dots"]))
+    calibrate_first = bool(data["calibrate_first"])
+
+    try:
+        result = await run_pattern_error(
+            laserhead=laserhead,
+            camera=camera,
+            num_dots=num_dots,
+            calibrate_first=calibrate_first,
+        )
+        devicestate.update()
+        await laserhead.notify_listeners()
+        return result
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"Pattern error verification failed: {e}")
+        return {"error": str(e)}, 500
+
+
+@app.post("/api/calibration/update_facets")
+@with_session
+async def api_update_facets(request, session):
+    """Save custom per-facet (Scan / Orth) calibration offsets and/or toggle apply_correction."""
+    if not is_authorized(session):
+        return Response("Unauthorized", status_code=401)
+
+    data = request.json
+    facets_override = data["facets"]
+    apply_correction = data["apply_correction"]
+
+    result = update_custom_facets(
+        facets_override=facets_override,
+        apply_correction=apply_correction,
+    )
+    devicestate.update()
+    await laserhead.notify_listeners()
+    return result
+
+
 @app.route("/static/<path:path>")
 async def static(request, path):
     if ".." in path:
         # directory traversal is not allowed
         return "Not found", 404
-    return send_file(f"{static_dir}/" + path, max_age=86400)  # cache for 1 day
+    cache_age = 86400 if constants.ESP32 else 0
+    return send_file(f"{static_dir}/" + path, max_age=cache_age)
 
 
 def main():

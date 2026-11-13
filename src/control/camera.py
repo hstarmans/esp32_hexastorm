@@ -6,10 +6,64 @@ Unified controller using the 'camera' module (real on ESP32, mock on CPython).
 
 import logging
 
-from camera import Camera
+from camera import (
+    FRAME_SIZE_DIMS,
+    Camera,
+    FrameSize,
+    GrabMode,
+    PixelFormat,
+)
 from hexastorm.config import PlatformConfig
 
 logger = logging.getLogger(__name__)
+
+__all__ = [
+    "FRAME_SIZE_DIMS",
+    "AnalysisModeContext",
+    "CameraController",
+    "FrameSize",
+    "GrabMode",
+    "PixelFormat",
+    "camera",
+]
+
+
+class AnalysisModeContext:
+    """Context manager ensuring safe transition to analysis mode (e.g. SVGA GRAYSCALE)
+    and guaranteed restoration of normal Web UI display mode (UXGA JPEG).
+    """
+
+    def __init__(
+        self,
+        controller: "CameraController",
+        frame_size: int = FrameSize.SVGA,
+        pixel_format: int = PixelFormat.GRAYSCALE,
+    ):
+        self.controller = controller
+        self.target_frame_size = frame_size
+        self.target_pixel_format = pixel_format
+        self.prev_frame_size = None
+        self.prev_pixel_format = None
+
+    def __enter__(self):
+        self.prev_frame_size = self.controller.current_frame_size
+        self.prev_pixel_format = self.controller.current_pixel_format
+        self.controller.reconfigure(
+            frame_size=self.target_frame_size,
+            pixel_format=self.target_pixel_format,
+        )
+        self.controller.set_exposure_ms(self.controller.exposure_ms)
+        return self.controller
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        try:
+            self.controller.reconfigure(
+                frame_size=self.prev_frame_size,
+                pixel_format=self.prev_pixel_format,
+            )
+            self.controller.set_exposure_ms(self.controller.exposure_ms)
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"Error restoring camera display mode: {e}")
 
 
 class CameraController:
@@ -43,9 +97,95 @@ class CameraController:
         self.cam = None
         self.last_error = None
         self.exposure_ms = self.settings["exposure_ms"]
+        self.current_frame_size = self.settings.get("frame_size", FrameSize.UXGA)
+        self.current_pixel_format = self.settings.get("pixel_format", PixelFormat.JPEG)
 
         # Camera must be initialized immediately - it must not be None
         self.init_camera()
+
+    def reconfigure(
+        self,
+        frame_size=None,
+        pixel_format=None,
+        grab_mode=None,
+        fb_count=None,
+    ):
+        """Reconfigure OV2640 sensor parameters (resolution, pixel format, etc.)."""
+        if self.cam is None:
+            self.init_camera()
+
+        kwargs = {}
+        if frame_size is not None:
+            kwargs["frame_size"] = frame_size
+        if pixel_format is not None:
+            kwargs["pixel_format"] = pixel_format
+        if grab_mode is not None:
+            kwargs["grab_mode"] = grab_mode
+        if fb_count is not None:
+            kwargs["fb_count"] = fb_count
+
+        if hasattr(self.cam, "reconfigure"):
+            self.cam.reconfigure(**kwargs)
+
+        if frame_size is not None:
+            self.current_frame_size = frame_size
+        if pixel_format is not None:
+            self.current_pixel_format = pixel_format
+
+        logger.debug(
+            f"Camera reconfigured: frame_size={self.current_frame_size}, pixel_format={self.current_pixel_format}"
+        )
+
+    def analysis_mode(
+        self,
+        frame_size=FrameSize.SVGA,
+        pixel_format=PixelFormat.GRAYSCALE,
+    ):
+        """Context manager to enter analysis mode and restore web mode on exit."""
+        return AnalysisModeContext(
+            self, frame_size=frame_size, pixel_format=pixel_format
+        )
+
+    def discard_frame(self):
+        """Flush a potentially stale DMA frame buffer before capturing a synchronized exposure."""
+        if self.cam is None:
+            self.init_camera()
+        try:
+            _ = self.cam.capture()
+        finally:
+            if hasattr(self.cam, "free_buffer"):
+                self.cam.free_buffer()
+
+    def capture_grayscale_array(self, frame_size=None):
+        """Capture a raw grayscale frame into a 2D ulab.numpy array (h, w).
+
+        Operates in RAM via zero-copy buffer views and frees the camera frame buffer immediately.
+        """
+        try:
+            from ulab import numpy as np
+        except ImportError:
+            import numpy as np
+
+        if self.cam is None:
+            self.init_camera()
+
+        if frame_size is not None and self.current_frame_size != frame_size:
+            self.reconfigure(frame_size=frame_size, pixel_format=PixelFormat.GRAYSCALE)
+
+        w, h = FRAME_SIZE_DIMS.get(self.current_frame_size, (800, 600))
+        raw = self.cam.capture()
+        if not raw:
+            raise RuntimeError("No frame data returned from camera sensor")
+
+        try:
+            # Create a 2D ndarray from the raw byte buffer and copy so buffer can be safely freed
+            arr = np.frombuffer(raw, dtype=np.uint8).reshape((h, w))
+            arr_copy = np.array(arr)
+        finally:
+            if hasattr(self.cam, "free_buffer"):
+                self.cam.free_buffer()
+
+        return arr_copy
 
     def set_exposure_ms(self, ms: int):
         """Configure manual camera exposure in milliseconds and disable all automatics.
@@ -61,7 +201,9 @@ class CameraController:
         :param ms: Desired exposure integration time in milliseconds (e.g. 5, 50, 200).
         """
         if self.cam is None:
-            raise RuntimeError("Camera is None! Cannot configure an uninitialized camera.")
+            raise RuntimeError(
+                "Camera is None! Cannot configure an uninitialized camera."
+            )
 
         self.exposure_ms = max(1, int(ms))
         self.settings["exposure_ms"] = self.exposure_ms
@@ -136,7 +278,7 @@ class CameraController:
             self.last_error = None
             logger.info("Camera initialized successfully.")
             return True
-        except Exception as e:  # noqa: BLE001, catch hardware errors safely
+        except Exception as e:
             self.cam = None
             self.last_error = f"Camera Hardware Init Failed: {e}"
             logger.error(f"Error during camera hardware init: {e}")

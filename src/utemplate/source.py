@@ -25,10 +25,8 @@ class Compiler:
         if not self.flushed_header:
             self.flushed_header = True
             self.indent()
-            self.file_out.write(
-                "def render%s(%s):\n"
-                % (str(self.seq) if self.seq else "", self.args)
-            )
+            seq_str = str(self.seq) if self.seq else ""
+            self.file_out.write(f"def render{seq_str}({self.args}):\n")
             self.stack.append("def")
         self.file_out.write("    " * (len(self.stack) + self._indent + adjust))
 
@@ -71,12 +69,12 @@ class Compiler:
             if tokens[0][0] == "{":
                 self.indent()
                 # "1" as fromlist param is uPy hack
+                tok_expr = tokens[0][2:-2]
                 self.file_out.write(
-                    '_ = __import__(%s.replace(".", "_"), None, None, 1)\n'
-                    % tokens[0][2:-2]
+                    f'_ = __import__({tok_expr}.replace(".", "_"), None, None, 1)\n'
                 )
                 self.indent()
-                self.file_out.write("yield from _.render(%s)\n" % args)
+                self.file_out.write(f"yield from _.render({args})\n")
                 return
 
             with self.loader.input_open(tokens[0][1:-1]) as inc:
@@ -90,7 +88,7 @@ class Compiler:
                 inc_id = self.seq
                 self.seq = c.compile()
             self.indent()
-            self.file_out.write("yield from render%d(%s)\n" % (inc_id, args))
+            self.file_out.write(f"yield from render{inc_id}({args})\n")
         elif len(tokens) > 1:
             if tokens[0] == "elif":
                 assert self.stack[-1] == "if"
@@ -151,8 +149,8 @@ class Compiler:
 
     def compile(self):
         self.header()
-        for l in self.file_in:
-            self.parse_line(l)
+        for line in self.file_in:
+            self.parse_line(line)
         self.close_literal()
         return self.seq
 
@@ -194,10 +192,7 @@ class Loader(compiled.Loader):
 
         compiled_path = self.pkg_path + self.compiled_path(name)
 
-        f_in = self.input_open(name)
-        f_out = open(compiled_path, "w")
-        c = Compiler(f_in, f_out, loader=self)
-        c.compile()
-        f_in.close()
-        f_out.close()
+        with self.input_open(name) as f_in, open(compiled_path, "w") as f_out:
+            c = Compiler(f_in, f_out, loader=self)
+            c.compile()
         return super().load(name)

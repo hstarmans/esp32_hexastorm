@@ -134,6 +134,10 @@
             10.0
         ],
         "camera_exposure_ms": 200,
-        "alignment_laser_power": 30
+        "alignment_laser_power": 30,
+        "visible_pixels": null,
+        "facets": {},
+        "last_report": null,
+        "apply_correction": true
     }
 }
