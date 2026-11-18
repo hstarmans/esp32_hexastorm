@@ -16,6 +16,7 @@ except ImportError:
     NP_FLOAT = np.float
 
 from hexastorm.config import PlatformConfig, Spi
+from hexastorm.fpga_host.interface import BaseHost
 
 from .. import constants
 from ..constants import CONFIG, NVS_STORE
@@ -498,12 +499,57 @@ class BaseLaserhead:
         logger.debug(f"Mock remap: facet_id {facet_id} -> {mapped}")
         return mapped
 
+    @staticmethod
+    def _count_scanlines_in_command(command) -> int:
+        bytes_command_word = Spi.command_bytes + Spi.word_bytes
+        n_lines = 0
+        idx = 0
+        cmd_len = len(command)
+        while idx + bytes_command_word <= cmd_len:
+            if (
+                command[idx] == Spi.Commands.write
+                and command[idx + bytes_command_word - 1] == Spi.Instructions.scanline
+            ):
+                payload_int = int.from_bytes(
+                    bytes(command[idx + 1 : idx + bytes_command_word - 1]),
+                    "big",
+                )
+                event_words = (payload_int >> 1) & 0xFFFF
+                n_lines += 1
+                idx += (1 + event_words) * bytes_command_word
+            else:
+                idx += bytes_command_word
+        return n_lines
+
+    @staticmethod
+    def _read_scanline_packet(d, half_period=None, direction=None) -> bytes:
+        bytes_command_word = Spi.command_bytes + Spi.word_bytes
+        hdr_pkt = d.read(bytes_command_word)
+        if not hdr_pkt or len(hdr_pkt) < bytes_command_word:
+            return b""
+        orig_payload = int.from_bytes(hdr_pkt[1 : bytes_command_word - 1], "big")
+        event_words = (orig_payload >> 1) & 0xFFFF
+        ev_bytes = d.read(event_words * bytes_command_word) if event_words > 0 else b""
+        if (
+            half_period is not None
+            and direction is not None
+            and hdr_pkt[bytes_command_word - 1] == Spi.Instructions.scanline
+        ):
+            new_payload = (
+                ((int(half_period) & ((1 << 39) - 1)) << 17)
+                | ((event_words & 0xFFFF) << 1)
+                | (int(direction) & 1)
+            )
+            hdr_pkt = (
+                bytes([Spi.Commands.write])
+                + new_payload.to_bytes(7, "big")
+                + bytes([Spi.Instructions.scanline])
+            )
+        return hdr_pkt + ev_bytes
+
     async def send_command(self, command, timeout=0):
         if hasattr(command, "__len__") and len(command) > 0:
-            words_scanline = getattr(self.cfg.hdl_cfg, "words_scanline", 1)
-            bytes_command_word = Spi.command_bytes + Spi.word_bytes
-            line_bytes = words_scanline * bytes_command_word
-            n_lines = len(command) // line_bytes
+            n_lines = self._count_scanlines_in_command(command)
             if n_lines > 0:
                 rpm = self.cfg.laser_timing["rpm"]
                 facets = self.cfg.laser_timing["facets"]
@@ -574,12 +620,11 @@ class BaseLaserhead:
     async def flush_buffer(self):
         logger.info("Flushing buffer")
 
-    def bit_to_byte_list(self, laser_bits, steps_line, direction):
-        return [0] * 30
+    def bit_to_byte_list(self, laser_bits, steps_line=1, direction=0):
+        return BaseHost.bit_to_byte_list(self, laser_bits, steps_line, direction)
 
     def byte_to_cmd_list(self, byte_list):
-        cmd_len = Spi.command_bytes + Spi.word_bytes
-        return [b"\x00" * cmd_len] * 30
+        return BaseHost.byte_to_cmd_list(self, byte_list)
 
     async def print_loop_prep(self, fname):
         self._stop.clear()
@@ -630,20 +675,7 @@ class BaseLaserhead:
         await asyncio.sleep(0)
         exposures = self.state["job"]["exposureperline"]
         bits_scanline = int(self.cfg.laser_timing["scanline_length"])
-        words_scanline = self.cfg.hdl_cfg.words_scanline
-        bytes_command_word = Spi.command_bytes + Spi.word_bytes
-        # a laserline instruction is: command + word
-        # we read the stored instruction from memory but want to change
-        # the command, e.g. steps size after each line
-        commands = {0: None, 1: None}
-        for direction in [0, 1]:
-            line = self.bit_to_byte_list(
-                laser_bits=[0] * bits_scanline,
-                steps_line=(1 / exposures),
-                direction=direction,
-            )
-            cmd_lst = self.byte_to_cmd_list(line)
-            commands[direction] = cmd_lst[0]
+        exposure_half_period = int((bits_scanline - 1) // ((1 / exposures) * 2))
 
         with open(self.get_job_path(fname), "rb") as f:  # noqa: SIM117, ASYNC230, in micropython this should be done
             with deflate.DeflateIO(f, deflate.ZLIB) as d:
@@ -777,13 +809,17 @@ class BaseLaserhead:
                                     break
                             last_facet = min(facet + lines_chunk, facets_lane)
                             to_read = last_facet - facet
-                            line_data = d.read(
-                                words_scanline * bytes_command_word * to_read
-                            )
-                            await self.send_command(
-                                line_data,
-                                timeout=True,
-                            )
+                            line_data = bytearray()
+                            for _ in range(to_read):
+                                pkt = self._read_scanline_packet(d)
+                                if not pkt:
+                                    break
+                                line_data.extend(pkt)
+                            if line_data:
+                                await self.send_command(
+                                    line_data,
+                                    timeout=True,
+                                )
                     else:
                         for facet in range(facets_lane):
                             if facet % 1000 == 0:
@@ -801,19 +837,17 @@ class BaseLaserhead:
                                 if await self.handle_pausing_and_stopping():
                                     await self.set_error("Print job cancelled by user.")
                                     break
-                            # Read the entire line's data into a buffer
-                            # change number of exposures in first word
-                            line_data = bytearray(
-                                d.read(words_scanline * bytes_command_word)
+                            direction = 0 if (lane % 2 == 1) else 1
+                            line_pkt = self._read_scanline_packet(
+                                d,
+                                half_period=exposure_half_period,
+                                direction=direction,
                             )
-                            if lane % 2 == 1:
-                                line_data[:bytes_command_word] = commands[0]
-                            else:
-                                line_data[:bytes_command_word] = commands[1]
-                            await self.send_command(
-                                list(line_data) * exposures,
-                                timeout=True,
-                            )
+                            if line_pkt:
+                                await self.send_command(
+                                    line_pkt * exposures,
+                                    timeout=True,
+                                )
                     self._position[axis_idx] = lane_start_x + (
                         direction_sign * facets_lane * mm_per_facet
                     )

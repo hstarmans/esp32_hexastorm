@@ -356,3 +356,145 @@ def test_calibrate_and_pattern_error_endpoints():
         assert abs(rep_custom["facets"][0]["after_scan_um"]) > 5.0
 
     asyncio.run(run())
+
+
+def test_event_driven_print_loop_and_zero_steps(tmp_path, monkeypatch):
+    """Verify BaseLaserhead handles steps_line=0 and variable-length event-driven .pat files."""
+    import struct
+    import zlib
+
+    from control import constants
+    from control.laserhead.base import BaseLaserhead
+    from hexastorm.config import Spi
+
+    lh = BaseLaserhead()
+    bits_scanline = int(lh.cfg.laser_timing["scanline_length"])
+
+    # 1. Verify steps_line=0 produces valid variable-length SPI packets
+    zero_step_bits = [1, 0, 1] + [0] * (bits_scanline - 3)
+    byte_lst = lh.bit_to_byte_list(zero_step_bits, steps_line=0, direction=1)
+    cmd_lst = lh.byte_to_cmd_list(byte_lst)
+    assert len(cmd_lst) == 3  # 1 header word + 2 event words (3 transitions -> 2 words)
+    assert all(len(pkt) == Spi.command_bytes + Spi.word_bytes for pkt in cmd_lst)
+    hdr_payload = int.from_bytes(cmd_lst[0][1:8], "big")
+    assert (hdr_payload & 1) == 1
+    assert ((hdr_payload >> 1) & 0xFFFF) == 2
+    assert (hdr_payload >> 17) == bits_scanline
+
+    # 2. Build a 2-lane x 4-facet compressed event-driven .pat file with varying event counts
+    def make_line_bits(num_pulses: int) -> list[int]:
+        bits = [0] * bits_scanline
+        for p in range(num_pulses):
+            start = 10 + p * 20
+            bits[start : start + 5] = [1] * 5
+        return bits
+
+    pulse_counts_per_lane = [
+        [0, 1, 2, 3],
+        [0, 2, 1, 3],
+    ]
+    expected_event_words = [
+        0,
+        1,
+        2,
+        3,
+        0,
+        2,
+        1,
+        3,
+    ]  # 2*k events -> k 64-bit words
+    lanes = len(pulse_counts_per_lane)
+    facets_lane = len(pulse_counts_per_lane[0])
+
+    compressor = zlib.compressobj()
+    pat_bytes = bytearray()
+    pat_bytes.extend(compressor.compress(struct.pack("<fII", 1.5, facets_lane, lanes)))
+    for lane_idx, counts in enumerate(pulse_counts_per_lane):
+        direction = 1 if lane_idx % 2 == 0 else 0
+        for count in counts:
+            line_bytes = lh.bit_to_byte_list(
+                make_line_bits(count), steps_line=1, direction=direction
+            )
+            for pkt in lh.byte_to_cmd_list(line_bytes):
+                pat_bytes.extend(compressor.compress(pkt))
+    pat_bytes.extend(compressor.flush())
+
+    fname = "testjob_e1_nocor.pat"
+    (tmp_path / fname).write_bytes(bytes(pat_bytes))
+
+    def parse_scanline_headers(buf: bytes) -> list[tuple[int, int, int]]:
+        pkt_len = Spi.command_bytes + Spi.word_bytes
+        parsed = []
+        idx = 0
+        while idx + pkt_len <= len(buf):
+            if (
+                buf[idx] == Spi.Commands.write
+                and buf[idx + pkt_len - 1] == Spi.Instructions.scanline
+            ):
+                payload = int.from_bytes(buf[idx + 1 : idx + pkt_len - 1], "big")
+                direction = payload & 1
+                event_words = (payload >> 1) & 0xFFFF
+                half_period = payload >> 17
+                parsed.append((direction, event_words, half_period))
+                idx += (1 + event_words) * pkt_len
+            else:
+                idx += pkt_len
+        return parsed
+
+    monkeypatch.setitem(constants.CONFIG["webserver"], "job_folder", str(tmp_path))
+    monkeypatch.setitem(constants.CONFIG["defaultprint"], "home_before_print", False)
+    monkeypatch.setitem(constants.CONFIG["defaultprint"], "use_custom_start", False)
+    monkeypatch.setitem(constants.CONFIG["defaultprint"], "singlefacet", False)
+
+    async def fast_sleep(_delay):
+        return None
+
+    monkeypatch.setattr(asyncio, "sleep", fast_sleep)
+
+    recorded_cmds: list[bytes] = []
+    orig_send_command = lh.send_command
+
+    async def capture_send_command(command, timeout=0):
+        if hasattr(command, "__len__") and len(command) > 0:
+            recorded_cmds.append(bytes(command))
+        return await orig_send_command(command, timeout=timeout)
+
+    monkeypatch.setattr(lh, "send_command", capture_send_command)
+
+    async def run():
+        # 3. Verify exposures == 1
+        monkeypatch.setitem(constants.CONFIG["defaultprint"], "exposureperline", 1)
+        recorded_cmds.clear()
+        await lh.print_loop(fname)
+
+        exp1_headers = [
+            hdr for cmd in recorded_cmds for hdr in parse_scanline_headers(cmd)
+        ]
+        assert len(exp1_headers) == lanes * facets_lane
+        assert [h[1] for h in exp1_headers] == expected_event_words
+        assert [h[0] for h in exp1_headers] == [1, 1, 1, 1, 0, 0, 0, 0]
+
+        # 4. Verify exposures == 4 preserves event_words and updates half_period/direction
+        exposures = 4
+        monkeypatch.setitem(
+            constants.CONFIG["defaultprint"], "exposureperline", exposures
+        )
+        recorded_cmds.clear()
+        await lh.print_loop(fname)
+
+        scanline_cmds = [
+            cmd for cmd in recorded_cmds if lh._count_scanlines_in_command(cmd) > 0
+        ]
+        assert len(scanline_cmds) == lanes * facets_lane
+        expected_hp = int((bits_scanline - 1) // ((1 / exposures) * 2))
+        for line_idx, cmd in enumerate(scanline_cmds):
+            assert lh._count_scanlines_in_command(cmd) == exposures
+            headers = parse_scanline_headers(cmd)
+            assert len(headers) == exposures
+            expected_dir = 0 if ((line_idx // facets_lane) % 2 == 1) else 1
+            for direction, event_words, half_period in headers:
+                assert event_words == expected_event_words[line_idx]
+                assert direction == expected_dir
+                assert half_period == expected_hp
+
+    asyncio.run(run())
