@@ -1,10 +1,9 @@
 # --- boot.py ---
-import json
 import logging
-import os
 
-import ota.rollback
-from control import bootlib, constants
+# Note: importing control.bootlib imports control.constants, which runs deploy_assets()
+# on ESP32 to extract assets and migrate any pre-existing config_old.json.
+from control import bootlib
 
 # set log level for bootloader
 logger = logging.getLogger(__name__)
@@ -12,16 +11,3 @@ bootlib.set_log_level(logging.INFO)
 
 # Hardware / Crash checks
 bootlib.check_crash_loop_rtc()
-
-# Bootloader / OTA logica
-if constants.ESP32 and False:
-    # bootloader needs to keep booting from this partition
-    ota.rollback.cancel()
-    try:
-        with open("config_old.json") as f:
-            dct2 = json.load(f)
-        constants.CONFIG.update(dct2)
-        constants.update_json()
-        os.remove("config_old.json")
-    except OSError:
-        pass

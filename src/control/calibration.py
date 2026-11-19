@@ -572,7 +572,7 @@ async def run_scan_visibility(
         if constants.ESP32:
             await laserhead.synchronize(True)
             await laserhead.enable_comp(
-                laser0=False, laser1=True, polygon=True, sync=True
+                laser0=False, laser1=True, polygon=True, synchronize=True
             )
 
         with camera.analysis_mode(
@@ -588,7 +588,7 @@ async def run_scan_visibility(
 
             if constants.ESP32:
                 await laserhead.enable_comp(
-                    laser0=False, laser1=True, polygon=True, sync=True
+                    laser0=False, laser1=True, polygon=True, synchronize=True
                 )
 
             # 2. Iterate and detect signal
@@ -668,7 +668,7 @@ async def run_facet_calibration(
         if constants.ESP32:
             await laserhead.synchronize(True)
             await laserhead.enable_comp(
-                laser0=False, laser1=True, polygon=True, sync=True
+                laser0=False, laser1=True, polygon=True, synchronize=True
             )
 
         with camera.analysis_mode(
@@ -684,7 +684,7 @@ async def run_facet_calibration(
 
             if constants.ESP32:
                 await laserhead.enable_comp(
-                    laser0=False, laser1=True, polygon=True, sync=True
+                    laser0=False, laser1=True, polygon=True, synchronize=True
                 )
 
             for _it in range(iterations):
@@ -803,7 +803,7 @@ async def run_pattern_error(
         if constants.ESP32:
             await laserhead.synchronize(True)
             await laserhead.enable_comp(
-                laser0=False, laser1=True, polygon=True, sync=True
+                laser0=False, laser1=True, polygon=True, synchronize=True
             )
 
         with camera.analysis_mode(
@@ -819,7 +819,7 @@ async def run_pattern_error(
 
             if constants.ESP32:
                 await laserhead.enable_comp(
-                    laser0=False, laser1=True, polygon=True, sync=True
+                    laser0=False, laser1=True, polygon=True, synchronize=True
                 )
 
             # 2. Uncorrected pass (Before)
@@ -1072,7 +1072,7 @@ async def _bounds_hardware_feeder(laserhead, line: list[int], facet: int | None 
     """ESP32 background task feeding FPGA FIFO while Preview Dots is active."""
     try:
         await laserhead.synchronize(True)
-        await laserhead.enable_comp(laser0=False, laser1=True, polygon=True, sync=True)
+        await laserhead.enable_comp(laser0=False, laser1=True, polygon=True, synchronize=True)
         true_facet = (await laserhead.remap(facet)) if facet is not None else None
         while _bounds_active:
             await laserhead.write_line(
@@ -1175,7 +1175,7 @@ async def capture_jpeg_with_preview(laserhead, camera):
 
     if constants.ESP32:
         await laserhead.synchronize(True)
-        await laserhead.enable_comp(laser0=False, laser1=True, polygon=True, sync=True)
+        await laserhead.enable_comp(laser0=False, laser1=True, polygon=True, synchronize=True)
         rpm = float(laserhead.cfg.laser_timing["rpm"])
         rev_time_ms = 60000.0 / max(600.0, rpm)
         exposure_ms = float(CONFIG["calibration"]["camera_exposure_ms"])

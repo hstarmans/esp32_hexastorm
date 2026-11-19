@@ -142,7 +142,7 @@ class Laserhead(ESP32Host, BaseLaserhead):
                 self.fpga_reset.value(1)
             if hasattr(self, "reset"):
                 self.reset()
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Error during hardware reset: {e}")
         await super().reset_estop()
 
@@ -261,6 +261,7 @@ class Laserhead(ESP32Host, BaseLaserhead):
         # e.g., if we are at [10, 10, 0] and command is "G1 X20", Y and Z remain unchanged.
         # We initialize it with our current WPOS (Workspace Position)
         gcode_pos = self.wpos
+        line_num = 0
 
         try:
             filepath = self.get_job_path(fname)

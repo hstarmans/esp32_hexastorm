@@ -635,24 +635,27 @@ class BaseLaserhead:
         self.state["job"]["filename"] = fname
         self.state["job"]["laserpower"] = CONFIG["defaultprint"]["laserpower"]
         file_exposures, optical_correction = _parse_job_suffix(fname)
-        if file_exposures is not None:
-            exposures = self.state["job"]["exposureperline"] = file_exposures
         exposures_gui = CONFIG["defaultprint"]["exposureperline"]
         single_facet = self.state["job"]["singlefacet"] = CONFIG["defaultprint"][
             "singlefacet"
         ]
-        if exposures == 1 and optical_correction is False:
+        if file_exposures is None:
             exposures = self.state["job"]["exposureperline"] = exposures_gui
-        elif exposures_gui != 1:
-            logger.debug(
-                f"File has optical correction or optical correction and does not support {exposures_gui} exposures"
-            )
-            return False
-        elif single_facet and optical_correction:
-            logger.debug(
-                "Single facet engraving cannot be combined with optical correction."
-            )
-            return False
+            optical_correction = False
+        else:
+            exposures = self.state["job"]["exposureperline"] = file_exposures
+            if exposures == 1 and optical_correction is False:
+                exposures = self.state["job"]["exposureperline"] = exposures_gui
+            elif exposures_gui != 1:
+                await self.set_error(
+                    f"File has optical correction or fixed exposures and does not support {exposures_gui} exposures."
+                )
+                return False
+            elif single_facet and optical_correction:
+                await self.set_error(
+                    "Single facet engraving cannot be combined with optical correction."
+                )
+                return False
 
         basestring = (
             f"Printing with laserpower {self.state['job']['laserpower']}"
@@ -746,6 +749,7 @@ class BaseLaserhead:
                     await self.set_error(
                         "Laser synchronization failed: photodiode lock could not be established. Aborting print job."
                     )
+                    return
 
                 # ensure facet 0 is at the start
                 offset_0 = await self.remap(facet_id=0)

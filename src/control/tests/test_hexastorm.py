@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 def run_test(class_name, function_name, *args, **kwargs):
     """executes test in hexastorm.tests.test_electrical"""
     logger.info(f"Executing class {class_name} in test_mpy")
+    test_instance = None
     try:
         # Get the class and function *directly*
         test_class = getattr(test_mpy, class_name)
@@ -33,7 +34,8 @@ def run_test(class_name, function_name, *args, **kwargs):
         error_message = s.getvalue()
         logger.error(f"\033[91m{error_message}\033[0m")
     # reset after exception
-    test_instance.tearDownClass()
+    if test_instance is not None:
+        test_instance.tearDownClass()
 
 
 if __name__ == "__main__":
@@ -46,4 +48,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     # normally you would use vars(args)
     # this is not supported
-    run_test(args.class_name, args.function, args.variable)
+    if args.variable is not None:
+        run_test(args.class_name, args.function, args.variable)
+    else:
+        run_test(args.class_name, args.function)

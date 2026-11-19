@@ -19,26 +19,26 @@ class Hardware(unittest.TestCase):
         """
         if flash:
             # generated via old/debug_spi/test_spi
-            laserhead.flash("reply.bit")
+            laserhead.flash_fpga("reply.bit")
         print("The red led should be on")
         bts = [0, 210, 222, 230]
-        laserhead.host.reset(blank=False)
+        laserhead.reset()
         previous_byte = None
         for idx, byte in enumerate(bts):
-            laserhead.host.chip_select.value(0)
+            laserhead.fpga_cs.value(0)
             sleep(1)
             response = bytearray([0])
             data = bytearray([byte])
-            laserhead.host.spi.write_readinto(data, response)
+            laserhead.spi.write_readinto(data, response)
             byte_received = response[0]
-            laserhead.host.chip_select.value(1)
+            laserhead.fpga_cs.value(1)
             if idx != 0:
                 try:
                     assert previous_byte == byte_received
                 except AssertionError:
                     print(previous_byte)
                     print(byte_received)
-                    raise Exception("Test failed: not equal")  # noqa: TRY002
+                    raise AssertionError("Test failed: not equal") from None
             previous_byte = byte
 
     def test_write_blink_toflash(self):
@@ -48,7 +48,7 @@ class Hardware(unittest.TestCase):
         File is written to flash ram
         FPGA reset is released and should program itself
         """
-        laserhead.flash("blink.bit")
+        laserhead.flash_fpga("blink.bit")
         res = input("Test wether led blinks, input y and enter for succes\n")
         assert res == "y"
 

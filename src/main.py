@@ -64,5 +64,5 @@ if constants.ESP32:
         asyncio.run(main())
     except KeyboardInterrupt:
         logger.error("Keyboard interrupt")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         logger.error(f"Unexpected error: {e}")

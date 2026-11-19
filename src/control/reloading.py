@@ -78,8 +78,8 @@ def reload(module_or_name):
             parts = name.split(".")
             for i in range(len(parts)):
                 __import__(".".join(parts[: i + 1]))
-        except Exception as e:
-            logger.error("Error re-importing {}: {}".format(name, e))
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"Error re-importing {name}: {e}")
 
     return sys.modules.get(root_name)
 

@@ -147,7 +147,7 @@ def deploy_assets(overwrite=False):
         f"New firmware build detected ({current_build_id or 'first boot'}). Deploying assets..."
     )
 
-    # Back up active config to a temporary file
+    # Back up active config to a temporary file (or reuse an existing config_old.json)
     has_old_config = False
     try:
         os.stat(CONFIG_FILE)
@@ -160,7 +160,12 @@ def deploy_assets(overwrite=False):
         except OSError:
             pass
     except OSError:
-        pass
+        try:
+            os.stat(CONFIG_OLD_FILE)
+            has_old_config = True
+            logger.info(f"Found existing {CONFIG_OLD_FILE} to migrate.")
+        except OSError:
+            pass
 
     # Import frozen_root to trigger extraction (this extracts a fresh factory config.json)
     try:

@@ -47,7 +47,7 @@ def _namespace_from(obj):
     if hasattr(obj, "__dict__") and hasattr(obj, "__name__"):
         try:
             return vars(obj)
-        except Exception:
+        except TypeError:
             return None
     return None
 

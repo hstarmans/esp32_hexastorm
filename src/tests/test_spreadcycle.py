@@ -63,7 +63,7 @@ PRESETS = [
 def generate_grid_candidates(exclude_presets):
     """Generates structured parametric grid candidates excluding already tested presets."""
     candidates = []
-    seen = set((p["toff"], p["hstrt"], p["hend"], p["tbl"]) for p in exclude_presets)
+    seen = {(p["toff"], p["hstrt"], p["hend"], p["tbl"]) for p in exclude_presets}
 
     # Systematic sweep: TOFF -> HSTRT -> HEND -> TBL
     for toff in [3, 4, 2, 5]:
@@ -136,13 +136,13 @@ def disable_all_motors():
     """Immediately cut power to all steppers."""
     try:
         lh.enable_steppers = False
-    except Exception:
+    except Exception:  # noqa: BLE001, S110
         pass
     if hasattr(lh, "steppers") and lh.steppers:
         for s in lh.steppers.values():
             try:
                 s.motor_enabled = False
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
 
 
@@ -254,7 +254,7 @@ def _run_tune_spreadcycle(axis=None, speed=3.0, dist=3.0):
             # Verify readback
             rb = read_chopper_config(tmc)
             print(f"Register Readback: TOFF={rb['toff']}, HSTRT={rb['hstrt']}, HEND={rb['hend']}, TBL={rb['tbl']}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"Error applying chopper settings ({type(e).__name__}): {e}")
             try:
                 choice = input("[r]etry or [s]kip? ").strip().lower()
@@ -293,7 +293,7 @@ def _run_tune_spreadcycle(axis=None, speed=3.0, dist=3.0):
                 tmc.clearGSTAT()
                 idx += 1
                 continue
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"Warning reading driver diagnostics: {e}")
 
         # 4. User Evaluation
@@ -385,7 +385,7 @@ def save_to_config(axis, cand):
             }
             constants.update_config()
             print(f"Updated live constants.CONFIG for axis '{axis}'.")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             print(f"Warning updating constants.CONFIG: {e}")
 
     # 2. Update config.json file directly
@@ -415,7 +415,7 @@ def save_to_config(axis, cand):
             print(f"Successfully saved configuration to '{path}'!")
             saved = True
             break
-        except Exception:
+        except (OSError, ValueError):
             continue
 
     if not saved:

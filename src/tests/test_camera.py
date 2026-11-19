@@ -40,7 +40,7 @@ try:
             print(f"    -> Device found at hex address: {hex(device)}")
             if device == 0x30 or device == 48:
                 print("       *** SUCCESS! OV2640 CAMERA DETECTED (0x30)! ***")
-except Exception as e:
+except OSError as e:
     print("Error configuring I2C communication:", e)
 
 finally:

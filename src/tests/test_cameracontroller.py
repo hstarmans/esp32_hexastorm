@@ -41,9 +41,9 @@ def test_camera_snapshot_endpoint():
     async def run():
         client = TestClient(app)
 
-        # Unauthorized access check (redirects to login)
+        # Unauthorized access check (API routes return 401)
         res_unauth = await client.get("/api/camera/snapshot")
-        assert res_unauth.status_code == 302
+        assert res_unauth.status_code == 401
 
         # Authorize session
         await client.post(
@@ -498,3 +498,230 @@ def test_event_driven_print_loop_and_zero_steps(tmp_path, monkeypatch):
                 assert half_period == expected_hp
 
     asyncio.run(run())
+
+
+def test_check_crash_loop_rtc_raises_in_safe_mode(monkeypatch):
+    """Verify check_crash_loop_rtc() raises RuntimeError when crash limit is reached."""
+    import pytest
+
+    from control import bootlib
+
+    class DummyRTC:
+        def memory(self, data=None):
+            if data is None:
+                return b"3"
+            return None
+
+    monkeypatch.setattr(bootlib.machine, "RTC", DummyRTC, raising=False)
+    with pytest.raises(RuntimeError, match="SAFE MODE ACTIVATED"):
+        bootlib.check_crash_loop_rtc()
+
+
+def test_print_loop_prep_without_suffix_and_invalid_override(monkeypatch):
+    """Verify plain job names work and invalid GUI exposure overrides reset printing."""
+    from control import constants
+    from control.laserhead.base import BaseLaserhead
+
+    lh = BaseLaserhead()
+    monkeypatch.setitem(constants.CONFIG["defaultprint"], "exposureperline", 2)
+    monkeypatch.setitem(constants.CONFIG["defaultprint"], "singlefacet", False)
+
+    ok = asyncio.run(lh.print_loop_prep("plain_job.pat"))
+    assert ok is True
+    assert lh.state["printing"] is True
+    assert lh.state["job"]["exposureperline"] == 2
+
+    invalid = asyncio.run(lh.print_loop_prep("job_e1_cor.pat"))
+    assert invalid is False
+    assert lh.state["printing"] is False
+    assert lh.state["error_message"] is not None
+
+
+def test_print_loop_aborts_on_sync_failure(tmp_path, monkeypatch):
+    """Verify print_loop aborts cleanly without sending scanlines if synchronize fails."""
+    import struct
+    import zlib
+
+    from control import constants
+    from control.laserhead.base import BaseLaserhead
+
+    lh = BaseLaserhead()
+    bits_scanline = int(lh.cfg.laser_timing["scanline_length"])
+    compressor = zlib.compressobj()
+    pat_bytes = bytearray()
+    pat_bytes.extend(compressor.compress(struct.pack("<fII", 1.5, 4, 1)))
+    line_bytes = lh.bit_to_byte_list([0] * bits_scanline, steps_line=1, direction=1)
+    for pkt in lh.byte_to_cmd_list(line_bytes):
+        pat_bytes.extend(compressor.compress(pkt))
+    pat_bytes.extend(compressor.flush())
+
+    fname = "sync_fail_e1_nocor.pat"
+    (tmp_path / fname).write_bytes(bytes(pat_bytes))
+
+    monkeypatch.setitem(constants.CONFIG["webserver"], "job_folder", str(tmp_path))
+    monkeypatch.setitem(constants.CONFIG["defaultprint"], "home_before_print", False)
+    monkeypatch.setitem(constants.CONFIG["defaultprint"], "use_custom_start", False)
+    monkeypatch.setitem(constants.CONFIG["defaultprint"], "singlefacet", False)
+    monkeypatch.setitem(constants.CONFIG["defaultprint"], "exposureperline", 1)
+
+    async def fast_sleep(_delay):
+        return None
+
+    async def fail_sync(value=True):
+        return False
+
+    sent_scanlines = 0
+    orig_send_command = lh.send_command
+
+    async def capture_send_command(command, timeout=0):
+        nonlocal sent_scanlines
+        if hasattr(command, "__len__") and len(command) > 0:
+            sent_scanlines += lh._count_scanlines_in_command(command)
+        return await orig_send_command(command, timeout=timeout)
+
+    monkeypatch.setattr(asyncio, "sleep", fast_sleep)
+    monkeypatch.setattr(lh, "synchronize", fail_sync)
+    monkeypatch.setattr(lh, "send_command", capture_send_command)
+
+    asyncio.run(lh.print_loop(fname))
+
+    assert sent_scanlines == 0
+    assert lh.state["printing"] is False
+    assert "synchronization failed" in (lh.state["error_message"] or "")
+
+
+def test_calibration_esp32_uses_synchronize_kwarg(monkeypatch):
+    """Verify calibration routines call enable_comp(..., synchronize=...) on ESP32."""
+    import types
+
+    import numpy as np
+
+    from control import calibration, constants
+
+    calls = []
+
+    class StrictLaserhead:
+        def __init__(self):
+            self.cfg = types.SimpleNamespace(
+                laser_timing={"scanline_length": 40, "rpm": 3000, "facets": 4}
+            )
+
+        async def synchronize(self, value=True):
+            return True
+
+        async def remap(self, facet_id=0):
+            return int(facet_id) % 4
+
+        async def enable_comp(
+            self,
+            laser0=None,
+            laser1=None,
+            polygon=None,
+            synchronize=None,
+            singlefacet=None,
+        ):
+            calls.append((laser0, laser1, polygon, synchronize, singlefacet))
+
+        async def write_line(
+            self, bit_lst, steps_line=1, direction=0, repetitions=1, facet=None
+        ):
+            return None
+
+        async def wait_fifo_empty(self):
+            return None
+
+    class DummyAnalysisCtx:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            return False
+
+    class DummyCamera:
+        def analysis_mode(self, **kwargs):
+            return DummyAnalysisCtx()
+
+        def discard_frame(self):
+            return None
+
+        def capture_grayscale_array(self):
+            return np.zeros((10, 10), dtype=np.uint8)
+
+    monkeypatch.setattr(constants, "ESP32", True)
+    monkeypatch.setattr(calibration, "constants", constants)
+    monkeypatch.setattr(calibration, "update_config", lambda: None)
+    monkeypatch.setitem(
+        calibration.CONFIG, "calibration", dict(calibration.CONFIG["calibration"])
+    )
+
+    async def fast_sleep(_delay):
+        return None
+
+    monkeypatch.setattr(calibration.asyncio, "sleep", fast_sleep)
+
+    result = asyncio.run(
+        calibration.run_scan_visibility(
+            laserhead=StrictLaserhead(),
+            camera=DummyCamera(),
+            facet=0,
+            step=20,
+        )
+    )
+    assert result["status"] == "success"
+    assert any(c[3] is True for c in calls)
+
+
+def test_deploy_assets_migrates_existing_config_old(tmp_path, monkeypatch):
+    """Verify deploy_assets() migrates pre-existing config_old.json when config.json is absent."""
+    import importlib.util
+    import sys
+    import types
+
+    from control import constants
+
+    old_cfg = tmp_path / "config_old.json"
+    new_cfg = tmp_path / "config.json"
+    old_cfg.write_text(
+        json.dumps({"serial": "CUSTOM-999", "wifi_login": {"ssid": "LabWiFi"}})
+    )
+
+    class StubFinder:
+        def find_spec(self, fullname, path, target=None):
+            if fullname in ("control.build_info", "control.frozen_root"):
+                return importlib.util.spec_from_loader(fullname, self)
+            return None
+
+        def create_module(self, spec):
+            return types.ModuleType(spec.name)
+
+        def exec_module(self, module):
+            if module.__name__ == "control.build_info":
+                module.BUILD_ID = "build_test_123"
+            elif module.__name__ == "control.frozen_root":
+                new_cfg.write_text(
+                    json.dumps(
+                        {
+                            "serial": "DEFAULT-000",
+                            "wifi_login": {"ssid": "", "password": "secret"},
+                            "new_key": 42,
+                        }
+                    )
+                )
+
+    finder = StubFinder()
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delitem(sys.modules, "control.build_info", raising=False)
+    monkeypatch.delitem(sys.modules, "control.frozen_root", raising=False)
+    monkeypatch.setattr(sys, "meta_path", [finder, *sys.meta_path])
+    monkeypatch.setattr(constants, "ESP32", True)
+    monkeypatch.setattr(constants, "CONFIG_FILE", str(new_cfg))
+    monkeypatch.setattr(constants, "CONFIG_OLD_FILE", str(old_cfg))
+
+    constants.deploy_assets(overwrite=True)
+
+    merged = json.loads(new_cfg.read_text())
+    assert merged["serial"] == "CUSTOM-999"
+    assert merged["wifi_login"]["ssid"] == "LabWiFi"
+    assert merged["wifi_login"]["password"] == "secret"
+    assert merged["new_key"] == 42
+    assert not old_cfg.exists()

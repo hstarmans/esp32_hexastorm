@@ -212,7 +212,7 @@ async def update_firmware(force=False):
     if constants.ESP32:
         try:
             # stream=True ensures we don't load the whole file into RAM
-            with requests.get(asset_url, headers=head, stream=True) as resp:
+            with requests.get(asset_url, headers=head, stream=True) as resp:  # noqa: ASYNC210
                 if resp.status_code not in (200, 302):
                     logger.error(f"Download failed with status code {resp.status_code}")
                     return False
@@ -253,21 +253,14 @@ async def update_firmware(force=False):
                 except OSError:
                     pass
 
-            try:
-                os.rename("config.json", "config_old.json")
-            except OSError:
-                pass
-
-            # 4. Trigger the reboot safely
+            # 4. Trigger the reboot safely (deploy_assets() preserves & merges config.json)
             logger.warning(
                 "Update applied! Rebooting into new firmware in 2 seconds..."
             )
             await asyncio.sleep(2)
-            import machine
-
             machine.reset()
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"OTA Update crashed: {e}")
             return False
 
@@ -354,7 +347,7 @@ async def connect_wifi(force=False, create_ap=True):
                 password=ap_pass,
             )
             logger.info(f"Access Point active: essid {ap_essid}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             logger.error(f"Failed to start Access Point: {e}")
 
     return made_connection
@@ -386,7 +379,7 @@ def check_crash_loop_rtc():
         logger.error("!!! DETECTED CRASH LOOP (RTC) !!!")
         logger.error("Stopping boot process to protect device.")
         logger.info("Connect via WebREPL or Serial (Ctrl+C to bypass if stuck).")
-        RuntimeError("SAFE MODE ACTIVATED: Boot halted due to crash loop.")
+        raise RuntimeError("SAFE MODE ACTIVATED: Boot halted due to crash loop.")
 
     # Increment and Save back to RTC (No flash write!)
     rtc.memory(str(count + 1).encode())
@@ -394,7 +387,7 @@ def check_crash_loop_rtc():
 
 def mark_boot_successfull():
     """Clear the crash counter"""
-    logging.info("System stable. Clearing RTC crash counter.")
+    logger.info("System stable. Clearing RTC crash counter.")
     machine.RTC().memory(b"")  # Clear the memory
 
 

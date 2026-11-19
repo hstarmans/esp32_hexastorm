@@ -145,10 +145,12 @@ async def authenticate(request, session):
         # Voor AJAX/Fetch/SSE calls sturen we een 401 (Unauthorized)
         # Voor gewone pagina navigatie (zoals /logout) redirecten we naar de login
         api_paths = (
+            "/api/",
             "/control/",
             "/print/",
             "/state",
             "/gotopoint",
+            "/home",
             "/setworkspacezero",
             "/upload",
             "/deletefile",
@@ -718,9 +720,6 @@ async def camera_snapshot(request, session):
     Return a single JPEG snapshot from the camera.
     Uses OV2640 hardware JPEG on ESP32 or simulated mock on PC.
     """
-    if not is_authorized(session):
-        return Response("Unauthorized", status_code=401)
-
     jpeg_data = await capture_jpeg_with_preview(laserhead, camera)
     if not jpeg_data:
         err_msg = camera.last_error or "Camera hardware capture failed"
@@ -741,9 +740,6 @@ async def camera_snapshot(request, session):
 @with_session
 async def api_camera_settings(request, session):
     """Update camera exposure and optical settings."""
-    if not is_authorized(session):
-        return Response("Unauthorized", status_code=401)
-
     data = request.json
     exp_ms = max(1, int(data["exposure_ms"]))
     CONFIG["calibration"]["camera_exposure_ms"] = exp_ms
@@ -757,9 +753,6 @@ async def api_camera_settings(request, session):
 @with_session
 async def api_save_camera_pos(request, session):
     """Save current (or specified) machine position as camera calibration target."""
-    if not is_authorized(session):
-        return Response("Unauthorized", status_code=401)
-
     data = request.json
     pos = data["position"]
     pos = [round(float(x), 2) for x in pos[:3]]
@@ -774,9 +767,6 @@ async def api_save_camera_pos(request, session):
 @with_session
 async def api_move_to_camera(request, session):
     """Move laser head directly to the saved camera calibration position."""
-    if not is_authorized(session):
-        return Response("Unauthorized", status_code=401)
-
     target = CONFIG["calibration"]["camera_position"]
 
     state = laserhead.enable_steppers
@@ -799,9 +789,6 @@ async def api_move_to_camera(request, session):
 @with_session
 async def api_scan_visibility(request, session):
     """Run optical scan visibility calibration across scanline length."""
-    if not is_authorized(session):
-        return Response("Unauthorized", status_code=401)
-
     if laserhead.state["printing"]:
         return {"error": "Busy printing"}, 409
 
@@ -828,9 +815,6 @@ async def api_scan_visibility(request, session):
 @with_session
 async def api_show_bounds(request, session):
     """Toggle or configure projection of calibration dots (1 facet or all facets)."""
-    if not is_authorized(session):
-        return Response("Unauthorized", status_code=401)
-
     data = request.json
     enabled = data["enabled"]
     facet = data["facet"]
@@ -850,9 +834,6 @@ async def api_show_bounds(request, session):
 @with_session
 async def api_calibrate_facets(request, session):
     """Run multi-facet dot calibration on-board."""
-    if not is_authorized(session):
-        return Response("Unauthorized", status_code=401)
-
     if laserhead.state["printing"]:
         return {"error": "Busy printing"}, 409
 
@@ -879,9 +860,6 @@ async def api_calibrate_facets(request, session):
 @with_session
 async def api_pattern_error(request, session):
     """Run Verified Calibration (pattern_error) comparing Before vs After 2D errors."""
-    if not is_authorized(session):
-        return Response("Unauthorized", status_code=401)
-
     if laserhead.state["printing"]:
         return {"error": "Busy printing"}, 409
 
@@ -908,9 +886,6 @@ async def api_pattern_error(request, session):
 @with_session
 async def api_update_facets(request, session):
     """Save custom per-facet (Scan / Orth) calibration offsets and/or toggle apply_correction."""
-    if not is_authorized(session):
-        return Response("Unauthorized", status_code=401)
-
     data = request.json
     facets_override = data["facets"]
     apply_correction = data["apply_correction"]

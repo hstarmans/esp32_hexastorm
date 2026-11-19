@@ -35,6 +35,13 @@ builtins = ["include", "package", "module", "require", "options", "const"]
 extend-exclude = [
     "src/control/frozen_root.py",
     "src/root/templates",
+    "src/microdot",
+    "src/utemplate",
+    "src/mrequests",
+    "src/ota",
+    "src/winbond",
+    "src/tmc",
+    "src/hexastorm",
 ]
 
 [tool.ruff.format]
