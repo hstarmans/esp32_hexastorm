@@ -3,6 +3,7 @@ import os
 import subprocess
 import sys
 import time
+from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
 try:
@@ -29,12 +30,23 @@ if TYPE_CHECKING:
     def options(*args, **kwargs): ...
 
 
+def _load_paths_helper(control_dir: Path):
+    spec = spec_from_file_location("_control_paths", control_dir / "_paths.py")
+    if spec is None or spec.loader is None:
+        raise AssetGenerationError("Failed to load control/_paths.py helper")
+    mod = module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
 # Determine Base Directory
 # If called by make, use the env var. If called manually, use the file location.
 if env_manifest := os.environ.get("FROZEN_MANIFEST"):
     base_dir = Path(env_manifest).resolve().parent
 else:
     base_dir = Path(__file__).resolve().parent
+
+repo_root = base_dir.parent
 
 # Define paths relative to the base_dir
 code_dir = base_dir / "control"
@@ -98,42 +110,55 @@ except subprocess.CalledProcessError as e:
 
 if not frozen_output.is_file():
     raise AssetGenerationError(f"Failed to generate {frozen_output}")
+
 # We check if 'package' exists in the global scope to know if we are in 'make'
 if "package" in globals():
+    paths_helper = _load_paths_helper(code_dir)
+    vendor_dir = str(repo_root / "vendor")
+    hexastorm_src_dir = str(paths_helper.resolve_hexastorm_src(repo_root))
+    camera_api_src = repo_root / "deps" / "micropython-camera-API" / "src"
+
+    if not (camera_api_src / "acamera.py").is_file():
+        raise AssetGenerationError(
+            f"Missing camera driver module at {camera_api_src / 'acamera.py'}. "
+            "Run 'git submodule update --init --recursive'."
+        )
+
     include("$(PORT_DIR)/boards")
     package("control")
-    # https://github.com/miguelgrinberg/microdot
-    package("microdot")
-    package("utemplate")
-    # https://github.com/glenn20/micropython-esp32-ota
-    package("ota")
-    # now trying https://github.com/micropython/micropython-lib/pull/278
-    package("mrequests")
-    package("winbond")
-    package("tmc")
+
+    # Pure-Python vendored MicroPython dependencies (see vendor/VERSIONS.md)
+    package("microdot", base_path=vendor_dir)
+    package("utemplate", base_path=vendor_dir)
+    package("ota", base_path=vendor_dir)
+    package("mrequests", base_path=vendor_dir)
+    package("winbond", base_path=vendor_dir)
+    package("tmc", base_path=vendor_dir)
+
     # Explicit Hexastorm Modules
-    module("hexastorm/__init__.py")
-    module("hexastorm/ulabext.py")
-    module("hexastorm/config.py")
-    module("hexastorm/calibration/__init__.py")
-    module("hexastorm/calibration/core.py")
-    module("hexastorm/fpga_host/__init__.py")
-    module("hexastorm/fpga_host/interface.py")
-    module("hexastorm/fpga_host/syncwrap.py")
-    module("hexastorm/fpga_host/micropython.py")
-    module("hexastorm/fpga_host/tools.py")
-    module("hexastorm/tests/__init__.py")
-    module("hexastorm/tests/test_mpy.py")
+    module("hexastorm/__init__.py", base_path=hexastorm_src_dir)
+    module("hexastorm/ulabext.py", base_path=hexastorm_src_dir)
+    module("hexastorm/config.py", base_path=hexastorm_src_dir)
+    module("hexastorm/calibration/__init__.py", base_path=hexastorm_src_dir)
+    module("hexastorm/calibration/core.py", base_path=hexastorm_src_dir)
+    module("hexastorm/fpga_host/__init__.py", base_path=hexastorm_src_dir)
+    module("hexastorm/fpga_host/interface.py", base_path=hexastorm_src_dir)
+    module("hexastorm/fpga_host/syncwrap.py", base_path=hexastorm_src_dir)
+    module("hexastorm/fpga_host/micropython.py", base_path=hexastorm_src_dir)
+    module("hexastorm/fpga_host/tools.py", base_path=hexastorm_src_dir)
+    module("hexastorm/tests/__init__.py", base_path=hexastorm_src_dir)
+    module("hexastorm/tests/test_mpy.py", base_path=hexastorm_src_dir)
+
     # Root Modules
     module("tools.py")
     module("boot.py")
     module("main.py")
-    # Stdlib Requirements
-    # Note: 'require' pulls from micropython-lib.
-    # 'time' is needed because standard utime often lacks strftime.
+
+    # Stdlib Requirements from micropython-lib
     require("time")
     require("pyjwt")
     require("logging")
     require("unittest")
-    # camera module, added via symlink
-    module("acamera.py", base_path="micropython-camera-API/src")
+
+    # Camera Python wrapper from submodule
+    module("acamera.py", base_path=str(camera_api_src))

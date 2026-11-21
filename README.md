@@ -2,7 +2,7 @@
 
 This project provides an asynchronous Microdot webserver and hardware controller running on an **ESP32-S3** microcontroller (MicroPython), enabling remote operation of a dual-mode PCB fabrication workstation (**UV Laser Lithography** and **CNC Milling**).
 
-The workstation's real-time timing is driven by a Lattice iCE40UP5K FPGA programmed with the [Hexastorm](https://github.com/hstarmans/hexastorm) Amaranth HDL toolchain, connected to the ESP32-S3 over 5 MHz SPI (`src/hexastorm` symlink) and sharing the pure Python / `ulab` optical calibration core (`hexastorm.calibration.core`).
+The workstation's real-time timing is driven by a Lattice iCE40UP5K FPGA programmed with the [Hexastorm](https://github.com/hstarmans/hexastorm) Amaranth HDL toolchain, tracked as a Git submodule (`deps/hexastorm`) and sharing the pure Python / `ulab` optical calibration core (`hexastorm.calibration.core`).
 
 ---
 
@@ -22,6 +22,7 @@ ESP32-S3 MicroPython (Microdot webapp.py + BaseLaserhead / Laserhead)
 
 * **Coordinate Persistence & Crash Protection:** Machine (`mpos`) and workspace offset (`woff`) coordinates are persisted in ESP32 NVS in micrometers via `SafeNVS` (`nvs_mock.json` on PC). Boot crashes are tracked in RTC memory (`bootlib.check_crash_loop_rtc()`), entering safe mode after repeated failures and clearing the counter after 5 seconds of stable uptime (`_mark_boot_stable()`).
 * **Timing Split on FPGA:** Laser exposures run at `24 MHz` (photodiode-locked scanline events + Sigma-Delta PDM), while coordinated homing, positioning, and CNC G-code moves run on the `1 MHz` forward-difference stepper engine.
+* **Clean Dependency Separation:** Application code lives in `src/`, pure-Python vendored MicroPython libraries live in `vendor/` (documented in `vendor/VERSIONS.md`), C/submodule repositories live in `deps/`, and the ESP32-S3 MicroPython board definition lives out-of-tree in `boards/HEXASTORM_S3/`.
 
 ---
 
@@ -52,8 +53,12 @@ The **Camera & Calibration** panel (`camera_panel.html`, `src/control/calibratio
 
 | Path | Purpose |
 | :--- | :--- |
+| [boards/HEXASTORM_S3/](boards/HEXASTORM_S3/) | Out-of-tree MicroPython board definition (`mpconfigboard.h`, 32 MiB OTA partitions, `esp32-camera` component) |
+| [deps/](deps/) | Git submodules (`hexastorm`, `micropython-ulab`, `micropython-camera-API`) — no local symlinks |
+| [vendor/](vendor/) | Vendored pure-Python MicroPython libraries (`microdot`, `utemplate`, `ota`, `mrequests`, `winbond`, `tmc`) + [VERSIONS.md](vendor/VERSIONS.md) |
 | [src/boot.py](src/boot.py) | Early boot logger setup, asset deployment (`constants`), and RTC crash-loop guard |
 | [src/main.py](src/main.py) | Async startup: Wi-Fi manager, NTP sync, optional WebREPL, Microdot server, and 5s stability mark |
+| [src/control/_paths.py](src/control/_paths.py) | Central path resolver (`HEXASTORM_DIR` override → `deps/hexastorm` → sibling fallback + `vendor/`) |
 | [src/control/webapp.py](src/control/webapp.py) | Microdot routes, session auth middleware, SSE `/state`, upload/delete, motion, and calibration API |
 | [src/control/calibration.py](src/control/calibration.py) | OV2640 calibration orchestration, FPGA SPI lock, `24 MHz` dot projection, and 2D verification |
 | [src/control/camera.py](src/control/camera.py) | `CameraController`, `AnalysisModeContext`, and OV2640 manual exposure register control |
@@ -61,10 +66,11 @@ The **Camera & Calibration** panel (`camera_panel.html`, `src/control/calibratio
 | [src/control/bootlib.py](src/control/bootlib.py) | Wi-Fi STA/AP setup, NTP, GitHub OTA updater, disk/log helpers, and RTC crash counter |
 | [src/control/constants.py](src/control/constants.py) | `SafeNVS`, `deploy_assets()`, config migration/merging, and hardware optical constants |
 | [src/camera.py](src/camera.py) | CPython mock `camera` module backed by `hexastorm.calibration.FakeScanhead` |
-| [src/manifest.py](src/manifest.py) | Packs `src/root/` via `freezefs` and freezes MicroPython + `hexastorm` modules |
-| [src/build.py](src/build.py) | Local and `--remote` SSH MicroPython ESP32-S3 build and `esptool` flash CLI |
+| [src/manifest.py](src/manifest.py) | Packs `src/root/` via `freezefs` and freezes `control/`, `vendor/`, `deps/` & `hexastorm` |
+| [src/micropython.cmake](src/micropython.cmake) | Integrates `deps/micropython-ulab` and `deps/micropython-camera-API` into MicroPython build |
+| [src/build.py](src/build.py) | Out-of-tree MicroPython ESP32-S3 build (`BOARD=HEXASTORM_S3`) & local/SSH `esptool` flash CLI |
 | [src/root/](src/root/) | Web UI HTML templates, `static/home.js`, factory `config.json`, and mock runtime files |
-| [src/tests/](src/tests/) | Pytest Microdot endpoint, UI-contract, and `FakeScanhead` calibration tests + on-device scripts |
+| [src/tests/](src/tests/) | Pytest endpoint, UI-contract, layout, and `FakeScanhead` calibration tests + on-device scripts |
 
 ---
 
@@ -84,14 +90,18 @@ A visual overview of the webserver interface after successful login:
 
 ## Local Development & Testing
 
-Install dependencies with [uv](https://docs.astral.sh/uv/) and run the webserver locally using the CPython mock laserhead and `FakeScanhead` camera simulator (port `5000`, default password `hex`):
+Clone with submodules, install Python dependencies via [uv](https://docs.astral.sh/uv/), and run the webserver locally using the CPython mock laserhead and `FakeScanhead` camera simulator (port `5000`, default password `hex`):
 
 ```bash
+git clone --recursive https://github.com/hstarmans/esp32_hexastorm
+cd esp32_hexastorm
 uv sync
 uv run webapp
 ```
 
-Run the automated test suite (`microdot.test_client.TestClient` HTTP endpoint tests, frontend template/JS route contract checks, `FakeScanhead` 2D calibration, and `.pat` packet streaming) and linter:
+When actively developing in a sibling `../hexastorm` checkout, set `HEXASTORM_DIR=../hexastorm` to override `deps/hexastorm`.
+
+Run the automated test suite (`microdot.test_client.TestClient` HTTP endpoint tests, frontend template/JS route contract checks, layout/pin checks, `FakeScanhead` 2D calibration, and `.pat` packet streaming) and linter:
 
 ```bash
 uv run pytest
@@ -102,7 +112,7 @@ uv run ruff check src
 
 ## Building & Flashing
 
-See [developer.md](developer.md) for the full ESP-IDF / MicroPython setup, partition table, camera pin configuration, and REST API reference. Once configured, build and flash an ESP32-S3 locally or over SSH with:
+See [developer.md](developer.md) for ESP-IDF / MicroPython setup, out-of-tree board configuration (`boards/HEXASTORM_S3`), dependency versioning (`vendor/VERSIONS.md`), and the REST API reference. Once `MICROPYTHON_DIR` and `IDF_PATH` are set (or in `~/Documents/Python/`), build and flash locally or over SSH with:
 
 ```bash
 uv run build

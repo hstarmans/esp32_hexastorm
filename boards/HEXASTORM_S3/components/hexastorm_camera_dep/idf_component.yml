@@ -1,0 +1,3 @@
+dependencies:
+  espressif/esp32-camera:
+    git: https://github.com/cnadler86/esp32-camera.git

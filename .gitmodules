@@ -1,0 +1,9 @@
+[submodule "deps/micropython-ulab"]
+	path = deps/micropython-ulab
+	url = https://github.com/v923z/micropython-ulab.git
+[submodule "deps/micropython-camera-API"]
+	path = deps/micropython-camera-API
+	url = https://github.com/cnadler86/micropython-camera-API.git
+[submodule "deps/hexastorm"]
+	path = deps/hexastorm
+	url = https://github.com/hstarmans/hexastorm.git

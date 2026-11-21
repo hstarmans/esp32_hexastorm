@@ -1,16 +1,20 @@
 # ESP32-S3 Developer & Deployment Guide
 
-This guide covers setting up the development environment, building custom MicroPython firmware for the ESP32-S3 (with `ulab`, `micropython-camera-API`, OTA partitions, and frozen `hexastorm` modules), flashing the FPGA bitstream, understanding runtime architecture, and testing locally.
+This guide covers cloning with tracked submodules, dependency layout, building MicroPython firmware using the out-of-tree `boards/HEXASTORM_S3/` board definition, flashing the FPGA bitstream, runtime architecture, and local testing.
 
 ---
 
 ## Setting Up the Development Environment
 
-1. **Clone the repository (including LFS assets):**
+1. **Clone with submodules and LFS assets:**
    ```bash
-   git clone https://github.com/hstarmans/esp32_hexastorm
+   git clone --recursive https://github.com/hstarmans/esp32_hexastorm
    cd esp32_hexastorm
    git lfs fetch --all
+   ```
+   If you cloned without `--recursive`, initialize submodules afterwards:
+   ```bash
+   git submodule update --init --recursive
    ```
 
 2. **Install `uv` and project dependencies:**
@@ -19,25 +23,26 @@ This guide covers setting up the development environment, building custom MicroP
    uv sync
    ```
 
-3. **Symlink sibling libraries into `src/`:**
-   `src/manifest.py` expects `hexastorm` (and for firmware builds, `micropython-camera-API`) inside `src/`:
-   ```bash
-   ln -s ~/Documents/projects/hexastorm/src/hexastorm ./src/hexastorm
-   ln -s ../../micropython-camera-API ./src/micropython-camera-API
-   ln -s ../../micropython-ulab ./src/micropython-ulab
-   ```
-   Tested versions: [micropython-ulab](https://github.com/v923z/micropython-ulab) `6.12.0` and [micropython-camera-API](https://github.com/cnadler86/micropython-camera-API) `v0.6.2`.
-
-4. **Create the local jobs folder for CPython testing:**
+3. **Create the local jobs folder for CPython testing:**
    ```bash
    mkdir -p src/root/sd/jobs/
    ```
+
+### Dependency Management Layout
+
+External dependencies are split cleanly by role so no manual symlinks are needed:
+* **C / Submodule dependencies (`deps/`):** Tracked via `.gitmodules` and pinned to tested commits/tags:
+  * `deps/micropython-ulab` (`6.12`) — C vector/matrix library linked via [src/micropython.cmake](src/micropython.cmake).
+  * `deps/micropython-camera-API` (`v0.6.2`) — C OV2640 camera driver linked via [src/micropython.cmake](src/micropython.cmake) plus Python `acamera.py` frozen via [src/manifest.py](src/manifest.py).
+  * `deps/hexastorm` — Hardware-agnostic FPGA gateware/host/calibration repo. Only lightweight pure-Python/`ulab` modules (`ulabext.py`, `config.py`, `calibration/core.py`, `fpga_host/*`) are frozen into MicroPython, so heavy PC dependencies (`amaranth`, `yowasp-yosys`, `matplotlib`) are never pulled into `esp32_hexastorm`.
+  * **Live dual-repo workflow:** `src/control/_paths.py` and `src/manifest.py` inspect `HEXASTORM_DIR` first, then `deps/hexastorm/src`, then sibling `../hexastorm/src`. Set `HEXASTORM_DIR=../hexastorm` during local co-development, and bump the pinned submodule commit with `git submodule update --remote deps/hexastorm` once tested.
+* **Vendored pure-Python MicroPython libs (`vendor/`):** `microdot`, `utemplate`, `ota`, `mrequests`, `winbond`, and `tmc` live in `vendor/` instead of `src/`. See [vendor/VERSIONS.md](vendor/VERSIONS.md) for upstream URLs, versions, licenses, and local patches (notably HTTPS TLS + redirect + streaming OTA patches in `vendor/mrequests/urequests.py`).
 
 ---
 
 ## Building the ESP32-S3 MicroPython Firmware
 
-The firmware build relies on ESP-IDF `v5.5.2` and MicroPython (`v1.28.0`) with custom 32 MiB OTA partitions and Octal PSRAM enabled.
+Firmware builds use ESP-IDF `v5.5.2` and MicroPython `v1.28.0`. All board-specific configuration, 32 MiB OTA partitions, OV2640 pin macros, and `esp32-camera` IDF component dependencies live in `boards/HEXASTORM_S3/`, so the `micropython` checkout stays completely unmodified.
 
 1. **Install and activate ESP-IDF (`v5.5.2`):**
    ```bash
@@ -47,14 +52,9 @@ The firmware build relies on ESP-IDF `v5.5.2` and MicroPython (`v1.28.0`) with c
    source export.sh
    ```
 
-2. **Clone `micropython-ulab` and `micropython` in the same parent folder:**
+2. **Clone `micropython` (`v1.28.0`) and build `mpy-cross`:**
    ```bash
-   git clone --branch 6.12.0 --depth 1 https://github.com/v923z/micropython-ulab.git
    git clone https://github.com/micropython/micropython.git
-   ```
-
-3. **Build `mpy-cross` and initialize ESP32 submodules:**
-   ```bash
    cd micropython
    git checkout -f v1.28.0
    git submodule update --init --recursive
@@ -64,132 +64,47 @@ The firmware build relies on ESP-IDF `v5.5.2` and MicroPython (`v1.28.0`) with c
    make submodules
    ```
 
-4. **Configure the 32 MiB OTA + Octal SPIRAM board profile (`ESP32_GENERIC_S3`):**
-
-   `ports/esp32/boards/ESP32_GENERIC_S3/sdkconfig.board`:
-   ```text
-   CONFIG_ESPTOOLPY_FLASHMODE_OPI=y
-   CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
-   CONFIG_ESPTOOLPY_FLASHSIZE_32MB=y
-   CONFIG_ESPTOOLPY_OCT_FLASH=y
-   CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE=y
-   CONFIG_PARTITION_TABLE_CUSTOM=y
-   CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions-32MiB-ota.csv"
-   ```
-
-   `ports/esp32/partitions-32MiB-ota.csv` (the MicroPython VFS partition is appended automatically):
-   ```csv
-   # Partition table for MicroPython with OTA support using 32MB flash
-   # Offset of partition table is set in $IDF_PATH/components/partition_table/Kconfig.projbuild
-   # Name,   Type, SubType, Offset,   Size,     Flags
-   nvs,      data, nvs,     0x9000,   0x4000,
-   otadata,  data, ota,     0xd000,   0x2000,
-   phy_init, data, phy,     0xf000,   0x1000,
-   ota_0,    app,  ota_0,   0x10000,  0x300000,
-   ota_1,    app,  ota_1,   0x310000, 0x300000,
-   ```
-
-   `ports/esp32/boards/ESP32_GENERIC_S3/mpconfigboard.cmake`:
-   ```cmake
-   set(PARTITION_CSV "partitions-32MiB-ota.csv")
-   ```
-
-5. **Adapt `ports/esp32/main/idf_component.yml`:**
-   ```yaml
-   dependencies:
-       espressif/mdns: "~1.1.0"
-       espressif/tinyusb:
-           rules:
-           - if: "target in [esp32s2, esp32s3, esp32p4]"
-           # Workaround for https://github.com/hathach/tinyusb/issues/3154
-           git: https://github.com/micropython/tinyusb-espressif.git
-           version: cherrypick/dwc2_zlp_fix
-       espressif/esp32-camera:
-           git: https://github.com/cnadler86/esp32-camera.git
-       espressif/esp_hosted:
-           rules:
-           - if: "target == esp32p4"
-           version: "2.7.0"
-       espressif/esp_wifi_remote:
-           rules:
-           - if: "target == esp32p4"
-           version: "0.15.2"
-       espressif/lan867x:
-           version: "~1.0.0"
-           rules:
-           - if: "target == esp32"
-       idf:
-           version: ">=5.3.0"
-   ```
-
-6. **Configure `ports/esp32/boards/ESP32_GENERIC_S3/mpconfigboard.h`:**
-   Note that I2C and OV2640 pin assignments match `PlatformConfig.esp32_cfg` in `hexastorm/config.py` (`SDA = 18`, `SCL = 17`, `XCLK = 10 MHz`), and `src/control/camera.py` also passes those runtime settings explicitly into `camera.Camera(...)`:
-   ```c
-   #ifndef MICROPY_HW_BOARD_NAME
-   #define MICROPY_HW_BOARD_NAME               "Hexastorm ESP32S3"
-   #endif
-   #define MICROPY_HW_MCU_NAME                 "ESP32S3"
-
-   #define MICROPY_HW_ENABLE_UART_REPL         (1)
-
-   #define MICROPY_HW_I2C0_SCL                 (17)
-   #define MICROPY_HW_I2C0_SDA                 (18)
-
-   #define MICROPY_CAMERA_PIN_D0               (12)
-   #define MICROPY_CAMERA_PIN_D1               (14)
-   #define MICROPY_CAMERA_PIN_D2               (21)
-   #define MICROPY_CAMERA_PIN_D3               (13)
-   #define MICROPY_CAMERA_PIN_D4               (11)
-   #define MICROPY_CAMERA_PIN_D5               (10)
-   #define MICROPY_CAMERA_PIN_D6               (9)
-   #define MICROPY_CAMERA_PIN_D7               (8)
-   #define MICROPY_CAMERA_PIN_PCLK             (38)
-   #define MICROPY_CAMERA_PIN_VSYNC            (41)
-   #define MICROPY_CAMERA_PIN_HREF             (40)
-   #define MICROPY_CAMERA_PIN_XCLK             (39)
-   #define MICROPY_CAMERA_PIN_PWDN             (-1)
-   #define MICROPY_CAMERA_PIN_RESET            (42)
-   #define MICROPY_CAMERA_PIN_SIOD             (18)        // SDA
-   #define MICROPY_CAMERA_PIN_SIOC             (17)        // SCL
-   #define MICROPY_CAMERA_XCLK_FREQ            (10000000)  // 10 MHz (matches PlatformConfig.esp32_cfg)
-   #define MICROPY_CAMERA_FB_COUNT             (1)
-   #define MICROPY_CAMERA_JPEG_QUALITY         (85)
-   #define MICROPY_CAMERA_GRAB_MODE            (1)         // 0=WHEN_EMPTY, 1=LATEST
-   ```
-
-7. **Copy `src/micropython.cmake`:**
-   Copy `src/micropython.cmake` into the parent directory containing `micropython-ulab` and `micropython` so `USER_C_MODULES` builds `ulab` into MicroPython.
+3. **Out-of-tree board definition (`boards/HEXASTORM_S3/`):**
+   No manual edits to `ports/esp32/boards/ESP32_GENERIC_S3/` or `ports/esp32/main/idf_component.yml` are required. `boards/HEXASTORM_S3/` provides:
+   * `mpconfigboard.cmake` — sets `IDF_TARGET esp32s3`, selects 240 MHz + Octal SPIRAM defaults, configures `sdkconfig.board.in`, and registers `components/hexastorm_camera_dep`.
+   * `components/hexastorm_camera_dep/idf_component.yml` — pulls `espressif/esp32-camera` from `https://github.com/cnadler86/esp32-camera.git`.
+   * `partitions-32MiB-ota.csv` & `sdkconfig.board.in` — 32 MiB Octal Flash with dual `ota_0`/`ota_1` partitions (`0x300000` each) and app rollback enabled.
+   * `mpconfigboard.h` — sets `MICROPY_HW_I2C0_SCL (17)`, `MICROPY_HW_I2C0_SDA (18)`, and OV2640 pins matching `PlatformConfig.esp32_cfg` in `hexastorm/config.py` (`SIOD = 18` SDA, `SIOC = 17` SCL, `XCLK = 10 MHz`, verified by `test_project_layout.py`).
 
 ---
 
 ## Automated Build, Flash & Frozen Manifest
 
-The repository provides `uv run build` (`src/build.py`) to automate board detection and flashing:
+`src/build.py` (`uv run build`) auto-detects the ESP32-S3 (USB VID `0x303A`), reboots MicroPython into bootloader mode, compiles using `BOARD_DIR=boards/HEXASTORM_S3`, and flashes via `esptool`.
+
+Configure toolchains via environment variables (or CLI flags) instead of hardcoded paths; defaults fall back to `~/Documents/Python/{micropython,esp-idf}`:
 
 ```bash
-# Auto-detect ESP32-S3 over USB, reboot from MicroPython to bootloader, build & flash
+export MICROPYTHON_DIR=/path/to/micropython
+export IDF_PATH=/path/to/esp-idf
+
 uv run build
-
-# Specify an explicit serial port
 uv run build --port /dev/ttyACM0
-
-# Build locally and flash to a board attached to a remote SSH host
 uv run build --remote hexastorm@pihome.home
 ```
 
 To invoke `make` manually inside `ports/esp32`:
 ```bash
 make -j$(nproc 2>/dev/null || sysctl -n hw.ncpu) \
-    BOARD=ESP32_GENERIC_S3 BOARD_VARIANT=SPIRAM_OCT \
+    BOARD=HEXASTORM_S3 \
+    BOARD_DIR=/path/to/esp32_hexastorm/boards/HEXASTORM_S3 \
     FROZEN_MANIFEST=/path/to/esp32_hexastorm/src/manifest.py \
-    USER_C_MODULES=../../../../micropython.cmake erase deploy
+    USER_C_MODULES=/path/to/esp32_hexastorm/src/micropython.cmake \
+    erase deploy
 ```
 
 ### What `src/manifest.py` Packages
 
 Whenever `manifest.py` runs, it:
-1. Deletes stale compiled `root/templates/*.py` files and packs `src/root/` via `freezefs` into `src/control/frozen_root.py` along with a timestamped `BUILD_ID` (`src/control/build_info.py`).
-2. Freezes `control`, `microdot`, `utemplate`, `ota`, `mrequests`, `winbond`, `tmc`, `acamera.py`, and explicit `hexastorm` modules (`__init__.py`, `ulabext.py`, `config.py`, `calibration/__init__.py`, `calibration/core.py`, `fpga_host/*`, `tests/test_mpy.py`).
+1. Cleans stale compiled `root/templates/*.py` files and packs `src/root/` via `freezefs` into `src/control/frozen_root.py` along with a timestamped `BUILD_ID` (`src/control/build_info.py`).
+2. Freezes `control/` from `src/`.
+3. Freezes vendored packages (`microdot`, `utemplate`, `ota`, `mrequests`, `winbond`, `tmc`) from `vendor/`.
+4. Freezes explicit `hexastorm` modules (`__init__.py`, `ulabext.py`, `config.py`, `calibration/__init__.py`, `calibration/core.py`, `fpga_host/*`, `tests/test_mpy.py`) via `resolve_hexastorm_src()` and `acamera.py` from `deps/micropython-camera-API/src`.
 
 ---
 
@@ -260,13 +175,13 @@ Run the mock webserver locally (port `5000`, password `hex`) using `FakeScanhead
 uv run webapp
 ```
 
-Run the fast in-process `pytest` suite (`microdot.test_client.TestClient`, mock `FakeScanhead` calibration, `.pat` packet streaming, REST endpoint guards, and frontend template/JS route contract checks) and linter:
+Run the fast in-process `pytest` suite (`microdot.test_client.TestClient`, mock `FakeScanhead` calibration, `.pat` packet streaming, REST endpoint guards, frontend template/JS route contract checks, and board/submodule layout verification) and linter:
 ```bash
 uv run pytest
 uv run ruff check src
 ```
 
-Note that `pyproject.toml` limits host `pytest` discovery to `test_cameracontroller.py` and `test_webapp_endpoints.py` because the remaining scripts in `src/tests/` target on-device ESP32 hardware.
+Note that `pyproject.toml` restricts host `pytest` discovery to `test_cameracontroller.py`, `test_webapp_endpoints.py`, and `test_project_layout.py` because the remaining scripts in `src/tests/` target on-device ESP32 hardware.
 
 ### On-Device Hardware Tests (MicroPython)
 

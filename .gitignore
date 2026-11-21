@@ -16,12 +16,6 @@ src/root/sd/fpga/*
 src/root/nvs_mock.json
 src/root/mock_config.json
 
-# packages needed for building
-src/hexastorm/*
-src/hexastorm
-src/micropython-ulab
-src/micropython-camera-API
-
 # ignore uploaded files folder
 files/*
 sd/files/*

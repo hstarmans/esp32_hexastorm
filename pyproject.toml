@@ -25,8 +25,12 @@ dependencies = [
     "websocket-client>=1.8.0",
 ]
 
+[tool.setuptools]
+py-modules = ["build"]
+package-dir = { "" = "src", "microdot" = "vendor/microdot", "utemplate" = "vendor/utemplate", "ota" = "vendor/ota", "mrequests" = "vendor/mrequests", "winbond" = "vendor/winbond", "tmc" = "vendor/tmc" }
+
 [tool.setuptools.packages.find]
-where = ["src"]  
+where = ["src", "vendor"]
 
 [tool.ruff]
 line-length = 88
@@ -35,13 +39,8 @@ builtins = ["include", "package", "module", "require", "options", "const"]
 extend-exclude = [
     "src/control/frozen_root.py",
     "src/root/templates",
-    "src/microdot",
-    "src/utemplate",
-    "src/mrequests",
-    "src/ota",
-    "src/winbond",
-    "src/tmc",
-    "src/hexastorm",
+    "vendor",
+    "deps",
 ]
 
 [tool.ruff.format]
@@ -61,5 +60,9 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["src/tests"]
-python_files = ["test_cameracontroller.py", "test_webapp_endpoints.py"]
-
+pythonpath = ["src", "vendor"]
+python_files = [
+    "test_cameracontroller.py",
+    "test_webapp_endpoints.py",
+    "test_project_layout.py",
+]

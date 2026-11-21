@@ -1,6 +1,7 @@
 import argparse
 import logging
 import os
+import shlex
 import subprocess
 import sys
 import time
@@ -8,22 +9,67 @@ import time
 import serial
 import serial.tools.list_ports
 
-# Add src directory to path to import ESP32Controller and log_setup
-sys.path.append(os.path.dirname(__file__))
-from hexastorm.esp32_controller import ESP32Controller
-from hexastorm.log_setup import configure_logging
+# Ensure src/, vendor/, and hexastorm/src/ are resolvable before importing control/hexastorm
+SRC_DIR = os.path.dirname(os.path.abspath(__file__))
+if SRC_DIR not in sys.path:
+    sys.path.insert(0, SRC_DIR)
+
+from control._paths import configure_cpython_paths, resolve_hexastorm_src  # noqa: E402
+
+configure_cpython_paths()
+
+from hexastorm.esp32_controller import ESP32Controller  # noqa: E402
+from hexastorm.log_setup import configure_logging  # noqa: E402
 
 configure_logging()
 logger = logging.getLogger(__name__)
 
 # --- Configuration Paths ---
 HOME_DIR = os.path.expanduser("~")
-SRC_DIR = os.path.dirname(os.path.abspath(__file__))
-ESP32_PORT_DIR = os.path.join(HOME_DIR, "Documents", "Python", "micropython", "ports", "esp32")
-IDF_EXPORT_PATH = os.path.join(HOME_DIR, "Documents", "Python", "esp-idf", "export.sh")
-MANIFEST_PATH = os.path.join(SRC_DIR, "manifest.py")
-CMAKE_PATH = os.path.join(SRC_DIR, "micropython.cmake")
-# -------------------------
+BOARD_NAME = "HEXASTORM_S3"
+
+
+def resolve_build_paths(micropython_dir=None, idf_path=None):
+    """Resolve MicroPython, ESP-IDF, board, manifest, and output paths.
+
+    CLI arguments override ``MICROPYTHON_DIR`` / ``IDF_PATH`` environment variables,
+    which fall back to ``~/Documents/Python/{micropython,esp-idf}``.
+    """
+    repo_root = os.path.dirname(SRC_DIR)
+    board_dir = os.path.join(repo_root, "boards", BOARD_NAME)
+
+    mp_raw = (
+        micropython_dir
+        or os.environ.get("MICROPYTHON_DIR")
+        or os.path.join(HOME_DIR, "Documents", "Python", "micropython")
+    )
+    mp_expanded = os.path.abspath(os.path.expanduser(mp_raw))
+    if (
+        os.path.basename(mp_expanded) == "esp32"
+        and os.path.basename(os.path.dirname(mp_expanded)) == "ports"
+    ):
+        esp32_port_dir = mp_expanded
+    else:
+        esp32_port_dir = os.path.join(mp_expanded, "ports", "esp32")
+
+    idf_raw = (
+        idf_path
+        or os.environ.get("IDF_PATH")
+        or os.path.join(HOME_DIR, "Documents", "Python", "esp-idf")
+    )
+    idf_expanded = os.path.abspath(os.path.expanduser(idf_raw))
+
+    return {
+        "repo_root": repo_root,
+        "board_name": BOARD_NAME,
+        "board_dir": board_dir,
+        "esp32_port_dir": esp32_port_dir,
+        "idf_export_path": os.path.join(idf_expanded, "export.sh"),
+        "manifest_path": os.path.join(SRC_DIR, "manifest.py"),
+        "cmake_path": os.path.join(SRC_DIR, "micropython.cmake"),
+        "local_build_dir": os.path.join(esp32_port_dir, f"build-{BOARD_NAME}"),
+    }
+
 
 def find_espressif_device(port_arg=None):
     """
@@ -33,18 +79,18 @@ def find_espressif_device(port_arg=None):
     Returns (port_device, pid).
     """
     ports = list(serial.tools.list_ports.comports())
-    
+
     if port_arg:
         for p in ports:
             if p.device == port_arg:
                 return p.device, p.pid
-        return port_arg, None # Port exists but maybe not USB, or we can't get PID
-    
+        return port_arg, None  # Port exists but maybe not USB, or we can't get PID
+
     # Auto-detect
     for p in ports:
-        if p.vid == 0x303A: # Espressif VID
+        if p.vid == 0x303A:  # Espressif VID
             return p.device, p.pid
-            
+
     return None, None
 
 
@@ -101,8 +147,12 @@ def check_port_availability(port):
     """
     proc_pid, proc_name = find_process_using_port(port)
     if proc_pid:
-        logger.error(f"Serial port {port} is currently in use by '{proc_name}' (PID {proc_pid}).")
-        logger.error("Please close Thonny or any active serial monitor/terminal connected to the board and try again.")
+        logger.error(
+            f"Serial port {port} is currently in use by '{proc_name}' (PID {proc_pid})."
+        )
+        logger.error(
+            "Please close Thonny or any active serial monitor/terminal connected to the board and try again."
+        )
         sys.exit(1)
 
     try:
@@ -113,7 +163,9 @@ def check_port_availability(port):
         s.close()
     except (serial.SerialException, OSError) as e:
         logger.error(f"Cannot open serial port {port}: {e}")
-        logger.error("The port appears to be locked or in use by another application (e.g. Thonny).")
+        logger.error(
+            "The port appears to be locked or in use by another application (e.g. Thonny)."
+        )
         logger.error("Please close any application using the board and try again.")
         sys.exit(1)
 
@@ -129,13 +181,13 @@ def verify_and_prepare_device(port_arg=None):
     Returns the port to use, or exits if not possible.
     """
     port, pid = find_espressif_device(port_arg)
-    
+
     if not port:
         logger.error("No Espressif device found.")
         sys.exit(1)
-        
+
     logger.info(f"Found device on port {port} with PID {pid}")
-    
+
     if not os.path.exists(port):
         logger.error(f"Serial port {port} does not exist.")
         sys.exit(1)
@@ -144,16 +196,18 @@ def verify_and_prepare_device(port_arg=None):
 
     # PID 0x1001 (4097) is USB JTAG/serial debug unit (Bootloader)
     # PID 0x4001 (16385) is Espressif Device (usually TinyUSB / MicroPython)
-    
+
     if pid == 0x1001:
         logger.info("Device is already in bootloader/debug mode. Ready to flash.")
         return port
-        
+
     if pid == 0x4001 or pid is None:
         logger.info("Device appears to be in MicroPython mode. Attempting to connect...")
         try:
             ctrl = ESP32Controller(port=port, timeout=1.0)
-            logger.info("Successfully connected to MicroPython REPL. Rebooting device to bootloader...")
+            logger.info(
+                "Successfully connected to MicroPython REPL. Rebooting device to bootloader..."
+            )
             try:
                 ctrl.exec_no_wait("import machine; machine.bootloader()")
             except Exception:  # noqa: BLE001, S110
@@ -161,14 +215,20 @@ def verify_and_prepare_device(port_arg=None):
             ctrl.close()
         except serial.SerialException as e:
             logger.error(f"Cannot access serial port {port}: {e}")
-            logger.error("The port is currently in use by another application (e.g., Thonny).")
-            logger.error("Please close Thonny or any serial monitor connected to the device and try again.")
+            logger.error(
+                "The port is currently in use by another application (e.g., Thonny)."
+            )
+            logger.error(
+                "Please close Thonny or any serial monitor connected to the device and try again."
+            )
             sys.exit(1)
         except Exception as e:  # noqa: BLE001
-            logger.error(f"Failed to get a prompt from the device: {e}. It is unresponsive!")
+            logger.error(
+                f"Failed to get a prompt from the device: {e}. It is unresponsive!"
+            )
             logger.warning("\n*** RECOVERY TRICK INITIATED ***")
             logger.warning("Attempting automatic hardware reset via DTR/RTS...")
-            
+
             try:
                 with serial.Serial(port, 115200) as s:
                     s.setDTR(False)
@@ -181,17 +241,21 @@ def verify_and_prepare_device(port_arg=None):
                     s.setRTS(False)
             except (serial.SerialException, OSError):
                 pass
-                
+
             time.sleep(0.5)
             if os.path.exists(port):
                 # The port didn't drop, meaning the hardware reset failed (old TinyUSB firmware)
-                logger.error("Automatic hardware reset failed (expected on the first run).")
-                logger.warning("Please press the physical RESET button on your board NOW!")
+                logger.error(
+                    "Automatic hardware reset failed (expected on the first run)."
+                )
+                logger.warning(
+                    "Please press the physical RESET button on your board NOW!"
+                )
             else:
                 logger.info("Hardware reset successful! Reconnecting...")
 
             logger.info("I will spam Ctrl-C to catch it before it wedges again...")
-            
+
             start_time = time.time()
             caught = False
             while time.time() - start_time < 15:
@@ -212,23 +276,27 @@ def verify_and_prepare_device(port_arg=None):
                 except (serial.SerialException, OSError):
                     pass
                 time.sleep(0.05)
-                
+
             if not caught:
-                logger.error("Failed to catch the board. Please try running build again and resetting faster.")
+                logger.error(
+                    "Failed to catch the board. Please try running build again and resetting faster."
+                )
                 sys.exit(1)
-            
+
         logger.info("Waiting for the board to enter bootloader mode (PID 0x1001)...")
         timeout = 10
         start_time = time.time()
         while time.time() - start_time < timeout:
             new_port, new_pid = find_espressif_device(port_arg)
             if new_pid == 0x1001:
-                logger.info(f"Board successfully entered bootloader mode on {new_port}!")
+                logger.info(
+                    f"Board successfully entered bootloader mode on {new_port}!"
+                )
                 # Give the OS a tiny bit more time to settle the serial port
                 time.sleep(1.0)
                 return new_port
             time.sleep(0.5)
-            
+
         logger.error("Timed out waiting for the board to enter bootloader mode.")
         logger.error("Please reset the device manually into bootloader mode.")
         sys.exit(1)
@@ -239,17 +307,34 @@ def verify_and_prepare_device(port_arg=None):
 
 def run_remote_ssh(remote_host, command_str, check=True, capture_output=True):
     """Executes a shell command on the remote host via SSH."""
-    ssh_cmd = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", remote_host, command_str]
-    return subprocess.run(ssh_cmd, check=check, capture_output=capture_output, text=True)
+    ssh_cmd = [
+        "ssh",
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "ConnectTimeout=10",
+        remote_host,
+        command_str,
+    ]
+    return subprocess.run(
+        ssh_cmd, check=check, capture_output=capture_output, text=True
+    )
 
 
 def run_remote_python(remote_host, script_content):
     """Executes a Python script on the remote host via SSH stdin."""
-    ssh_cmd = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", remote_host, "python3 -"]
+    ssh_cmd = [
+        "ssh",
+        "-o",
+        "BatchMode=yes",
+        "-o",
+        "ConnectTimeout=10",
+        remote_host,
+        "python3 -",
+    ]
     return subprocess.run(
         ssh_cmd, input=script_content, text=True, capture_output=True, check=False
     )
-
 
 
 def verify_and_prepare_remote_device(remote_host, port_arg=None):
@@ -327,7 +412,9 @@ sys.exit(1)
         if "NO_DEVICE" in res.stdout:
             logger.error(f"No Espressif device found on remote host {remote_host}.")
         else:
-            logger.error(f"Failed to prepare remote device on {remote_host}: {res.stderr or res.stdout}")
+            logger.error(
+                f"Failed to prepare remote device on {remote_host}: {res.stderr or res.stdout}"
+            )
         sys.exit(1)
 
     for line in res.stdout.splitlines():
@@ -340,8 +427,9 @@ sys.exit(1)
     sys.exit(1)
 
 
-
-def transfer_binaries_remote(remote_host, local_build_dir, remote_dir="/tmp/esp32_build"):
+def transfer_binaries_remote(
+    remote_host, local_build_dir, remote_dir="/tmp/esp32_build"
+):
     """
     Transfers the compiled ESP32 firmware binaries from local_build_dir to remote_host:remote_dir.
     """
@@ -362,22 +450,72 @@ def transfer_binaries_remote(remote_host, local_build_dir, remote_dir="/tmp/esp3
             sys.exit(1)
 
     logger.info(f"Transferring firmware binaries to {remote_host}:{remote_dir}...")
-    scp_cmd = ["scp", "-q"] + local_files + [f"{remote_host}:{remote_dir}/"]
+    scp_cmd = ["scp", "-q", *local_files, f"{remote_host}:{remote_dir}/"]
     res = subprocess.run(scp_cmd, capture_output=True, text=True, check=False)
     if res.returncode != 0:
         logger.error(f"Failed to transfer binaries over scp: {res.stderr}")
         sys.exit(1)
 
 
+def _validate_submodule_deps(repo_root: str) -> None:
+    """Verify tracked submodules in deps/ and hexastorm source are checked out."""
+    required = [
+        os.path.join(repo_root, "deps", "micropython-ulab", "code", "micropython.cmake"),
+        os.path.join(repo_root, "deps", "micropython-camera-API", "micropython.cmake"),
+    ]
+    missing = [p for p in required if not os.path.isfile(p)]
+    if missing:
+        logger.error(
+            "Missing submodule dependency files:\n  "
+            + "\n  ".join(missing)
+            + "\nRun: git submodule update --init --recursive"
+        )
+        sys.exit(1)
+
+    try:
+        hs_src = resolve_hexastorm_src(repo_root)
+        logger.info(f"Using hexastorm source: {hs_src}")
+    except FileNotFoundError as exc:
+        logger.error(str(exc))
+        sys.exit(1)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Build and flash ESP32 firmware")
     parser.add_argument(
-        "--port", "-p", default=None, help="Serial port of the ESP32 (leave blank to auto-detect)"
+        "--port",
+        "-p",
+        default=None,
+        help="Serial port of the ESP32 (leave blank to auto-detect)",
     )
     parser.add_argument(
-        "--remote", "-r", default=None, help="Remote host via SSH (e.g. hexastorm@pihome.home)"
+        "--remote",
+        "-r",
+        default=None,
+        help="Remote host via SSH (e.g. hexastorm@pihome.home)",
+    )
+    parser.add_argument(
+        "--micropython-dir",
+        default=None,
+        help="Path to MicroPython root or ports/esp32 directory (overrides MICROPYTHON_DIR)",
+    )
+    parser.add_argument(
+        "--idf-path",
+        default=None,
+        help="Path to ESP-IDF directory containing export.sh (overrides IDF_PATH)",
     )
     args = parser.parse_args()
+
+    paths = resolve_build_paths(
+        micropython_dir=args.micropython_dir,
+        idf_path=args.idf_path,
+    )
+
+    _validate_submodule_deps(paths["repo_root"])
+
+    if not os.path.isfile(os.path.join(paths["board_dir"], "mpconfigboard.cmake")):
+        logger.error(f"Out-of-tree board directory incomplete: {paths['board_dir']}")
+        sys.exit(1)
 
     # Pre-flight check: ensure device is ready to be flashed BEFORE building.
     logger.info("--- Pre-flight Device Check ---")
@@ -386,31 +524,43 @@ def main():
     else:
         active_port = verify_and_prepare_device(args.port)
 
-    # Verify the micropython port directory exists
-    if not os.path.exists(ESP32_PORT_DIR):
-        logger.error(f"MicroPython ESP32 port directory not found at {ESP32_PORT_DIR}")
+    if not os.path.exists(paths["esp32_port_dir"]):
+        logger.error(
+            f"MicroPython ESP32 port directory not found at {paths['esp32_port_dir']}. "
+            "Set MICROPYTHON_DIR or pass --micropython-dir."
+        )
         sys.exit(1)
 
-    if not os.path.exists(IDF_EXPORT_PATH):
-        logger.error(f"ESP-IDF export.sh not found at {IDF_EXPORT_PATH}")
+    if not os.path.exists(paths["idf_export_path"]):
+        logger.error(
+            f"ESP-IDF export.sh not found at {paths['idf_export_path']}. "
+            "Set IDF_PATH or pass --idf-path."
+        )
         sys.exit(1)
 
-    # Build command
+    # Build command using out-of-tree board HEXASTORM_S3
     make_cmd = [
         "make",
         f"-j{os.cpu_count() or 4}",
-        "BOARD=ESP32_GENERIC_S3",
-        "BOARD_VARIANT=SPIRAM_OCT",
-        f"FROZEN_MANIFEST={MANIFEST_PATH}",
-        f"USER_C_MODULES={CMAKE_PATH}",
+        f"BOARD={paths['board_name']}",
+        f"BOARD_DIR={paths['board_dir']}",
+        f"FROZEN_MANIFEST={paths['manifest_path']}",
+        f"USER_C_MODULES={paths['cmake_path']}",
     ]
-    build_cmd = f"source {IDF_EXPORT_PATH} && {' '.join(make_cmd)}"
+    quoted_make = " ".join(shlex.quote(part) for part in make_cmd)
+    build_cmd = f"source {shlex.quote(paths['idf_export_path'])} && {quoted_make}"
 
     logger.info("--- Building Firmware ---")
     # executable='/bin/bash' is required because 'source' is a bash built-in
-    subprocess.run(build_cmd, shell=True, cwd=ESP32_PORT_DIR, executable="/bin/bash", check=True)
+    subprocess.run(
+        build_cmd,
+        shell=True,
+        cwd=paths["esp32_port_dir"],
+        executable="/bin/bash",
+        check=True,
+    )
 
-    local_build_dir = os.path.join(ESP32_PORT_DIR, "build-ESP32_GENERIC_S3-SPIRAM_OCT")
+    local_build_dir = paths["local_build_dir"]
 
     if args.remote:
         logger.info(f"--- Transferring Binaries to Remote Target ({args.remote}) ---")
@@ -418,7 +568,7 @@ def main():
 
         remote_flash_cmd = (
             f"export PATH=$HOME/.local/bin:$PATH && "
-            f"esptool --chip esp32s3 -p {active_port} -b 460800 --before=default_reset "
+            f"esptool --chip esp32s3 -p {shlex.quote(active_port)} -b 460800 --before=default_reset "
             f"--after=hard_reset write_flash --flash_mode dio --flash_freq 80m "
             f"--flash_size 32MB 0x0 /tmp/esp32_build/bootloader.bin "
             f"0x10000 /tmp/esp32_build/micropython.bin "
@@ -429,24 +579,28 @@ def main():
         logger.info(f"--- Flashing Firmware Remotely on {args.remote} ---")
         run_remote_ssh(args.remote, remote_flash_cmd, check=True, capture_output=False)
     else:
-        # Local flash command
         flash_cmd = (
-            f"source {IDF_EXPORT_PATH} && "
-            f"esptool.py --chip esp32s3 -p {active_port} -b 460800 --before=default_reset "
+            f"source {shlex.quote(paths['idf_export_path'])} && "
+            f"esptool.py --chip esp32s3 -p {shlex.quote(active_port)} -b 460800 --before=default_reset "
             f"--after=watchdog_reset write_flash --flash_mode dio --flash_freq 80m "
-            f"--flash_size 32MB 0x0 build-ESP32_GENERIC_S3-SPIRAM_OCT/bootloader/bootloader.bin "
-            f"0x10000 build-ESP32_GENERIC_S3-SPIRAM_OCT/micropython.bin "
-            f"0x8000 build-ESP32_GENERIC_S3-SPIRAM_OCT/partition_table/partition-table.bin "
-            f"0xd000 build-ESP32_GENERIC_S3-SPIRAM_OCT/ota_data_initial.bin"
+            f"--flash_size 32MB 0x0 build-{paths['board_name']}/bootloader/bootloader.bin "
+            f"0x10000 build-{paths['board_name']}/micropython.bin "
+            f"0x8000 build-{paths['board_name']}/partition_table/partition-table.bin "
+            f"0xd000 build-{paths['board_name']}/ota_data_initial.bin"
         )
 
         logger.info("--- Flashing Firmware ---")
         check_port_availability(active_port)
-        subprocess.run(flash_cmd, shell=True, cwd=ESP32_PORT_DIR, executable="/bin/bash", check=True)
+        subprocess.run(
+            flash_cmd,
+            shell=True,
+            cwd=paths["esp32_port_dir"],
+            executable="/bin/bash",
+            check=True,
+        )
 
     logger.info("Firmware flashed successfully!")
 
 
 if __name__ == "__main__":
     main()
-
