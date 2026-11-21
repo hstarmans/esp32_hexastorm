@@ -207,9 +207,10 @@ class CameraController:
 
         self.exposure_ms = max(1, int(ms))
         self.settings["exposure_ms"] = self.exposure_ms
-        # OV2640 registers: aec_value represents integration lines (0 - 1200 in UXGA)
-        # 1200 lines / ~200 ms frame time ~= 6 lines per ms
-        aec = min(1200, max(0, int(self.exposure_ms * 6)))
+        # OV2640 registers: aec_value represents sensor integration rows
+        # (max 1200 rows in UXGA / 600 rows in SVGA over a ~200 ms frame window).
+        _, frame_h = FRAME_SIZE_DIMS.get(self.current_frame_size, (1600, 1200))
+        aec = min(frame_h, max(0, int(self.exposure_ms * (frame_h / 200.0))))
 
         # 1. Disable Auto Exposure Control and set line integration time
         self.cam.exposure_ctrl = False

@@ -1,11 +1,9 @@
-"""Hexastorm optical calibration module running on ESP32-S3 and CPython mock.
+"""Hexastorm optical calibration controller running on ESP32-S3 and CPython mock.
 
-Performs dark-frame subtracted signal analysis using ulab.numpy to determine:
-- Scanline visibility bounds [lower_pixel, upper_pixel]
-- Bounds preview visualization ("Show Bounds")
-- Sub-pixel 2D dot centroid detection & spot metrics (get_dots_ulab)
-- 2D rotation rectification & facet shift calculation (calibration_ulab)
-- Closed-loop facet calibration & Verified Calibration (run_pattern_error)
+All shared DSP, 2D centroiding, global rotation rectification, spatial-median shift
+computation, 24 MHz dot-grid slicing, and virtual 2D stacking live in
+``hexastorm.calibration.core``. This module orchestrates the OV2640 camera capture,
+FPGA SPI locking, configuration persistence, and Web UI endpoints.
 """
 
 import asyncio
@@ -13,12 +11,21 @@ import gc
 import logging
 import math
 
-try:
-    from ulab import numpy as np
-except ImportError:
-    import numpy as np
-
 from camera import Camera, FrameSize, PixelFormat
+from hexastorm import ulabext
+from hexastorm.calibration.core import (
+    PrismCurveLite,
+    VirtualStackerUlab,
+    analyze_facets_ulab,
+    calculate_facet_shifts_ulab,
+    compute_angle_ulab,
+    get_dots_ulab,
+    make_dot_centers_mm,
+    make_tick_dot_events,
+    rotate_dots_ulab,
+    slice_dot_grid_events,
+    subtract_dark_frame_u8,
+)
 
 from . import constants
 from .constants import (
@@ -28,515 +35,154 @@ from .constants import (
     update_config,
 )
 
-logger = logging.getLogger(__name__)
+calibration_ulab = analyze_facets_ulab
 
-NP_FLOAT = getattr(np, "float", float)
+__all__ = [
+    "PrismCurveLite",
+    "VirtualStackerUlab",
+    "analyze_facets_ulab",
+    "calculate_facet_shifts_ulab",
+    "calibration_ulab",
+    "capture_jpeg_with_preview",
+    "compute_angle_ulab",
+    "get_dots_ulab",
+    "get_preview_facet",
+    "is_bounds_active",
+    "make_dot_centers_mm",
+    "make_tick_dot_events",
+    "rotate_dots_ulab",
+    "run_facet_calibration",
+    "run_pattern_error",
+    "run_scan_visibility",
+    "set_bounds_preview",
+    "slice_dot_grid_events",
+    "subtract_dark_frame_u8",
+    "update_custom_facets",
+]
+
+logger = logging.getLogger(__name__)
 
 # Global state for "Preview Dots" / "Show Bounds" preview
 _bounds_active = False
 _preview_facet = 0  # Default to Facet 0 (F1), or None for all 4 facets
 _bounds_feeder_task = None
+_fpga_calib_lock = asyncio.Lock()
 
 # Initialize mock camera calibration state from persisted CONFIG
 Camera.mock_calibrated_facets = dict(CONFIG["calibration"]["facets"])
 Camera.mock_apply_correction = bool(CONFIG["calibration"]["apply_correction"])
 
 
-def subtract_dark_frame_u8(img, dark_frame=None):
-    """Clamped uint8 dark-frame subtraction without int16/int32 allocation."""
-    if dark_frame is not None and dark_frame.shape == img.shape:
-        return np.maximum(img, dark_frame) - dark_frame
-    return img
+def _get_optical_context(laserhead) -> tuple[dict, PrismCurveLite, int]:
+    """Extract optical params, PrismCurveLite, and software scan length from laserhead."""
+    if hasattr(laserhead.cfg, "get_optical_params"):
+        params = laserhead.cfg.get_optical_params(correction=False, exposures=1)
+        scan_len = int(params["bitsinscanline"])
+    else:
+        laz = laserhead.cfg.laser_timing
+        scan_len = int(laz.get("bitsinscanline", laz["scanline_ticks"]))
+        params = dict(laz)
+        params.setdefault("start_frac", 0.35)
+        params.setdefault("end_frac", 0.70)
+        params.setdefault("inradius", 15.0)
+        params.setdefault("n", 1.49)
+        params.setdefault("tiltangle", math.pi * 0.5)
+        params.setdefault("f0_scan", 0.0)
+    curve = PrismCurveLite(params, invert_hw_scan_dir=True)
+    return params, curve, scan_len
 
 
-def get_dots_ulab(
-    img,
-    dark_frame=None,
-    pixelsize: float = SVGA_PIXEL_SIZE_UM,
-    min_diameter_um: float = 10.0,
-    max_diameter_um: float = 250.0,
-    threshold: int | None = None,
-    gap_tol: int = 2,
-):
-    """Detect laser spots and compute sub-pixel intensity-weighted centroids using ulab.
-
-    Uses 1D vector reductions (np.max along rows/cols) to isolate active regions,
-    followed by 2D Run-Length Connected Component Labeling (RLE-CCL) with gap bridging
-    (equivalent to morphological closing) and 2nd-moment spot shape analysis.
-
-    Returns:
-        tuple: (centroids_array, metrics_dict)
-            - centroids_array: ulab/numpy float array of shape (N, 2) sorted by X
-            - metrics_dict: {
-                'mean_spot_size_um', 'mean_eccentricity',
-                'num_dots', 'peak_intensity'
-              }
-    """
-    clean = subtract_dark_frame_u8(img, dark_frame)
-    row_max = np.max(clean, axis=1)
-    peak = int(np.max(row_max))
-
-    empty_metrics = {
-        "mean_spot_size_um": 0.0,
-        "mean_eccentricity": 0.0,
-        "num_dots": 0,
-        "peak_intensity": peak,
-    }
-    if peak < 20:
-        return np.zeros((0, 2), dtype=NP_FLOAT), empty_metrics
-
-    thresh = int(threshold) if threshold is not None else max(25, int(peak * 0.45))
-    col_max = np.max(clean, axis=0)
-
-    active_rows = [y for y in range(clean.shape[0]) if int(row_max[y]) >= thresh]
-    active_cols = [x for x in range(clean.shape[1]) if int(col_max[x]) >= thresh]
-    if not active_rows or not active_cols:
-        return np.zeros((0, 2), dtype=NP_FLOAT), empty_metrics
-
-    x_min = max(0, active_cols[0] - 1)
-    x_max = min(clean.shape[1] - 1, active_cols[-1] + 1)
-
-    # Component table:
-    # cid -> [area, w_sum, wx_sum, wy_sum, wxx_sum, wyy_sum, wxy_sum, parent_cid]
-    comps = {}
-    next_cid = 0
-    recent_rows = []  # list of (y, runs_list) where runs_list has [x0, x1, cid]
-
-    def find_root(cid):
-        while comps[cid][7] != cid:
-            comps[cid][7] = comps[comps[cid][7]][7]
-            cid = comps[cid][7]
-        return cid
-
-    def union_cids(cid_a, cid_b):
-        ra = find_root(cid_a)
-        rb = find_root(cid_b)
-        if ra == rb:
-            return ra
-        if ra > rb:
-            ra, rb = rb, ra
-        ca = comps[ra]
-        cb = comps[rb]
-        ca[0] += cb[0]
-        ca[1] += cb[1]
-        ca[2] += cb[2]
-        ca[3] += cb[3]
-        ca[4] += cb[4]
-        ca[5] += cb[5]
-        ca[6] += cb[6]
-        cb[7] = ra
-        return ra
-
-    for y in active_rows:
-        recent_rows = [item for item in recent_rows if (y - item[0]) <= gap_tol]
-        row_slice = memoryview(clean[y, x_min : x_max + 1])
-
-        runs = []
-        in_run = False
-        r_start = 0
-        ra = 0
-        rw = 0.0
-        rwx = 0.0
-        rwy = 0.0
-        rwxx = 0.0
-        rwyy = 0.0
-        rwxy = 0.0
-        fy = float(y)
-
-        for idx, val in enumerate(row_slice):
-            if val >= thresh:
-                x = x_min + idx
-                fx = float(x)
-                fv = float(val)
-                if not in_run:
-                    in_run = True
-                    r_start = x
-                    ra = 1
-                    rw = fv
-                    rwx = fv * fx
-                    rwy = fv * fy
-                    rwxx = fv * fx * fx
-                    rwyy = fv * fy * fy
-                    rwxy = fv * fx * fy
-                else:
-                    ra += 1
-                    rw += fv
-                    rwx += fv * fx
-                    rwy += fv * fy
-                    rwxx += fv * fx * fx
-                    rwyy += fv * fy * fy
-                    rwxy += fv * fx * fy
-            elif in_run:
-                in_run = False
-                r_end = x_min + idx - 1
-                if runs and (r_start - runs[-1][1]) <= gap_tol:
-                    prev = runs[-1]
-                    prev[1] = r_end
-                    prev[2] += ra
-                    prev[3] += rw
-                    prev[4] += rwx
-                    prev[5] += rwy
-                    prev[6] += rwxx
-                    prev[7] += rwyy
-                    prev[8] += rwxy
-                else:
-                    runs.append(
-                        [r_start, r_end, ra, rw, rwx, rwy, rwxx, rwyy, rwxy, -1]
-                    )
-
-        if in_run:
-            r_end = x_max
-            if runs and (r_start - runs[-1][1]) <= gap_tol:
-                prev = runs[-1]
-                prev[1] = r_end
-                prev[2] += ra
-                prev[3] += rw
-                prev[4] += rwx
-                prev[5] += rwy
-                prev[6] += rwxx
-                prev[7] += rwyy
-                prev[8] += rwxy
-            else:
-                runs.append([r_start, r_end, ra, rw, rwx, rwy, rwxx, rwyy, rwxy, -1])
-
-        cur_row_runs = []
-        for r in runs:
-            x0, x1, ra, rw, rwx, rwy, rwxx, rwyy, rwxy, _ = r
-            matched_root = -1
-            for _, prev_runs in recent_rows:
-                for pr in prev_runs:
-                    if pr[0] - gap_tol <= x1 and pr[1] + gap_tol >= x0:
-                        proot = find_root(pr[2])
-                        if matched_root < 0:
-                            matched_root = proot
-                        else:
-                            matched_root = union_cids(matched_root, proot)
-
-            if matched_root < 0:
-                cid = next_cid
-                next_cid += 1
-                comps[cid] = [ra, rw, rwx, rwy, rwxx, rwyy, rwxy, cid]
-                matched_root = cid
-            else:
-                c = comps[matched_root]
-                c[0] += ra
-                c[1] += rw
-                c[2] += rwx
-                c[3] += rwy
-                c[4] += rwxx
-                c[5] += rwyy
-                c[6] += rwxy
-
-            cur_row_runs.append([x0, x1, matched_root])
-
-        recent_rows.append((y, cur_row_runs))
-
-    min_radius_px = (min_diameter_um / 2.0) / pixelsize
-    max_radius_px = (max_diameter_um / 2.0) / pixelsize
-    min_area = max(3, int(math.pi * (min_radius_px**2)))
-    max_area = max(min_area + 10, int(math.pi * (max_radius_px**2)))
-
-    valid_dots = []
-    spot_sizes_um = []
-    eccentricities = []
-
-    for cid, c in comps.items():
-        if c[7] != cid:
-            continue
-        area, w_sum, wx_sum, wy_sum, wxx_sum, wyy_sum, wxy_sum, _ = c
-        if area < min_area or area > max_area or w_sum <= 0:
-            continue
-
-        cx = wx_sum / w_sum
-        cy = wy_sum / w_sum
-        valid_dots.append((cx, cy))
-
-        # Equivalent circular diameter in micrometers
-        area_um2 = area * (pixelsize**2)
-        equiv_diam_um = 2.0 * math.sqrt(area_um2 / math.pi)
-        spot_sizes_um.append(equiv_diam_um)
-
-        # 2nd central moments for eccentricity
-        mu20 = max(0.0, (wxx_sum / w_sum) - (cx * cx))
-        mu02 = max(0.0, (wyy_sum / w_sum) - (cy * cy))
-        mu11 = (wxy_sum / w_sum) - (cx * cy)
-        common = math.sqrt(((mu20 - mu02) ** 2) + 4.0 * (mu11**2))
-        l1 = 0.5 * (mu20 + mu02 + common)
-        l2 = max(0.0, 0.5 * (mu20 + mu02 - common))
-        if l1 > 1e-9:
-            ecc = math.sqrt(max(0.0, 1.0 - (l2 / l1)))
-        else:
-            ecc = 0.0
-        eccentricities.append(ecc)
-
-    if not valid_dots:
-        return np.zeros((0, 2), dtype=NP_FLOAT), empty_metrics
-
-    if len(valid_dots) > 1:
-        xs = [pt[0] for pt in valid_dots]
-        ys = [pt[1] for pt in valid_dots]
-        if (max(ys) - min(ys)) > (max(xs) - min(xs)):
-            valid_dots.sort(key=lambda pt: pt[1])
-        else:
-            valid_dots.sort(key=lambda pt: pt[0])
-
-    dots_arr = np.array(valid_dots, dtype=NP_FLOAT)
-    metrics = {
-        "mean_spot_size_um": round(sum(spot_sizes_um) / len(spot_sizes_um), 2),
-        "mean_eccentricity": round(sum(eccentricities) / len(eccentricities), 3),
-        "num_dots": len(valid_dots),
-        "peak_intensity": peak,
-    }
-    return dots_arr, metrics
-
-
-def compute_angle_ulab(dots) -> float:
-    """Compute scanline tilt angle in degrees via 1D linear regression in ulab."""
-    if len(dots.shape) != 2 or dots.shape[0] < 2:
-        return 0.0
-    x = dots[:, 0]
-    y = dots[:, 1]
-    xm = float(np.mean(x))
-    ym = float(np.mean(y))
-    dx = x - xm
-    dy = y - ym
-    sum_dx2 = float(np.sum(dx * dx))
-    sum_dy2 = float(np.sum(dy * dy))
-    if sum_dy2 > sum_dx2:
-        if abs(sum_dy2) < 1e-12:
-            return 90.0
-        slope_x = float(np.sum(dy * dx)) / sum_dy2
-        return math.degrees(math.atan2(1.0, slope_x))
-    if abs(sum_dx2) < 1e-12:
-        return 0.0
-    slope = float(np.sum(dx * dy)) / sum_dx2
-    return math.degrees(math.atan(slope))
-
-
-def rotate_dots_ulab(dots, angle_deg: float):
-    """Rotate 2D dot coordinates (N, 2) by -angle_deg around the origin."""
-    if len(dots.shape) != 2 or dots.shape[0] == 0:
-        return np.zeros((0, 2), dtype=NP_FLOAT)
-    n = dots.shape[0]
-    theta = math.radians(-float(angle_deg))
-    c = math.cos(theta)
-    s = math.sin(theta)
-    x = dots[:, 0]
-    y = dots[:, 1]
-    out = np.zeros((n, 2), dtype=NP_FLOAT)
-    out[:, 0] = x * c - y * s
-    out[:, 1] = x * s + y * c
-    return out
-
-
-def calculate_facet_shifts_ulab(
-    rect_dots_list,
-    pixelsize: float = SVGA_PIXEL_SIZE_UM,
-    max_shift_um: float = 250.0,
-):
-    """Calculate per-facet (scan_shift_um, orth_shift_um) relative to the facet mean."""
-    num_facets = len(rect_dots_list)
-    if num_facets == 0:
-        raise ValueError("No facet dot arrays provided.")
-
-    n_dots = rect_dots_list[0].shape[0]
-    if n_dots == 0:
-        raise ValueError("Zero dots detected on facet 0.")
-
-    for idx, d in enumerate(rect_dots_list):
-        if d.shape[0] != n_dots:
-            raise ValueError(
-                f"Dot count mismatch on facet {idx}: "
-                f"expected {n_dots}, got {d.shape[0]}"
-            )
-
-    avg_dots = np.zeros((n_dots, 2), dtype=NP_FLOAT)
-    for d in rect_dots_list:
-        avg_dots = avg_dots + d
-    avg_dots = avg_dots / float(num_facets)
-
-    shifts = np.zeros((num_facets, 2), dtype=NP_FLOAT)
-    for idx, d in enumerate(rect_dots_list):
-        diff_um = (avg_dots - d) * float(pixelsize)
-        shift_scan = float(np.mean(diff_um[:, 0]))
-        shift_orth = float(np.mean(diff_um[:, 1]))
-        total_shift = math.sqrt(shift_scan * shift_scan + shift_orth * shift_orth)
-        if total_shift > max_shift_um:
-            raise ValueError(
-                f"Facet {idx} shift {total_shift:.1f} um exceeds "
-                f"max_shift {max_shift_um} um"
-            )
-        shifts[idx, 0] = shift_scan
-        shifts[idx, 1] = shift_orth
-
-    return shifts
-
-
-def calibration_ulab(
-    facet_frames,
-    dark_frame=None,
-    pixelsize: float = SVGA_PIXEL_SIZE_UM,
-    compute_rotation: bool = True,
-    min_diameter_um: float = 10.0,
-    max_diameter_um: float = 250.0,
-    max_shift_um: float = 250.0,
-    orth_virtual_offsets_um=None,
-):
-    """Analyze 4 facet grayscale frames in RAM and return shifts and metrics."""
-    rect_dots_list = []
-    angles = []
-    spot_metrics_list = []
-
-    for idx, frame in enumerate(facet_frames):
-        dots, metrics = get_dots_ulab(
-            frame,
-            dark_frame=dark_frame,
-            pixelsize=pixelsize,
-            min_diameter_um=min_diameter_um,
-            max_diameter_um=max_diameter_um,
-        )
-        if dots.shape[0] < 2:
-            raise ValueError(
-                f"Facet {idx}: insufficient calibration dots "
-                f"detected ({dots.shape[0]})."
-            )
-
-        angle = compute_angle_ulab(dots) if compute_rotation else 0.0
-        rect_dots = rotate_dots_ulab(dots, angle)
-
-        # Virtual orthogonal offset (for stationary real hardware verification)
-        if orth_virtual_offsets_um and idx < len(orth_virtual_offsets_um):
-            rect_dots[:, 1] = rect_dots[:, 1] + (
-                float(orth_virtual_offsets_um[idx]) / float(pixelsize)
-            )
-
-        rect_dots_list.append(rect_dots)
-        angles.append(angle)
-        spot_metrics_list.append(metrics)
-
-    shifts = calculate_facet_shifts_ulab(
-        rect_dots_list, pixelsize=pixelsize, max_shift_um=max_shift_um
-    )
-
-    results = {}
-    for idx in range(len(facet_frames)):
-        s_um = float(shifts[idx, 0])
-        o_um = float(shifts[idx, 1])
-        results[str(idx)] = {
-            "Scan_shift_um": round(s_um, 2),
-            "Orth_shift_um": round(o_um, 2),
-            "Total_error_um": round(math.sqrt(s_um * s_um + o_um * o_um), 2),
-            "rotation_angle_deg": round(float(angles[idx]), 4),
-            "mean_spot_size_um": spot_metrics_list[idx]["mean_spot_size_um"],
-            "mean_eccentricity": spot_metrics_list[idx]["mean_eccentricity"],
-            "num_dots": spot_metrics_list[idx]["num_dots"],
-        }
-
-    return results
-
-
-def make_dot_pattern(
-    scan_len: int,
-    bounds: list[int] | None = None,
-    num_dots: int = 6,
-    dot_width: int = 2,
-    margin: int = 25,
-) -> list[int]:
-    """Generate a 1D scanline pattern with evenly spaced calibration dots."""
+def _bounds_to_u_range(
+    bounds: list[int] | None, scan_len: int, curve: PrismCurveLite
+) -> tuple[float, float]:
+    """Map [lower_px, upper_px] visibility indices into physical [u_min_mm, u_max_mm]."""
     if not bounds or len(bounds) != 2:
-        lower = int(scan_len * 0.25)
-        upper = int(scan_len * 0.75)
+        return curve.lanewidth * 0.25, curve.lanewidth * 0.75
+    lower, upper = int(bounds[0]), int(bounds[1])
+    t0 = (lower * curve.total_ticks) / max(1, scan_len)
+    t1 = ((upper + 1) * curve.total_ticks) / max(1, scan_len)
+    u0 = curve.tick_to_u(t0)
+    u1 = curve.tick_to_u(t1)
+    return min(u0, u1), max(u0, u1)
+
+
+def _get_orth_steps_mm(laserhead) -> float:
+    """Return physical motor steps/mm on the orthogonal stage axis."""
+    mtr = getattr(laserhead.cfg, "motor_cfg", None)
+    if mtr and "orth2lsrline" in mtr and "steps_mm" in mtr:
+        return float(mtr["steps_mm"][mtr["orth2lsrline"]])
+    return float(CONFIG["motors"]["x"]["steps_mm"])
+
+
+def _calc_exposure_reps(laserhead) -> int:
+    rpm = float(laserhead.cfg.laser_timing["rpm"])
+    rev_time_ms = 60000.0 / max(600.0, rpm)
+    exposure_ms = float(CONFIG["calibration"]["camera_exposure_ms"])
+    return max(10, min(32, int((exposure_ms * 2.0) / rev_time_ms) + 6))
+
+
+async def _send_events(laserhead, events, steps_line=0, repetitions=1, facet=None):
+    """Send 24 MHz events using write_events if available, else write_line fallback."""
+    if hasattr(laserhead, "write_events"):
+        await laserhead.write_events(
+            events, steps_line=steps_line, repetitions=repetitions, facet=facet
+        )
     else:
-        lower, upper = int(bounds[0]), int(bounds[1])
-
-    start_px = min(lower + margin, upper)
-    end_px = max(lower, upper - margin)
-    span = max(1, end_px - start_px)
-
-    line = [0] * scan_len
-    if num_dots <= 1:
-        centers = [start_px + span // 2]
-    else:
-        centers = [
-            round(start_px + (i * span) / (num_dots - 1)) for i in range(num_dots)
-        ]
-
-    for c in centers:
-        for offset in range(dot_width):
-            px = c + offset - (dot_width // 2)
-            if 0 <= px < scan_len:
-                line[px] = 1
-    return line
+        _params, curve, scan_len = _get_optical_context(laserhead)
+        bits = (
+            ulabext.events_to_bits(events, scan_len, curve.total_ticks)
+            if events
+            else []
+        )
+        await laserhead.write_line(
+            bits, steps_line=steps_line, repetitions=repetitions, facet=facet
+        )
 
 
-def shift_pattern_along_scan(
-    line: list[int],
-    scan_corr_um: float,
-    scan_len: int,
-    lanewidth_mm: float,
-) -> list[int]:
-    """Shift a 1D binary scanline pattern by scan_corr_um along the scan axis."""
-    if abs(scan_corr_um) < 1e-6:
-        return list(line)
-    um_per_px = (lanewidth_mm * 1000.0) / max(1, scan_len)
-    px_shift = round(scan_corr_um / um_per_px)
-    if px_shift == 0:
-        return list(line)
-    shifted = [0] * scan_len
-    for idx, val in enumerate(line):
-        if val:
-            new_idx = idx + px_shift
-            if 0 <= new_idx < scan_len:
-                shifted[new_idx] = 1
-    return shifted
+def _median_list(values: list[float]) -> float:
+    s = sorted(values)
+    n = len(s)
+    mid = n // 2
+    return float(s[mid]) if n % 2 == 1 else 0.5 * (float(s[mid - 1]) + float(s[mid]))
 
 
 async def project_and_capture_facet(
     laserhead,
     camera,
-    line: list[int],
+    events: list[tuple[int, int]] | None = None,
+    line: list[int] | None = None,
     facet: int = 0,
-    scan_corr_um: float = 0.0,
-    orth_corr_um: float = 0.0,
 ):
-    """Synchronously project a pattern on a single polygon facet.
+    """Project 24 MHz events (or 1D binary list) on one facet and capture a frame."""
+    if events is None and line is not None:
+        total_ticks = int(laserhead.cfg.laser_timing["scanline_ticks"])
+        events = ulabext.bits_to_events(line, total_ticks)
+    events = events or []
 
-    Hardware synchronization protocol (Step 5):
-    1. Remaps logical facet index via photodiode reference:
-       `true_facet = await laserhead.remap(facet)`.
-    2. Calculates revolution count `reps` to fill the FPGA hardware FIFO across the
-       full camera exposure duration (`exposure_ms`) with `steps_line=0`.
-    3. Flushes any stale DMA frame buffer (`camera.discard_frame()`) on ESP32 so
-       the returned frame integrates while the FPGA is actively firing `true_facet`.
-    4. Stops the scanline stream (`write_line([])`) and waits for the FIFO to drain.
-    """
-    true_facet = await laserhead.remap(facet)
+    async with _fpga_calib_lock:
+        true_facet = await laserhead.remap(facet)
 
-    # Set CPython mock hooks for deterministic testing
-    Camera.mock_laser_pattern = line
-    Camera.mock_active_facet = int(facet)
-    Camera.mock_scan_correction_um = float(scan_corr_um)
-    Camera.mock_orth_correction_um = float(orth_corr_um)
+        Camera.mock_laser_events = events
+        Camera.mock_laser_pattern = None
+        Camera.mock_active_facet = int(facet)
+        Camera.mock_v_stage_mm = 0.0
 
-    if constants.ESP32:
-        rpm = float(laserhead.cfg.laser_timing["rpm"])
-        rev_time_ms = 60000.0 / max(600.0, rpm)
-        exposure_ms = float(CONFIG["calibration"]["camera_exposure_ms"])
-        # Pre-load enough revolutions into the 148-line FPGA FIFO to cover exposure_ms
-        reps = max(10, min(32, int((exposure_ms * 2.0) / rev_time_ms) + 6))
+        if constants.ESP32:
+            reps = _calc_exposure_reps(laserhead)
+            await _send_events(
+                laserhead, events, steps_line=0, repetitions=reps, facet=true_facet
+            )
+            camera.discard_frame()
+            frame = camera.capture_grayscale_array()
+            await _send_events(laserhead, None)
+            await laserhead.wait_fifo_empty()
+        else:
+            await _send_events(
+                laserhead, events, steps_line=0, repetitions=3, facet=true_facet
+            )
+            frame = camera.capture_grayscale_array()
 
-        await laserhead.write_line(
-            line, steps_line=0, repetitions=reps, facet=true_facet
-        )
-        camera.discard_frame()
-        frame = camera.capture_grayscale_array()
-        await laserhead.write_line([])
-        await laserhead.wait_fifo_empty()
-    else:
-        await laserhead.write_line(line, steps_line=0, repetitions=3, facet=true_facet)
-        frame = camera.capture_grayscale_array()
-
-    return frame
+        return frame
 
 
 async def run_scan_visibility(
@@ -546,16 +192,8 @@ async def run_scan_visibility(
     step: int = 20,
     progress_callback=None,
 ):
-    """Scan full scanline to determine which pixels fall within sensor FOV.
-
-    1. Enters camera.analysis_mode(SVGA 800x600, GRAYSCALE).
-    2. Takes 1 Dark Frame (laser OFF) for background subtraction.
-    3. Iterates over scanline_length with step size, projecting 1 pixel on facet.
-    4. Uses get_dots_ulab (and clamped uint8 peak check) to determine visibility.
-    5. Saves [lower_pixel, upper_pixel] to CONFIG["calibration"]["visible_pixels"].
-    6. Camera is automatically restored to UXGA JPEG upon exit.
-    """
-    scan_len = int(laserhead.cfg.laser_timing["scanline_length"])
+    """Scan full scanline to determine which coordinates fall within sensor FOV."""
+    _params, curve, scan_len = _get_optical_context(laserhead)
     pixels_to_scan = list(range(0, scan_len, step))
     if (scan_len - 1) not in pixels_to_scan:
         pixels_to_scan.append(scan_len - 1)
@@ -572,32 +210,33 @@ async def run_scan_visibility(
         if constants.ESP32:
             await laserhead.synchronize(True)
             await laserhead.enable_comp(
-                laser0=False, laser1=True, polygon=True, synchronize=True
+                laser0=False, laser1=False, polygon=False, synchronize=True
             )
 
         with camera.analysis_mode(
             frame_size=FrameSize.SVGA, pixel_format=PixelFormat.GRAYSCALE
         ):
-            # 1. Dark Frame Capture (laser OFF)
+            # 1. Dark Frame Capture (laser OFF, do not force hardware override pin ON)
+            Camera.mock_laser_events = None
             Camera.mock_laser_pattern = None
-            await laserhead.enable_comp(laser0=False, laser1=False, polygon=True)
+            await laserhead.enable_comp(laser0=False, laser1=False, polygon=False)
             await asyncio.sleep(0.05)
             if constants.ESP32:
                 camera.discard_frame()
             dark_frame = camera.capture_grayscale_array()
 
-            if constants.ESP32:
-                await laserhead.enable_comp(
-                    laser0=False, laser1=True, polygon=True, synchronize=True
-                )
-
-            # 2. Iterate and detect signal
+            # 2. Iterate and detect signal using 24 MHz tick pulses
             for idx_num, px in enumerate(pixels_to_scan):
-                line = [0] * scan_len
-                line[px] = 1
+                t_start = (px * curve.total_ticks) // max(1, scan_len)
+                t_end = min(
+                    curve.total_ticks, ((px + 1) * curve.total_ticks) // max(1, scan_len)
+                )
+                events = [(t_start, 255)]
+                if t_end < curve.total_ticks:
+                    events.append((max(t_start + 1, t_end), 0))
 
                 frame = await project_and_capture_facet(
-                    laserhead, camera, line, facet=facet
+                    laserhead, camera, events=events, facet=facet
                 )
                 dots, metrics = get_dots_ulab(frame, dark_frame=dark_frame)
 
@@ -613,9 +252,8 @@ async def run_scan_visibility(
                     await progress_callback(pct, px)
 
     finally:
+        Camera.mock_laser_events = None
         Camera.mock_laser_pattern = None
-        Camera.mock_scan_correction_um = 0.0
-        Camera.mock_orth_correction_um = 0.0
 
     if visible_indices:
         bounds = [min(visible_indices), max(visible_indices)]
@@ -647,6 +285,13 @@ async def run_scan_visibility(
     }
 
 
+def _read_period_means(laserhead, shift: int, num_facets: int) -> list[float]:
+    raw_means = getattr(laserhead, "cur_facet_means", None)
+    if raw_means and len(raw_means) == num_facets:
+        return [float(m) for m in (raw_means[shift:] + raw_means[:shift])]
+    return [5.0] * num_facets
+
+
 async def run_facet_calibration(
     laserhead,
     camera,
@@ -654,11 +299,13 @@ async def run_facet_calibration(
     num_dots: int = 6,
     progress_callback=None,
 ):
-    """Run multi-facet dot calibration and persist facet offsets to config."""
-    scan_len = int(laserhead.cfg.laser_timing["scanline_length"])
+    """Run multi-facet 1D dot calibration and persist facet offsets to config."""
+    _params, curve, scan_len = _get_optical_context(laserhead)
     num_facets = int(laserhead.cfg.laser_timing["facets"])
     bounds = CONFIG["calibration"]["visible_pixels"]
-    base_line = make_dot_pattern(scan_len, bounds, num_dots=num_dots)
+    u_min, u_max = _bounds_to_u_range(bounds, scan_len, curve)
+    centers = make_dot_centers_mm(u_min, u_max, num_dots=num_dots, margin_mm=0.25)
+    base_events = make_tick_dot_events(centers, dot_width_mm=0.02, curve=curve)
 
     all_iter_results = []
     total_captures = max(1, iterations * num_facets)
@@ -668,35 +315,25 @@ async def run_facet_calibration(
         if constants.ESP32:
             await laserhead.synchronize(True)
             await laserhead.enable_comp(
-                laser0=False, laser1=True, polygon=True, synchronize=True
+                laser0=False, laser1=False, polygon=False, synchronize=True
             )
 
         with camera.analysis_mode(
             frame_size=FrameSize.SVGA, pixel_format=PixelFormat.GRAYSCALE
         ):
-            # Capture dark frame
+            Camera.mock_laser_events = None
             Camera.mock_laser_pattern = None
-            await laserhead.enable_comp(laser0=False, laser1=False, polygon=True)
+            await laserhead.enable_comp(laser0=False, laser1=False, polygon=False)
             await asyncio.sleep(0.05)
             if constants.ESP32:
                 camera.discard_frame()
             dark_frame = camera.capture_grayscale_array()
 
-            if constants.ESP32:
-                await laserhead.enable_comp(
-                    laser0=False, laser1=True, polygon=True, synchronize=True
-                )
-
             for _it in range(iterations):
                 facet_frames = []
                 for facet in range(num_facets):
                     frame = await project_and_capture_facet(
-                        laserhead,
-                        camera,
-                        base_line,
-                        facet=facet,
-                        scan_corr_um=0.0,
-                        orth_corr_um=0.0,
+                        laserhead, camera, events=base_events, facet=facet
                     )
                     facet_frames.append(frame)
                     done_captures += 1
@@ -704,7 +341,7 @@ async def run_facet_calibration(
                         pct = int((done_captures / total_captures) * 100)
                         await progress_callback(pct, facet)
 
-                res = calibration_ulab(
+                res = analyze_facets_ulab(
                     facet_frames,
                     dark_frame=dark_frame,
                     pixelsize=SVGA_PIXEL_SIZE_UM,
@@ -715,43 +352,33 @@ async def run_facet_calibration(
                 gc.collect()
 
     finally:
+        Camera.mock_laser_events = None
         Camera.mock_laser_pattern = None
-        Camera.mock_scan_correction_um = 0.0
-        Camera.mock_orth_correction_um = 0.0
 
-    # Map photodiode facet periods if available
     shift = await laserhead.remap(0)
-    raw_means = getattr(laserhead, "cur_facet_means", [5.0] * num_facets)
-    if len(raw_means) == num_facets:
-        period_means = raw_means[shift:] + raw_means[:shift]
-    else:
-        period_means = [5.0] * num_facets
+    period_means = _read_period_means(laserhead, shift, num_facets)
 
     facets_cfg = {}
     for facet in range(num_facets):
         f_key = str(facet)
-        scan_vals = [r[f_key]["Scan_shift_um"] for r in all_iter_results]
-        orth_vals = [r[f_key]["Orth_shift_um"] for r in all_iter_results]
-        spot_vals = [r[f_key]["mean_spot_size_um"] for r in all_iter_results]
-        ecc_vals = [r[f_key]["mean_eccentricity"] for r in all_iter_results]
-        rot_vals = [r[f_key]["rotation_angle_deg"] for r in all_iter_results]
+        scan_vals = [float(r[f_key]["Scan_shift_um"]) for r in all_iter_results]
+        orth_vals = [float(r[f_key]["Orth_shift_um"]) for r in all_iter_results]
+        spot_vals = [float(r[f_key]["mean_spot_size_um"]) for r in all_iter_results]
+        ecc_vals = [float(r[f_key]["mean_eccentricity"]) for r in all_iter_results]
+        rot_vals = [float(r[f_key]["global_angle_deg"]) for r in all_iter_results]
 
-        scan_mean = float(np.mean(np.array(scan_vals, dtype=NP_FLOAT)))
-        orth_mean = float(np.mean(np.array(orth_vals, dtype=NP_FLOAT)))
+        scan_mean = sum(scan_vals) / len(scan_vals)
+        orth_mean = sum(orth_vals) / len(orth_vals)
         scan_std = (
-            float(np.std(np.array(scan_vals, dtype=NP_FLOAT)))
+            math.sqrt(sum((v - scan_mean) ** 2 for v in scan_vals) / len(scan_vals))
             if len(scan_vals) > 1
             else 0.0
         )
         orth_std = (
-            float(np.std(np.array(orth_vals, dtype=NP_FLOAT)))
+            math.sqrt(sum((v - orth_mean) ** 2 for v in orth_vals) / len(orth_vals))
             if len(orth_vals) > 1
             else 0.0
         )
-        spot_mean = sum(spot_vals) / len(spot_vals)
-        ecc_mean = sum(ecc_vals) / len(ecc_vals)
-        rot_mean = sum(rot_vals) / len(rot_vals)
-
         facets_cfg[f_key] = {
             "scan": round(scan_mean / 1000.0, 6),
             "orth": round(orth_mean / 1000.0, 6),
@@ -759,9 +386,9 @@ async def run_facet_calibration(
             "scan_std_um": round(scan_std, 2),
             "orth_mean_um": round(orth_mean, 2),
             "orth_std_um": round(orth_std, 2),
-            "spot_size_um": round(spot_mean, 2),
-            "eccentricity": round(ecc_mean, 3),
-            "rotation_deg": round(rot_mean, 4),
+            "spot_size_um": round(sum(spot_vals) / len(spot_vals), 2),
+            "eccentricity": round(sum(ecc_vals) / len(ecc_vals), 3),
+            "rotation_deg": round(sum(rot_vals) / len(rot_vals), 4),
             "period_ms": round(float(period_means[facet]), 4),
         }
 
@@ -787,82 +414,74 @@ async def run_pattern_error(
     calibrate_first: bool = True,
     progress_callback=None,
 ):
-    """Execute Verified Calibration: compare Uncorrected vs Corrected errors.
+    """Execute closed-loop 2D Verified Calibration using analytical slicing + VirtualStackerUlab.
 
-    1. Captures 4 facets Uncorrected (correction=False) and computes errors Before.
-    2. Updates offsets (if calibrate_first=True) and applies 2D facet corrections.
-    3. Captures 4 facets Corrected (correction=True) and computes errors After.
-    4. Verifies tolerance: max_err_after <= 30 um and max_err_after < max_err_before.
+    1. Captures dark frame and obtains camera tilt angle (either via 1D baseline capture when
+       ``calibrate_first=True`` / missing config, or from stored calibration).
+    2. Slices & projects an Uncorrected 2D dot grid per facet and stacks frames with
+       ``VirtualStackerUlab`` to measure true 2D Scan/Orth errors Before.
+    3. Slices & projects the Corrected 2D dot grid at 24 MHz tick & sub-step resolution and
+       stacks frames with ``VirtualStackerUlab`` to measure true 2D errors After.
+    4. Verifies max_error_after <= 30 um and strict improvement over Uncorrected.
     """
-    scan_len = int(laserhead.cfg.laser_timing["scanline_length"])
+    params, curve, scan_len = _get_optical_context(laserhead)
     num_facets = int(laserhead.cfg.laser_timing["facets"])
+    steps_mm = _get_orth_steps_mm(laserhead)
+    exposures_2d = 4
+    dot_diameter_mm = 0.08
     bounds = CONFIG["calibration"]["visible_pixels"]
-    base_line = make_dot_pattern(scan_len, bounds, num_dots=num_dots)
+    u_min, u_max = _bounds_to_u_range(bounds, scan_len, curve)
 
     try:
         if constants.ESP32:
             await laserhead.synchronize(True)
             await laserhead.enable_comp(
-                laser0=False, laser1=True, polygon=True, synchronize=True
+                laser0=False, laser1=False, polygon=False, synchronize=True
             )
 
         with camera.analysis_mode(
             frame_size=FrameSize.SVGA, pixel_format=PixelFormat.GRAYSCALE
         ):
             # 1. Dark Frame
+            Camera.mock_laser_events = None
             Camera.mock_laser_pattern = None
-            await laserhead.enable_comp(laser0=False, laser1=False, polygon=True)
+            await laserhead.enable_comp(laser0=False, laser1=False, polygon=False)
             await asyncio.sleep(0.05)
             if constants.ESP32:
                 camera.discard_frame()
             dark_frame = camera.capture_grayscale_array()
 
-            if constants.ESP32:
-                await laserhead.enable_comp(
-                    laser0=False, laser1=True, polygon=True, synchronize=True
-                )
-
-            # 2. Uncorrected pass (Before)
-            uncorr_frames = []
-            for facet in range(num_facets):
-                frame = await project_and_capture_facet(
-                    laserhead,
-                    camera,
-                    base_line,
-                    facet=facet,
-                    scan_corr_um=0.0,
-                    orth_corr_um=0.0,
-                )
-                uncorr_frames.append(frame)
-                if progress_callback:
-                    pct = int(((facet + 1) / (num_facets * 2)) * 100)
-                    await progress_callback(pct, facet)
-
-            before_res = calibration_ulab(
-                uncorr_frames,
-                dark_frame=dark_frame,
-                pixelsize=SVGA_PIXEL_SIZE_UM,
-                compute_rotation=True,
-            )
-            del uncorr_frames
-            gc.collect()
-
-            # Build or load active facet corrections
             shift = await laserhead.remap(0)
-            raw_means = getattr(laserhead, "cur_facet_means", [5.0] * num_facets)
-            period_means = (
-                raw_means[shift:] + raw_means[:shift]
-                if len(raw_means) == num_facets
-                else [5.0] * num_facets
-            )
+            period_means = _read_period_means(laserhead, shift, num_facets)
+            facets_cfg = dict(CONFIG["calibration"].get("facets") or {})
 
-            facets_cfg = CONFIG["calibration"]["facets"]
-            if calibrate_first or not facets_cfg:
+            # 2. Obtain 1D baseline calibration (when requested or uncalibrated)
+            if calibrate_first or len(facets_cfg) < num_facets:
+                centers_1d = make_dot_centers_mm(
+                    u_min, u_max, num_dots=num_dots, margin_mm=0.25
+                )
+                events_1d = make_tick_dot_events(
+                    centers_1d, dot_width_mm=0.02, curve=curve
+                )
+                frames_1d = []
+                for facet in range(num_facets):
+                    frames_1d.append(
+                        await project_and_capture_facet(
+                            laserhead, camera, events=events_1d, facet=facet
+                        )
+                    )
+                res_1d = analyze_facets_ulab(
+                    frames_1d,
+                    dark_frame=dark_frame,
+                    pixelsize=SVGA_PIXEL_SIZE_UM,
+                    compute_rotation=True,
+                )
+                global_angle = float(res_1d["0"]["global_angle_deg"])
                 facets_cfg = {}
                 for facet in range(num_facets):
                     f_key = str(facet)
-                    s_um = float(before_res[f_key]["Scan_shift_um"])
-                    o_um = float(before_res[f_key]["Orth_shift_um"])
+                    s_um = float(res_1d[f_key]["Scan_shift_um"])
+                    o_um = float(res_1d[f_key]["Orth_shift_um"])
                     facets_cfg[f_key] = {
                         "scan": round(s_um / 1000.0, 6),
                         "orth": round(o_um / 1000.0, 6),
@@ -870,62 +489,93 @@ async def run_pattern_error(
                         "scan_std_um": 0.0,
                         "orth_mean_um": round(o_um, 2),
                         "orth_std_um": 0.0,
-                        "spot_size_um": before_res[f_key]["mean_spot_size_um"],
-                        "eccentricity": before_res[f_key]["mean_eccentricity"],
-                        "rotation_deg": before_res[f_key]["rotation_angle_deg"],
+                        "spot_size_um": res_1d[f_key]["mean_spot_size_um"],
+                        "eccentricity": res_1d[f_key]["mean_eccentricity"],
+                        "rotation_deg": global_angle,
                         "period_ms": round(float(period_means[facet]), 4),
                     }
+                del frames_1d
+                gc.collect()
+            else:
+                rot_angles = [
+                    float(facets_cfg[str(f)].get("rotation_deg", 0.0))
+                    for f in range(num_facets)
+                    if str(f) in facets_cfg
+                ]
+                global_angle = _median_list(rot_angles) if rot_angles else 0.0
 
-            # 3. Corrected pass (After)
-            corr_frames = []
-            orth_virtual_offsets = []
-            for facet in range(num_facets):
-                f_key = str(facet)
-                s_corr_um = float(facets_cfg[f_key]["scan_mean_um"])
-                o_corr_um = float(facets_cfg[f_key]["orth_mean_um"])
-                orth_virtual_offsets.append(o_corr_um)
-
-                if constants.ESP32:
-                    lanewidth_mm = float(
-                        laserhead.cfg.get_optical_params()["lanewidth"]
-                    )
-                    corr_line = shift_pattern_along_scan(
-                        base_line, s_corr_um, scan_len, lanewidth_mm
-                    )
-                else:
-                    corr_line = base_line
-
-                frame = await project_and_capture_facet(
-                    laserhead,
-                    camera,
-                    corr_line,
-                    facet=facet,
-                    scan_corr_um=s_corr_um,
-                    orth_corr_um=o_corr_um,
+            async def _run_2d_pass(
+                offsets_mm: dict[int, tuple[float, float]], progress_base: int
+            ) -> dict:
+                plan = slice_dot_grid_events(
+                    u_min_mm=u_min,
+                    u_max_mm=u_max,
+                    params=params,
+                    num_dots_x=num_dots,
+                    num_dots_y=1,
+                    dot_diameter_mm=dot_diameter_mm,
+                    exposures=exposures_2d,
+                    steps_mm=steps_mm,
+                    facet_offsets_mm=offsets_mm,
                 )
-                corr_frames.append(frame)
-                if progress_callback:
-                    pct = int(((num_facets + facet + 1) / (num_facets * 2)) * 100)
-                    await progress_callback(pct, facet)
+                total_rows = plan["total_rows"]
+                active_rows = plan["rows"]
+                stackers = [
+                    VirtualStackerUlab(
+                        expected_total_steps=total_rows,
+                        exposures=exposures_2d,
+                        px_size_um=SVGA_PIXEL_SIZE_UM,
+                        steps_mm=steps_mm,
+                        rotation_angle_deg=global_angle,
+                    )
+                    for _ in range(num_facets)
+                ]
+                n_active = max(1, len(active_rows))
+                for idx, (row_idx, facet, events) in enumerate(active_rows):
+                    frame = await project_and_capture_facet(
+                        laserhead, camera, events=events, facet=facet
+                    )
+                    stackers[facet].add_exposure(
+                        frame, num_steps=row_idx, dark_frame=dark_frame
+                    )
+                    del frame
+                    if idx % 8 == 0:
+                        gc.collect()
+                    if progress_callback:
+                        pct = progress_base + int(((idx + 1) / n_active) * 50)
+                        await progress_callback(pct, facet)
 
-            after_res = calibration_ulab(
-                corr_frames,
-                dark_frame=dark_frame,
-                pixelsize=SVGA_PIXEL_SIZE_UM,
-                compute_rotation=True,
-                orth_virtual_offsets_um=orth_virtual_offsets
-                if constants.ESP32
-                else None,
-            )
-            del corr_frames
-            gc.collect()
+                stacked = [s.get_result() for s in stackers]
+                res = analyze_facets_ulab(
+                    stacked,
+                    dark_frame=None,
+                    pixelsize=SVGA_PIXEL_SIZE_UM,
+                    compute_rotation=False,
+                    rotation_angle_deg=global_angle,
+                    max_diameter_um=320.0,
+                )
+                del stacked, stackers
+                gc.collect()
+                return res
+
+            # 3. Uncorrected 2D pass (Before)
+            zero_offsets = {f: (0.0, 0.0) for f in range(num_facets)}
+            before_res = await _run_2d_pass(zero_offsets, progress_base=0)
+
+            # 4. Corrected 2D pass (After)
+            corr_offsets = {
+                f: (
+                    float(facets_cfg[str(f)]["scan"]),
+                    float(facets_cfg[str(f)]["orth"]),
+                )
+                for f in range(num_facets)
+            }
+            after_res = await _run_2d_pass(corr_offsets, progress_base=50)
 
     finally:
+        Camera.mock_laser_events = None
         Camera.mock_laser_pattern = None
-        Camera.mock_scan_correction_um = 0.0
-        Camera.mock_orth_correction_um = 0.0
 
-    # Compute summary metrics and build per-facet comparison table
     per_facet_report = []
     before_abs_vals = []
     after_abs_vals = []
@@ -1068,16 +718,20 @@ def update_custom_facets(
     }
 
 
-async def _bounds_hardware_feeder(laserhead, line: list[int], facet: int | None = None):
+async def _bounds_hardware_feeder(laserhead, events: list[tuple[int, int]], facet: int | None = None):
     """ESP32 background task feeding FPGA FIFO while Preview Dots is active."""
     try:
-        await laserhead.synchronize(True)
-        await laserhead.enable_comp(laser0=False, laser1=True, polygon=True, synchronize=True)
-        true_facet = (await laserhead.remap(facet)) if facet is not None else None
-        while _bounds_active:
-            await laserhead.write_line(
-                line, steps_line=0, repetitions=12, facet=true_facet
+        async with _fpga_calib_lock:
+            await laserhead.synchronize(True)
+            await laserhead.enable_comp(
+                laser0=False, laser1=False, polygon=False, synchronize=True
             )
+            true_facet = (await laserhead.remap(facet)) if facet is not None else None
+        while _bounds_active:
+            async with _fpga_calib_lock:
+                await _send_events(
+                    laserhead, events, steps_line=0, repetitions=12, facet=true_facet
+                )
             await asyncio.sleep(0.15)
     except asyncio.CancelledError:
         pass
@@ -1085,10 +739,26 @@ async def _bounds_hardware_feeder(laserhead, line: list[int], facet: int | None 
         logger.error(f"Bounds feeder error: {exc}")
     finally:
         try:
-            await laserhead.write_line([])
-            await laserhead.wait_fifo_empty()
+            async with _fpga_calib_lock:
+                await _send_events(laserhead, None)
+                await laserhead.wait_fifo_empty()
         except Exception:  # noqa: BLE001, S110
             pass
+
+
+def _build_preview_events(laserhead, num_dots: int = 6) -> list[tuple[int, int]]:
+    _params, curve, scan_len = _get_optical_context(laserhead)
+    bounds = CONFIG["calibration"]["visible_pixels"]
+    u_min, u_max = _bounds_to_u_range(bounds, scan_len, curve)
+    centers = make_dot_centers_mm(u_min, u_max, num_dots=num_dots, margin_mm=0.25)
+    scan_offset_mm = 0.0
+    facets_cfg = CONFIG["calibration"].get("facets") or {}
+    apply_corr = bool(CONFIG["calibration"].get("apply_correction"))
+    if _preview_facet is not None and apply_corr and str(_preview_facet) in facets_cfg:
+        scan_offset_mm = float(facets_cfg[str(_preview_facet)]["scan"])
+    return make_tick_dot_events(
+        centers, dot_width_mm=0.02, curve=curve, scan_offset_mm=scan_offset_mm
+    )
 
 
 def set_bounds_preview(
@@ -1112,11 +782,11 @@ def set_bounds_preview(
             _preview_facet = int(facet)
 
     bounds = CONFIG["calibration"]["visible_pixels"]
-    scan_len = int(laserhead.cfg.laser_timing["scanline_length"])
 
     if _bounds_active:
-        line = make_dot_pattern(scan_len, bounds, num_dots=num_dots)
-        Camera.mock_laser_pattern = line
+        events = _build_preview_events(laserhead, num_dots=num_dots)
+        Camera.mock_laser_events = events
+        Camera.mock_laser_pattern = None
         Camera.mock_preview_facet = _preview_facet
         facet_label = (
             f"facet {_preview_facet}" if _preview_facet is not None else "all facets"
@@ -1134,11 +804,12 @@ def set_bounds_preview(
             try:
                 loop = asyncio.get_event_loop()
                 _bounds_feeder_task = loop.create_task(
-                    _bounds_hardware_feeder(laserhead, line, facet=_preview_facet)
+                    _bounds_hardware_feeder(laserhead, events, facet=_preview_facet)
                 )
             except Exception as exc:  # noqa: BLE001
                 logger.warning(f"Could not start preview feeder task: {exc}")
     else:
+        Camera.mock_laser_events = None
         Camera.mock_laser_pattern = None
         Camera.mock_preview_facet = None
         if _bounds_feeder_task is not None:
@@ -1167,43 +838,33 @@ async def capture_jpeg_with_preview(laserhead, camera):
     if not _bounds_active:
         return camera.capture()
 
-    bounds = CONFIG["calibration"]["visible_pixels"]
-    scan_len = int(laserhead.cfg.laser_timing["scanline_length"])
-    line = make_dot_pattern(scan_len, bounds, num_dots=6)
-    Camera.mock_laser_pattern = line
+    events = _build_preview_events(laserhead, num_dots=6)
+    Camera.mock_laser_events = events
+    Camera.mock_laser_pattern = None
     Camera.mock_preview_facet = _preview_facet
 
     if constants.ESP32:
-        await laserhead.synchronize(True)
-        await laserhead.enable_comp(laser0=False, laser1=True, polygon=True, synchronize=True)
-        rpm = float(laserhead.cfg.laser_timing["rpm"])
-        rev_time_ms = 60000.0 / max(600.0, rpm)
-        exposure_ms = float(CONFIG["calibration"]["camera_exposure_ms"])
-        reps = max(10, min(32, int((exposure_ms * 2.0) / rev_time_ms) + 6))
+        async with _fpga_calib_lock:
+            await laserhead.synchronize(True)
+            await laserhead.enable_comp(
+                laser0=False, laser1=False, polygon=False, synchronize=True
+            )
+            reps = _calc_exposure_reps(laserhead)
 
-        if _preview_facet is not None:
-            f_line = line
-            facets_cfg = CONFIG["calibration"]["facets"]
-            apply_corr = bool(CONFIG["calibration"]["apply_correction"])
-            if apply_corr and str(_preview_facet) in facets_cfg:
-                s_corr_um = float(facets_cfg[str(_preview_facet)]["scan_mean_um"])
-                lanewidth_mm = float(laserhead.cfg.get_optical_params()["lanewidth"])
-                f_line = shift_pattern_along_scan(
-                    line, s_corr_um, scan_len, lanewidth_mm
+            if _preview_facet is not None:
+                true_facet = await laserhead.remap(_preview_facet)
+                await _send_events(
+                    laserhead, events, steps_line=0, repetitions=reps, facet=true_facet
                 )
-            true_facet = await laserhead.remap(_preview_facet)
-            await laserhead.write_line(
-                f_line, steps_line=0, repetitions=reps, facet=true_facet
-            )
-        else:
-            await laserhead.write_line(
-                line, steps_line=0, repetitions=reps * 4, facet=None
-            )
+            else:
+                await _send_events(
+                    laserhead, events, steps_line=0, repetitions=reps * 4, facet=None
+                )
 
-        camera.discard_frame()
-        jpeg_data = camera.capture()
-        await laserhead.write_line([])
-        await laserhead.wait_fifo_empty()
-        return jpeg_data
+            camera.discard_frame()
+            jpeg_data = camera.capture()
+            await _send_events(laserhead, None)
+            await laserhead.wait_fifo_empty()
+            return jpeg_data
 
     return camera.capture()

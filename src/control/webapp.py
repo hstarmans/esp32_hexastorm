@@ -88,11 +88,16 @@ class DeviceState:
 
     def __init__(self, laserhead):
         self.laserhead = laserhead
-        self.data = {}
+        self._data = {}
         self.update()
 
     def laserhead_update(self):
-        self.data.update(self.laserhead.state)
+        self._data.update(self.laserhead.state)
+
+    @property
+    def data(self):
+        self.laserhead_update()
+        return self._data
 
     def update(self):
         """
@@ -117,7 +122,7 @@ class DeviceState:
             },
             "calibration": calib_dict,
         }
-        self.data.update(dct)
+        self._data.update(dct)
 
 
 # Configure Microdot

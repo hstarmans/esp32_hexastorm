@@ -115,6 +115,8 @@ if "package" in globals():
     module("hexastorm/__init__.py")
     module("hexastorm/ulabext.py")
     module("hexastorm/config.py")
+    module("hexastorm/calibration/__init__.py")
+    module("hexastorm/calibration/core.py")
     module("hexastorm/fpga_host/__init__.py")
     module("hexastorm/fpga_host/interface.py")
     module("hexastorm/fpga_host/syncwrap.py")

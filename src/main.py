@@ -54,9 +54,12 @@ async def main():
         # We gather the webserver (foreground) and network (background)
         tasks.append(app.start_server(port=5000, debug=False))
 
-    if tasks:
-        await asyncio.gather(*tasks)
-    bootlib.mark_boot_successfull()
+    async def _mark_boot_stable():
+        await asyncio.sleep(5)
+        bootlib.mark_boot_successfull()
+
+    tasks.append(asyncio.create_task(_mark_boot_stable()))
+    await asyncio.gather(*tasks)
 
 
 if constants.ESP32:

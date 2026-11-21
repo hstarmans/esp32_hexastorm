@@ -15,6 +15,7 @@ except ImportError:
 
     NP_FLOAT = np.float
 
+from hexastorm import ulabext
 from hexastorm.config import PlatformConfig, Spi
 from hexastorm.fpga_host.interface import BaseHost
 
@@ -585,6 +586,15 @@ class BaseLaserhead:
     async def set_parsing(self, enabled):
         logger.debug(f"Mock set_parsing: {enabled}")
 
+    async def write_events(
+        self, events, steps_line=1, direction=0, repetitions=1, facet=None
+    ):
+        rpm = self.cfg.laser_timing["rpm"]
+        facets = self.cfg.laser_timing["facets"]
+        line_time = (60.0 / (rpm * facets)) * repetitions
+        await asyncio.sleep(line_time)
+        logger.debug(f"Mock write_events called (slept {line_time:.6f}s)")
+
     async def write_line(
         self, bit_lst, steps_line=1, direction=0, repetitions=1, facet=None
     ):
@@ -620,6 +630,9 @@ class BaseLaserhead:
     async def flush_buffer(self):
         logger.info("Flushing buffer")
 
+    def events_to_byte_list(self, events, steps_line=1, direction=0):
+        return BaseHost.events_to_byte_list(self, events, steps_line, direction)
+
     def bit_to_byte_list(self, laser_bits, steps_line=1, direction=0):
         return BaseHost.bit_to_byte_list(self, laser_bits, steps_line, direction)
 
@@ -640,12 +653,15 @@ class BaseLaserhead:
             "singlefacet"
         ]
         if file_exposures is None:
-            exposures = self.state["job"]["exposureperline"] = exposures_gui
+            self._file_exposures = 1
+            self._repeat_factor = exposures_gui
+            self.state["job"]["exposureperline"] = exposures_gui
             optical_correction = False
         else:
-            exposures = self.state["job"]["exposureperline"] = file_exposures
-            if exposures == 1 and optical_correction is False:
-                exposures = self.state["job"]["exposureperline"] = exposures_gui
+            if file_exposures == 1 and optical_correction is False:
+                self._file_exposures = 1
+                self._repeat_factor = exposures_gui
+                self.state["job"]["exposureperline"] = exposures_gui
             elif exposures_gui != 1:
                 await self.set_error(
                     f"File has optical correction or fixed exposures and does not support {exposures_gui} exposures."
@@ -656,10 +672,14 @@ class BaseLaserhead:
                     "Single facet engraving cannot be combined with optical correction."
                 )
                 return False
+            else:
+                self._file_exposures = file_exposures
+                self._repeat_factor = 1
+                self.state["job"]["exposureperline"] = file_exposures
 
         basestring = (
             f"Printing with laserpower {self.state['job']['laserpower']}"
-            f" and {exposures} exposures, "
+            f" and {self.state['job']['exposureperline']} exposures, "
         )
         if self.state["job"]["singlefacet"]:
             basestring += "using a single facet."
@@ -676,9 +696,12 @@ class BaseLaserhead:
             return
         await self.notify_listeners()
         await asyncio.sleep(0)
-        exposures = self.state["job"]["exposureperline"]
-        bits_scanline = int(self.cfg.laser_timing["scanline_length"])
-        exposure_half_period = int((bits_scanline - 1) // ((1 / exposures) * 2))
+        repeat_factor = getattr(self, "_repeat_factor", 1)
+        file_exposures = getattr(self, "_file_exposures", 1)
+        scanline_ticks = int(self.cfg.laser_timing["scanline_ticks"])
+        exposure_half_period = ulabext.calc_step_half_period(
+            1.0 / repeat_factor, scanline_ticks
+        )
 
         with open(self.get_job_path(fname), "rb") as f:  # noqa: SIM117, ASYNC230, in micropython this should be done
             with deflate.DeflateIO(f, deflate.ZLIB) as d:
@@ -759,14 +782,14 @@ class BaseLaserhead:
                         f"Rotational offset detected: shifting start by {offset_0} lines."
                     )
                     self.enable_steppers = False
-                    dummy_line = [0] * bits_scanline
                     for _ in range(offset_0):
-                        await self.write_line(dummy_line)
+                        await self.write_events([], steps_line=0)
                     self.enable_steppers = True
                 scan_axis = self.cfg.motor_cfg["orth2lsrline"]
                 axis_idx = ["x", "y", "z"].index(scan_axis)
                 steps_per_mm = self.cfg.motor_cfg["steps_mm"][scan_axis]
-                mm_per_facet = (1.0 / exposures) / steps_per_mm
+                mm_per_file_line = (1.0 / file_exposures) / steps_per_mm
+                cancelled = False
 
                 for lane in range(lanes):
                     if await self.handle_pausing_and_stopping():
@@ -788,16 +811,12 @@ class BaseLaserhead:
                     else:
                         logger.info("Start exposing forward lane.")
 
-                    total_facets = int(self.cfg.laser_timing["rpm"] / exposures)
-                    if self.state["job"]["singlefacet"]:
-                        total_facets = int(total_facets / 4)
-
-                    if exposures == 1:
+                    if repeat_factor == 1:
                         lines_chunk = self.cfg.hdl_cfg.lines_chunk
                         for facet in range(0, facets_lane, lines_chunk):
                             if facet % 1000 == 0:
                                 self._position[axis_idx] = lane_start_x + (
-                                    direction_sign * facet * mm_per_facet
+                                    direction_sign * facet * mm_per_file_line
                                 )
                                 self._save_position()
                                 self.state["job"]["currentline"] = (
@@ -810,6 +829,7 @@ class BaseLaserhead:
                                 if await self.handle_pausing_and_stopping():
                                     await self.set_error("Print job cancelled by user.")
                                     await self.write_line([])
+                                    cancelled = True
                                     break
                             last_facet = min(facet + lines_chunk, facets_lane)
                             to_read = last_facet - facet
@@ -828,7 +848,7 @@ class BaseLaserhead:
                         for facet in range(facets_lane):
                             if facet % 1000 == 0:
                                 self._position[axis_idx] = lane_start_x + (
-                                    direction_sign * facet * mm_per_facet
+                                    direction_sign * facet * mm_per_file_line
                                 )
                                 self._save_position()
                                 self.state["job"]["currentline"] = (
@@ -840,6 +860,8 @@ class BaseLaserhead:
                                 await self.notify_listeners()
                                 if await self.handle_pausing_and_stopping():
                                     await self.set_error("Print job cancelled by user.")
+                                    await self.write_line([])
+                                    cancelled = True
                                     break
                             direction = 0 if (lane % 2 == 1) else 1
                             line_pkt = self._read_scanline_packet(
@@ -849,11 +871,13 @@ class BaseLaserhead:
                             )
                             if line_pkt:
                                 await self.send_command(
-                                    line_pkt * exposures,
+                                    line_pkt * repeat_factor,
                                     timeout=True,
                                 )
+                    if cancelled:
+                        break
                     self._position[axis_idx] = lane_start_x + (
-                        direction_sign * facets_lane * mm_per_facet
+                        direction_sign * facets_lane * mm_per_file_line
                     )
                     self._save_position()
                     await self.write_line([])

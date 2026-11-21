@@ -61,5 +61,5 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["src/tests"]
-python_files = ["test_cameracontroller.py"]
+python_files = ["test_cameracontroller.py", "test_webapp_endpoints.py"]
 

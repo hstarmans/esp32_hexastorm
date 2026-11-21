@@ -36,11 +36,21 @@ class Laserhead(ESP32Host, BaseLaserhead):
 
         facet_id  -- facet_id to determine internal facet off
         """
+        num_facets = self.cfg.laser_timing["facets"]
+        if self.cur_facet_means is None:
+            if (await self.fpga_state)["synchronized"]:
+                self.cur_facet_means = await self.measure_facet_means()
+            else:
+                mapped = int(facet_id) % num_facets
+                logger.warning(
+                    f"Facet remap called without facet timing means; returning {mapped}."
+                )
+                return mapped
+
         # Calculate how many positions the facets have rotated and goodness-of-fit metrics
         shift, corr, _rmse = find_shift(self.cur_facet_means, self.facet_means)
 
         # Apply the shift to find the new position
-        num_facets = self.cfg.laser_timing["facets"]
         current_index = (facet_id + shift) % num_facets
 
         logger.info(
@@ -222,6 +232,8 @@ class Laserhead(ESP32Host, BaseLaserhead):
 
                 await self.notify_listeners()
                 return
+        if self.cur_facet_means is None:
+            self.cur_facet_means = await self.measure_facet_means()
         shift = find_shift(self.cur_facet_means, self.facet_means)[0]
 
         # 2. Pass shift and stored calibration reference down to the parent

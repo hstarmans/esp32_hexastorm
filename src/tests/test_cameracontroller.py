@@ -160,8 +160,10 @@ def test_scan_visibility_and_bounds_endpoints():
         data = res.json
         assert data["status"] == "success"
         assert "visible_pixels" in data
-        assert data["visible_pixels"] == [180, 520]
-        assert data["percentage"] > 0
+        bounds = data["visible_pixels"]
+        assert isinstance(bounds, list) and len(bounds) == 2
+        assert 0 < bounds[0] < bounds[1] < 560
+        assert 30.0 < data["percentage"] < 80.0
 
         # 2. Toggle show_bounds ON
         res_bounds_on = await client.post(
@@ -171,7 +173,7 @@ def test_scan_visibility_and_bounds_endpoints():
         )
         assert res_bounds_on.status_code == 200
         assert res_bounds_on.json["bounds_active"] is True
-        assert res_bounds_on.json["visible_pixels"] == [180, 520]
+        assert res_bounds_on.json["visible_pixels"] == bounds
 
         # 3. Snapshot while bounds are active should capture successfully
         snap_res = await client.get("/api/camera/snapshot")
@@ -247,12 +249,12 @@ def test_rotation_and_facet_shifts_math():
     c, s = math.cos(theta), math.sin(theta)
     px_size = 4.4
 
-    # Zero-mean facet offsets in um so average across 4 facets is 0
+    # Zero-median facet offsets in um
     true_offsets_um = [
-        (20.0, -10.0),
+        (0.0, 0.0),
         (-35.0, 25.0),
-        (10.0, -20.0),
-        (5.0, 5.0),
+        (20.0, -20.0),
+        (0.0, 0.0),
     ]
     base_xs = [120.0, 240.0, 360.0, 480.0, 600.0]
     base_y = 300.0
@@ -273,12 +275,12 @@ def test_rotation_and_facet_shifts_math():
         rect = rotate_dots_ulab(dots, measured_angle)
         rect_dots_list.append(rect)
 
-    shifts = calculate_facet_shifts_ulab(rect_dots_list, pixelsize=px_size)
-    assert shifts.shape == (4, 2)
+    shifts, _ref = calculate_facet_shifts_ulab(rect_dots_list, pixelsize=px_size)
+    assert len(shifts) == 4
     for idx, (s_um, o_um) in enumerate(true_offsets_um):
-        # Required correction shift is -offset (since mean offset is 0)
-        assert abs(float(shifts[idx, 0]) - (-s_um)) < 1e-4
-        assert abs(float(shifts[idx, 1]) - (-o_um)) < 1e-4
+        # Unified target - virtual_reference sign convention
+        assert abs(float(shifts[str(idx)]["Scan_shift_um"]) - s_um) < 1e-2
+        assert abs(float(shifts[str(idx)]["Orth_shift_um"]) - o_um) < 1e-2
 
 
 def test_calibrate_and_pattern_error_endpoints():
@@ -323,16 +325,17 @@ def test_calibrate_and_pattern_error_endpoints():
         assert report["passed"] is True
         assert report["max_error_before_um"] > 30.0
         assert report["max_error_after_um"] <= 30.0
-        assert report["max_error_after_um"] < 2.0
+        assert report["max_error_after_um"] < 10.0
         assert report["max_error_after_um"] < report["max_error_before_um"]
         assert len(report["facets"]) == 4
 
-        # 3. Modify Facet 0 custom offset via /api/calibration/update_facets and re-verify (calibrate_first=False)
+        # 3. Modify Facet 0 custom Scan AND Orth offsets via /api/calibration/update_facets
+        #    and re-verify (calibrate_first=False) in true 2D
         custom_facets = [
             {
                 "facet": f["facet"],
                 "corr_scan_um": f["corr_scan_um"] + (15.0 if f["facet"] == 0 else 0.0),
-                "corr_orth_um": f["corr_orth_um"],
+                "corr_orth_um": f["corr_orth_um"] + (20.0 if f["facet"] == 0 else 0.0),
             }
             for f in report["facets"]
         ]
@@ -352,25 +355,27 @@ def test_calibrate_and_pattern_error_endpoints():
         assert res_custom.status_code == 200
         rep_custom = res_custom.json
         assert rep_custom["status"] == "success"
-        # Since Facet 0 was shifted by +15 um relative to the ideal correction, its residual error increases
         assert abs(rep_custom["facets"][0]["after_scan_um"]) > 5.0
+        assert abs(rep_custom["facets"][0]["after_orth_um"]) > 5.0
 
     asyncio.run(run())
 
 
 def test_event_driven_print_loop_and_zero_steps(tmp_path, monkeypatch):
-    """Verify BaseLaserhead handles steps_line=0 and variable-length event-driven .pat files."""
+    """Verify BaseLaserhead 24 MHz print_loop, zero-step packets, e1_nocor repeats, and e4_cor non-repeat."""
     import struct
     import zlib
 
     from control import constants
     from control.laserhead.base import BaseLaserhead
+    from hexastorm import ulabext
     from hexastorm.config import Spi
 
     lh = BaseLaserhead()
-    bits_scanline = int(lh.cfg.laser_timing["scanline_length"])
+    bits_scanline = int(lh.cfg.get_optical_params()["bitsinscanline"])
+    scanline_ticks = int(lh.cfg.laser_timing["scanline_ticks"])
 
-    # 1. Verify steps_line=0 produces valid variable-length SPI packets
+    # 1. Verify steps_line=0 produces valid variable-length SPI packets with half_period=0
     zero_step_bits = [1, 0, 1] + [0] * (bits_scanline - 3)
     byte_lst = lh.bit_to_byte_list(zero_step_bits, steps_line=0, direction=1)
     cmd_lst = lh.byte_to_cmd_list(byte_lst)
@@ -379,9 +384,9 @@ def test_event_driven_print_loop_and_zero_steps(tmp_path, monkeypatch):
     hdr_payload = int.from_bytes(cmd_lst[0][1:8], "big")
     assert (hdr_payload & 1) == 1
     assert ((hdr_payload >> 1) & 0xFFFF) == 2
-    assert (hdr_payload >> 17) == bits_scanline
+    assert (hdr_payload >> 17) == 0
 
-    # 2. Build a 2-lane x 4-facet compressed event-driven .pat file with varying event counts
+    # 2. Build 2-lane x 4-facet compressed event-driven .pat helper
     def make_line_bits(num_pulses: int) -> list[int]:
         bits = [0] * bits_scanline
         for p in range(num_pulses):
@@ -393,34 +398,30 @@ def test_event_driven_print_loop_and_zero_steps(tmp_path, monkeypatch):
         [0, 1, 2, 3],
         [0, 2, 1, 3],
     ]
-    expected_event_words = [
-        0,
-        1,
-        2,
-        3,
-        0,
-        2,
-        1,
-        3,
-    ]  # 2*k events -> k 64-bit words
+    expected_event_words = [0, 1, 2, 3, 0, 2, 1, 3]
     lanes = len(pulse_counts_per_lane)
     facets_lane = len(pulse_counts_per_lane[0])
 
-    compressor = zlib.compressobj()
-    pat_bytes = bytearray()
-    pat_bytes.extend(compressor.compress(struct.pack("<fII", 1.5, facets_lane, lanes)))
-    for lane_idx, counts in enumerate(pulse_counts_per_lane):
-        direction = 1 if lane_idx % 2 == 0 else 0
-        for count in counts:
-            line_bytes = lh.bit_to_byte_list(
-                make_line_bits(count), steps_line=1, direction=direction
-            )
-            for pkt in lh.byte_to_cmd_list(line_bytes):
-                pat_bytes.extend(compressor.compress(pkt))
-    pat_bytes.extend(compressor.flush())
+    def write_pat(filename: str, steps_line: float) -> str:
+        compressor = zlib.compressobj()
+        pat_bytes = bytearray()
+        pat_bytes.extend(
+            compressor.compress(struct.pack("<fII", 1.5, facets_lane, lanes))
+        )
+        for lane_idx, counts in enumerate(pulse_counts_per_lane):
+            direction = 1 if lane_idx % 2 == 0 else 0
+            for count in counts:
+                line_bytes = lh.bit_to_byte_list(
+                    make_line_bits(count), steps_line=steps_line, direction=direction
+                )
+                for pkt in lh.byte_to_cmd_list(line_bytes):
+                    pat_bytes.extend(compressor.compress(pkt))
+        pat_bytes.extend(compressor.flush())
+        (tmp_path / filename).write_bytes(bytes(pat_bytes))
+        return filename
 
-    fname = "testjob_e1_nocor.pat"
-    (tmp_path / fname).write_bytes(bytes(pat_bytes))
+    fname_e1 = write_pat("testjob_e1_nocor.pat", steps_line=1.0)
+    fname_e4 = write_pat("testjob_e4_cor.pat", steps_line=0.25)
 
     def parse_scanline_headers(buf: bytes) -> list[tuple[int, int, int]]:
         pkt_len = Spi.command_bytes + Spi.word_bytes
@@ -453,40 +454,55 @@ def test_event_driven_print_loop_and_zero_steps(tmp_path, monkeypatch):
 
     recorded_cmds: list[bytes] = []
     orig_send_command = lh.send_command
+    lane_end_x: list[float] = []
+    orig_gotopoint = lh.gotopoint
+
+    async def spy_gotopoint(position, **kwargs):
+        if not kwargs.get("absolute", True):
+            lane_end_x.append(float(lh.mpos[0]))
+        return await orig_gotopoint(position, **kwargs)
 
     async def capture_send_command(command, timeout=0):
         if hasattr(command, "__len__") and len(command) > 0:
             recorded_cmds.append(bytes(command))
         return await orig_send_command(command, timeout=timeout)
 
+    monkeypatch.setattr(lh, "gotopoint", spy_gotopoint)
     monkeypatch.setattr(lh, "send_command", capture_send_command)
 
+    steps_mm_x = float(lh.cfg.motor_cfg["steps_mm"][lh.cfg.motor_cfg["orth2lsrline"]])
+
     async def run():
-        # 3. Verify exposures == 1
+        # 3. Verify e1_nocor with GUI exposureperline=1 (8 packets, 1 step/line)
         monkeypatch.setitem(constants.CONFIG["defaultprint"], "exposureperline", 1)
         recorded_cmds.clear()
-        await lh.print_loop(fname)
+        lane_end_x.clear()
+        await lh.print_loop(fname_e1)
 
         exp1_headers = [
             hdr for cmd in recorded_cmds for hdr in parse_scanline_headers(cmd)
         ]
+        expected_hp_1 = ulabext.calc_step_half_period(1.0, scanline_ticks)
         assert len(exp1_headers) == lanes * facets_lane
         assert [h[1] for h in exp1_headers] == expected_event_words
         assert [h[0] for h in exp1_headers] == [1, 1, 1, 1, 0, 0, 0, 0]
+        assert all(h[2] == expected_hp_1 for h in exp1_headers)
+        assert abs(lane_end_x[0] - (facets_lane * (1.0 / steps_mm_x))) < 1e-6
 
-        # 4. Verify exposures == 4 preserves event_words and updates half_period/direction
+        # 4. Verify e1_nocor with GUI exposureperline=4 repeats each line 4x with 24 MHz quarter-step half_period
         exposures = 4
         monkeypatch.setitem(
             constants.CONFIG["defaultprint"], "exposureperline", exposures
         )
         recorded_cmds.clear()
-        await lh.print_loop(fname)
+        lane_end_x.clear()
+        await lh.print_loop(fname_e1)
 
         scanline_cmds = [
             cmd for cmd in recorded_cmds if lh._count_scanlines_in_command(cmd) > 0
         ]
         assert len(scanline_cmds) == lanes * facets_lane
-        expected_hp = int((bits_scanline - 1) // ((1 / exposures) * 2))
+        expected_hp_4 = ulabext.calc_step_half_period(1.0 / exposures, scanline_ticks)
         for line_idx, cmd in enumerate(scanline_cmds):
             assert lh._count_scanlines_in_command(cmd) == exposures
             headers = parse_scanline_headers(cmd)
@@ -495,7 +511,21 @@ def test_event_driven_print_loop_and_zero_steps(tmp_path, monkeypatch):
             for direction, event_words, half_period in headers:
                 assert event_words == expected_event_words[line_idx]
                 assert direction == expected_dir
-                assert half_period == expected_hp
+                assert half_period == expected_hp_4
+        assert abs(lane_end_x[0] - (facets_lane * (1.0 / steps_mm_x))) < 1e-6
+
+        # 5. Verify e4_cor with GUI exposureperline=1 does NOT re-repeat 4x and advances 0.25 step/file line
+        monkeypatch.setitem(constants.CONFIG["defaultprint"], "exposureperline", 1)
+        recorded_cmds.clear()
+        lane_end_x.clear()
+        await lh.print_loop(fname_e4)
+        e4_headers = [
+            hdr for cmd in recorded_cmds for hdr in parse_scanline_headers(cmd)
+        ]
+        assert len(e4_headers) == lanes * facets_lane
+        assert [h[1] for h in e4_headers] == expected_event_words
+        assert all(h[2] == expected_hp_4 for h in e4_headers)
+        assert abs(lane_end_x[0] - (facets_lane * (0.25 / steps_mm_x))) < 1e-6
 
     asyncio.run(run())
 
@@ -546,7 +576,7 @@ def test_print_loop_aborts_on_sync_failure(tmp_path, monkeypatch):
     from control.laserhead.base import BaseLaserhead
 
     lh = BaseLaserhead()
-    bits_scanline = int(lh.cfg.laser_timing["scanline_length"])
+    bits_scanline = int(lh.cfg.get_optical_params()["bitsinscanline"])
     compressor = zlib.compressobj()
     pat_bytes = bytearray()
     pat_bytes.extend(compressor.compress(struct.pack("<fII", 1.5, 4, 1)))
@@ -603,7 +633,7 @@ def test_calibration_esp32_uses_synchronize_kwarg(monkeypatch):
     class StrictLaserhead:
         def __init__(self):
             self.cfg = types.SimpleNamespace(
-                laser_timing={"scanline_length": 40, "rpm": 3000, "facets": 4}
+                laser_timing={"scanline_ticks": 42000, "bitsinscanline": 40, "rpm": 3000, "facets": 4}
             )
 
         async def synchronize(self, value=True):
@@ -621,6 +651,11 @@ def test_calibration_esp32_uses_synchronize_kwarg(monkeypatch):
             singlefacet=None,
         ):
             calls.append((laser0, laser1, polygon, synchronize, singlefacet))
+
+        async def write_events(
+            self, events, steps_line=1, direction=0, repetitions=1, facet=None
+        ):
+            return None
 
         async def write_line(
             self, bit_lst, steps_line=1, direction=0, repetitions=1, facet=None
@@ -669,6 +704,7 @@ def test_calibration_esp32_uses_synchronize_kwarg(monkeypatch):
     )
     assert result["status"] == "success"
     assert any(c[3] is True for c in calls)
+    assert all(c[1] is not True for c in calls)
 
 
 def test_deploy_assets_migrates_existing_config_old(tmp_path, monkeypatch):

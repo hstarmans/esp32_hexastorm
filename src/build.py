@@ -398,7 +398,7 @@ def main():
     # Build command
     make_cmd = [
         "make",
-        "-j $(nproc)",
+        f"-j{os.cpu_count() or 4}",
         "BOARD=ESP32_GENERIC_S3",
         "BOARD_VARIANT=SPIRAM_OCT",
         f"FROZEN_MANIFEST={MANIFEST_PATH}",
