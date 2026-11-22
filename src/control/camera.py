@@ -146,15 +146,21 @@ class CameraController:
             self, frame_size=frame_size, pixel_format=pixel_format
         )
 
-    def discard_frame(self):
-        """Flush a potentially stale DMA frame buffer before capturing a synchronized exposure."""
+    def _ensure_cam(self):
         if self.cam is None:
             self.init_camera()
+        if self.cam is None:
+            raise RuntimeError("Camera initialization failed, self.cam is None")
+        return self.cam
+
+    def discard_frame(self):
+        """Flush a potentially stale DMA frame buffer before capturing a synchronized exposure."""
+        cam = self._ensure_cam()
         try:
-            _ = self.cam.capture()
+            _ = cam.capture()
         finally:
-            if hasattr(self.cam, "free_buffer"):
-                self.cam.free_buffer()
+            if hasattr(cam, "free_buffer"):
+                cam.free_buffer()
 
     def capture_grayscale_array(self, frame_size=None):
         """Capture a raw grayscale frame into a 2D ulab.numpy array (h, w).
@@ -166,14 +172,13 @@ class CameraController:
         except ImportError:
             import numpy as np
 
-        if self.cam is None:
-            self.init_camera()
+        cam = self._ensure_cam()
 
         if frame_size is not None and self.current_frame_size != frame_size:
             self.reconfigure(frame_size=frame_size, pixel_format=PixelFormat.GRAYSCALE)
 
         w, h = FRAME_SIZE_DIMS.get(self.current_frame_size, (800, 600))
-        raw = self.cam.capture()
+        raw = cam.capture()
         if not raw:
             raise RuntimeError("No frame data returned from camera sensor")
 
@@ -182,12 +187,12 @@ class CameraController:
             arr = np.frombuffer(raw, dtype=np.uint8).reshape((h, w))
             arr_copy = np.array(arr)
         finally:
-            if hasattr(self.cam, "free_buffer"):
-                self.cam.free_buffer()
+            if hasattr(cam, "free_buffer"):
+                cam.free_buffer()
 
         return arr_copy
 
-    def set_exposure_ms(self, ms: int):
+    def set_exposure_ms(self, ms: "int | float"):
         """Configure manual camera exposure in milliseconds and disable all automatics.
 
         The OV2640 hardware sensor regulates shutter time in sensor line integration
@@ -288,15 +293,14 @@ class CameraController:
     def capture(self):
         """Capture a JPEG frame from the camera."""
         try:
-            if self.cam is None:
-                self.init_camera()
+            cam = self._ensure_cam()
 
-            img = self.cam.capture()
+            img = cam.capture()
             if not img:
                 raise RuntimeError("No frame data returned from camera sensor")
 
             data = bytes(img)
-            self.cam.free_buffer()
+            cam.free_buffer()
             self.last_error = None
             return data
         except Exception as e:  # noqa: BLE001, catch all capture errors to prevent server crash

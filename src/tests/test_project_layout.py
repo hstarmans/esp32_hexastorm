@@ -542,6 +542,7 @@ def test_linter_and_ide_paths_include_hexastorm():
     expected_paths = ["src", "vendor", "deps/hexastorm/src"]
     assert pyproject["tool"]["ruff"]["src"] == expected_paths
     assert pyproject["tool"]["pyright"]["extraPaths"] == expected_paths
+    assert pyproject["tool"]["pyrefly"]["search-path"] == expected_paths
     assert pyproject["tool"]["pytest"]["ini_options"]["pythonpath"] == expected_paths
 
     vscode_settings = json.loads((root / ".vscode" / "settings.json").read_text())

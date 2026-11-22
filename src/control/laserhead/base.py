@@ -7,13 +7,21 @@ from time import time
 import deflate
 
 try:
+    from typing import TYPE_CHECKING
+except ImportError:
+    TYPE_CHECKING = False
+
+if TYPE_CHECKING:
+    from typing import Any
+
+try:
     import numpy as np
 
     NP_FLOAT = float
 except ImportError:
     from ulab import numpy as np
 
-    NP_FLOAT = np.float
+    NP_FLOAT = getattr(np, "float", float)
 
 from hexastorm import ulabext
 from hexastorm.config import PlatformConfig, Spi
@@ -115,7 +123,7 @@ class BaseLaserhead:
         NVS_STORE.save_state(self.mpos, self._work_offset)
 
     def reset_state(self):
-        job = {
+        job: "dict[str, Any]" = {
             "currentline": 0,
             "totallines": 0,
             "printingtime": 0,
@@ -126,14 +134,14 @@ class BaseLaserhead:
             "workspace_origin": [0.0, 0.0, 0.0],
         }
         job.update(CONFIG["defaultprint"])
-        components = {
+        components: "dict[str, Any]" = {
             "laser": False,
             "diodetest": None,
             "rotating": False,
             "spindle": 0,  # spindle pwm [0-255]
             "fan": 0,  # fan pwm [0-255]
         }
-        state = {
+        state: "dict[str, Any]" = {
             "printing": False,
             "paused": False,
             "estop": False,
@@ -143,7 +151,7 @@ class BaseLaserhead:
             "mpos": self.mpos,
             "wpos": self.wpos,
         }
-        self._state = state
+        self._state: "dict[str, Any]" = state
 
     async def set_error(self, msg: str | None):
         self.state["error_message"] = msg
@@ -247,8 +255,8 @@ class BaseLaserhead:
         position,
         speed=None,
         absolute=True,
-        workspace=False,
         check_sensors=False,
+        workspace=False,
         validate_limits=True,
     ):
         """Simulates target movement and updates mock coordinates over time."""
@@ -264,7 +272,7 @@ class BaseLaserhead:
         self._update_coordinates(position, absolute, workspace)
         await self.notify_listeners()
 
-    async def home_axes(self, axes):
+    async def home_axes(self, axes, speed=None, displacement=200, pull_off=10):
         """Mock homing: simulates travel and rests at offset_mm."""
         axis_names = ["x", "y", "z"]
         homing_dirs = [
@@ -336,12 +344,12 @@ class BaseLaserhead:
         self.state["components"]["rotating"] = prism = not prism
         logger.info(f"Change rotation state prism to {prism}.")
 
-    async def set_spindle(self, value: int):
+    async def set_spindle(self, value: "int | float"):
         value = max(0, min(255, int(value)))
         self.state["components"]["spindle"] = value
         logger.info(f"Spindle PWM set to {value}")
 
-    async def set_fan(self, value: int):
+    async def set_fan(self, value: "int | float"):
         value = max(0, min(255, int(value)))
         self.state["components"]["fan"] = value
         logger.info(f"Fan PWM set to {value}")
@@ -356,7 +364,9 @@ class BaseLaserhead:
                 for key in non_tmc_keys:
                     if key in settings:
                         # Ensures the FPGA interpolator uses the UI's steps_mm and limits
-                        self.cfg.motor_cfg[key][ax_name] = settings[key]
+                        target_cfg = self.cfg.motor_cfg.get(key)
+                        if isinstance(target_cfg, dict):
+                            target_cfg[ax_name] = settings[key]
 
         logger.info("Motor settings pushed to TMC and hexastorm layer.")
 
@@ -484,13 +494,19 @@ class BaseLaserhead:
                 await asyncio.sleep(2)
                 logger.debug("Printing paused")
             logger.debug("Printing resumed")
-        return bool(self._stop.is_set())
+        return self._stop.is_set()
 
     # -------------------------------------------------------------------------
     # HARDWARE & FPGA STUBS (Mock for CPython; overridden by ESP32Host on HW)
     # -------------------------------------------------------------------------
 
-    async def synchronize(self, value=True):
+    async def set_leds(self, blue=None, green=None, red=None):
+        logger.debug(f"Mock set_leds: blue={blue}, green={green}, red={red}")
+
+    async def execute_gcode(self, fname):
+        logger.debug(f"Mock execute_gcode: {fname}")
+
+    async def synchronize(self, value=True) -> bool:
         logger.debug(f"Mock synchronize: {value}")
         return True
 
@@ -631,13 +647,16 @@ class BaseLaserhead:
         logger.info("Flushing buffer")
 
     def events_to_byte_list(self, events, steps_line=1, direction=0):
-        return BaseHost.events_to_byte_list(self, events, steps_line, direction)
+        host_self: "Any" = self
+        return BaseHost.events_to_byte_list(host_self, events, steps_line, direction)
 
     def bit_to_byte_list(self, laser_bits, steps_line=1, direction=0):
-        return BaseHost.bit_to_byte_list(self, laser_bits, steps_line, direction)
+        host_self: "Any" = self
+        return BaseHost.bit_to_byte_list(host_self, laser_bits, steps_line, direction)
 
     def byte_to_cmd_list(self, byte_list):
-        return BaseHost.byte_to_cmd_list(self, byte_list)
+        host_self: "Any" = self
+        return BaseHost.byte_to_cmd_list(host_self, byte_list)
 
     async def print_loop_prep(self, fname):
         self._stop.clear()

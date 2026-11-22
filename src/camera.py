@@ -144,7 +144,7 @@ class Camera:
             self._scanhead_cache[key] = sh
         else:
             sh.facet_offsets_um = {
-                int(k): (float(v[0]), float(v[1]))
+                k: (float(v[0]), float(v[1]))
                 for k, v in Camera.mock_facet_offsets_um.items()
             }
             sh.rotation_deg = float(Camera.mock_rotation_deg)
@@ -233,7 +233,7 @@ class Camera:
         events = self._active_events(curve)
         if events:
             valid = sorted(
-                (int(t), int(v)) for t, v in events if 0 <= int(t) < ulabext.SENTINEL_TICK
+                (t, v) for t, v in events if 0 <= t < ulabext.SENTINEL_TICK
             )
             u_dots = []
             for idx, (t_on, inten) in enumerate(valid):

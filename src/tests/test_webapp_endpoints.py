@@ -3,6 +3,7 @@ import copy
 import json
 import re
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -69,6 +70,16 @@ def isolate_webapp_state(monkeypatch):
         webapp.devicestate.update()
 
 
+def _json(res) -> dict[str, Any]:
+    assert isinstance(res.json, dict)
+    return res.json
+
+
+def _text(res) -> str:
+    assert res.text is not None
+    return res.text
+
+
 async def login(client: TestClient, password: str = "hex"):
     """Authenticate a Microdot TestClient session via POST /."""
     return await client.post(
@@ -86,8 +97,9 @@ def test_auth_login_logout_and_template_render():
 
         res_login_page = await client.get("/")
         assert res_login_page.status_code == 200
-        assert "Enter System" in res_login_page.text
-        assert 'name="password"' in res_login_page.text
+        login_html = _text(res_login_page)
+        assert "Enter System" in login_html
+        assert 'name="password"' in login_html
 
         unauth_api_calls = [
             ("GET", "/api/settings", None),
@@ -115,11 +127,12 @@ def test_auth_login_logout_and_template_render():
 
         res_home = await client.get("/")
         assert res_home.status_code == 200
-        assert 'id="cameraPanel"' in res_home.text
-        assert 'x-data="movement"' in res_home.text
-        assert 'x-data="commands"' in res_home.text
-        assert 'x-data="printLauncher"' in res_home.text
-        assert "static/home.js" in res_home.text
+        home_html = _text(res_home)
+        assert 'id="cameraPanel"' in home_html
+        assert 'x-data="movement"' in home_html
+        assert 'x-data="commands"' in home_html
+        assert 'x-data="printLauncher"' in home_html
+        assert "static/home.js" in home_html
 
         res_logout = await client.get("/logout")
         assert res_logout.status_code == 302
@@ -144,7 +157,7 @@ def test_motion_workspace_and_estop_endpoints():
             headers={"Content-Type": "application/json"},
         )
         assert res_move.status_code == 200
-        assert res_move.json["mpos"] == pytest.approx([10.0, 5.0, 1.0])
+        assert _json(res_move)["mpos"] == pytest.approx([10.0, 5.0, 1.0])
 
         res_zero = await client.post(
             "/setworkspacezero",
@@ -152,7 +165,7 @@ def test_motion_workspace_and_estop_endpoints():
             headers={"Content-Type": "application/json"},
         )
         assert res_zero.status_code == 200
-        assert res_zero.json["wpos"][:2] == pytest.approx([0.0, 0.0])
+        assert _json(res_zero)["wpos"][:2] == pytest.approx([0.0, 0.0])
 
         res_home = await client.post(
             "/home",
@@ -160,7 +173,7 @@ def test_motion_workspace_and_estop_endpoints():
             headers={"Content-Type": "application/json"},
         )
         assert res_home.status_code == 200
-        assert res_home.json["mpos"][0] == pytest.approx(0.0)
+        assert _json(res_home)["mpos"][0] == pytest.approx(0.0)
 
         res_oob = await client.post(
             "/gotopoint",
@@ -170,16 +183,16 @@ def test_motion_workspace_and_estop_endpoints():
             headers={"Content-Type": "application/json"},
         )
         assert res_oob.status_code == 400
-        assert "error" in res_oob.json
+        assert "error" in _json(res_oob)
         assert laserhead.state["error_message"] is not None
 
         res_clear = await client.post("/clearerror")
         assert res_clear.status_code == 200
-        assert res_clear.json["error_message"] is None
+        assert _json(res_clear)["error_message"] is None
 
         res_abort = await client.post("/control/abort")
         assert res_abort.status_code == 200
-        assert res_abort.json["estop"] is True
+        assert _json(res_abort)["estop"] is True
 
         res_locked = await client.post(
             "/gotopoint",
@@ -189,12 +202,13 @@ def test_motion_workspace_and_estop_endpoints():
             headers={"Content-Type": "application/json"},
         )
         assert res_locked.status_code == 400
-        assert "E-STOP" in res_locked.json["error"]
+        assert "E-STOP" in _json(res_locked)["error"]
 
         res_reset = await client.post("/control/reset")
         assert res_reset.status_code == 200
-        assert res_reset.json["estop"] is False
-        assert res_reset.json["error_message"] is None
+        reset_data = _json(res_reset)
+        assert reset_data["estop"] is False
+        assert reset_data["error_message"] is None
 
     asyncio.run(run())
 
@@ -214,11 +228,11 @@ def test_peripheral_controls_and_printing_guards(monkeypatch):
 
         res_laser = await client.post("/control/laser")
         assert res_laser.status_code == 200
-        assert res_laser.json["components"]["laser"] is True
+        assert _json(res_laser)["components"]["laser"] is True
 
         res_prism = await client.post("/control/prism")
         assert res_prism.status_code == 200
-        assert res_prism.json["components"]["rotating"] is True
+        assert _json(res_prism)["components"]["rotating"] is True
 
         res_spindle = await client.post(
             "/control/spindle",
@@ -226,7 +240,7 @@ def test_peripheral_controls_and_printing_guards(monkeypatch):
             headers={"Content-Type": "application/json"},
         )
         assert res_spindle.status_code == 200
-        assert res_spindle.json["components"]["spindle"] == 128
+        assert _json(res_spindle)["components"]["spindle"] == 128
 
         res_fan = await client.post(
             "/control/fan",
@@ -234,7 +248,7 @@ def test_peripheral_controls_and_printing_guards(monkeypatch):
             headers={"Content-Type": "application/json"},
         )
         assert res_fan.status_code == 200
-        assert res_fan.json["components"]["fan"] == 200
+        assert _json(res_fan)["components"]["fan"] == 200
 
         res_save_empty = await client.post("/control/save_facet_means")
         assert res_save_empty.status_code == 400
@@ -250,7 +264,7 @@ def test_peripheral_controls_and_printing_guards(monkeypatch):
         res_save_ok = await client.post("/control/save_facet_means")
         assert res_save_ok.status_code == 200
         assert constants.CONFIG["laserhead"]["facetmeans"] == [5.01, 5.02, 4.99, 5.00]
-        assert res_save_ok.json["components"]["diodetest"]["facets"]["0"]["delta_mean_ms"] == 0.0
+        assert _json(res_save_ok)["components"]["diodetest"]["facets"]["0"]["delta_mean_ms"] == 0.0
 
         res_diode = await client.post("/control/diodetest")
         assert res_diode.status_code == 200
@@ -379,7 +393,8 @@ def test_print_control_and_settings_and_ota_check(monkeypatch):
 
         res_get = await client.get("/api/settings")
         assert res_get.status_code == 200
-        assert set(res_get.json.keys()) == {
+        settings_data = _json(res_get)
+        assert set(settings_data.keys()) == {
             "wifi_login",
             "motors",
             "tools",
@@ -387,7 +402,7 @@ def test_print_control_and_settings_and_ota_check(monkeypatch):
             "calibration",
         }
 
-        updated_defaultprint = dict(res_get.json["defaultprint"])
+        updated_defaultprint = dict(settings_data["defaultprint"])
         updated_defaultprint["lanewidth_correction"] = 0.25
         res_save = await client.post(
             "/api/settings",
@@ -395,7 +410,7 @@ def test_print_control_and_settings_and_ota_check(monkeypatch):
             headers={"Content-Type": "application/json"},
         )
         assert res_save.status_code == 200
-        assert res_save.json["status"] == "success"
+        assert _json(res_save)["status"] == "success"
         assert constants.CONFIG["defaultprint"]["lanewidth_correction"] == 0.25
         assert len(motor_apply_calls) == 1
 
@@ -426,7 +441,7 @@ def test_print_control_and_settings_and_ota_check(monkeypatch):
             headers={"Content-Type": "application/json"},
         )
         assert res_pause.status_code == 200
-        assert res_pause.json["paused"] is True
+        assert _json(res_pause)["paused"] is True
 
         res_stop = await client.post(
             "/print/control",
@@ -443,8 +458,9 @@ def test_print_control_and_settings_and_ota_check(monkeypatch):
         )
         res_upd_new = await client.get("/api/system/update/check")
         assert res_upd_new.status_code == 200
-        assert res_upd_new.json["update_available"] is True
-        assert res_upd_new.json["latest_version"] == "v9.9.9"
+        upd_new_data = _json(res_upd_new)
+        assert upd_new_data["update_available"] is True
+        assert upd_new_data["latest_version"] == "v9.9.9"
 
         monkeypatch.setattr(
             webapp.bootlib,
@@ -453,7 +469,7 @@ def test_print_control_and_settings_and_ota_check(monkeypatch):
         )
         res_upd_none = await client.get("/api/system/update/check")
         assert res_upd_none.status_code == 200
-        assert res_upd_none.json["update_available"] is False
+        assert _json(res_upd_none)["update_available"] is False
 
     asyncio.run(run())
 
@@ -466,7 +482,7 @@ def test_static_files_and_path_traversal():
 
         res_js = await client.get("/static/home.js")
         assert res_js.status_code == 200
-        assert "Alpine.store" in res_js.text
+        assert "Alpine.store" in _text(res_js)
 
         res_trav = await client.get("/static/../config.json")
         assert res_trav.status_code == 404

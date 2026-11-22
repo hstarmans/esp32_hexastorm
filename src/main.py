@@ -1,6 +1,14 @@
 import asyncio
 import logging
 
+try:
+    from typing import TYPE_CHECKING
+except ImportError:
+    TYPE_CHECKING = False
+
+if TYPE_CHECKING:
+    from typing import Any
+
 from control import bootlib, constants
 from control.laserhead import laserhead as lh
 from control.webapp import app
@@ -37,7 +45,7 @@ async def network_manager():
 
 
 async def main():
-    tasks = []
+    tasks: "list[Any]" = []
 
     # Start the Background Network Manager (LEDs, WiFi connection, Time)
     network_task = asyncio.create_task(network_manager())
@@ -52,7 +60,7 @@ async def main():
     if constants.CONFIG["webserver"]["start"]:
         logger.info("Main: Starting Webserver NOW...")
         # We gather the webserver (foreground) and network (background)
-        tasks.append(app.start_server(port=5000, debug=False))
+        tasks.append(asyncio.create_task(app.start_server(port=5000, debug=False)))
 
     async def _mark_boot_stable():
         await asyncio.sleep(5)

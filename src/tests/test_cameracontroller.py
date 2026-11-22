@@ -1,9 +1,22 @@
 import asyncio
+import importlib.abc
+import importlib.util
 import json
+from typing import Any
 
 from control.camera import camera
 from control.webapp import app
 from microdot.test_client import TestClient
+
+
+def _json(res) -> dict[str, Any]:
+    assert isinstance(res.json, dict)
+    return res.json
+
+
+def _body(res) -> bytes:
+    assert res.body is not None
+    return res.body
 
 
 def test_camera_pins_loaded_from_platform_config():
@@ -56,8 +69,9 @@ def test_camera_snapshot_endpoint():
         res = await client.get("/api/camera/snapshot")
         assert res.status_code == 200
         assert res.headers.get("Content-Type") == "image/jpeg"
-        assert res.body.startswith(b"\xff\xd8")
-        assert res.body.endswith(b"\xff\xd9")
+        body = _body(res)
+        assert body.startswith(b"\xff\xd8")
+        assert body.endswith(b"\xff\xd9")
 
     asyncio.run(run())
 
@@ -82,7 +96,7 @@ def test_calibration_endpoints():
             body=json.dumps({"position": [105.5, 5.2, 12.3]}),
         )
         assert res.status_code == 200
-        data = res.json
+        data = _json(res)
         assert data["calibration"]["camera_position"] == [105.5, 5.2, 12.3]
 
         # 2. Move to camera position
@@ -96,7 +110,7 @@ def test_calibration_endpoints():
             body=json.dumps({"exposure_ms": 50}),
         )
         assert res.status_code == 200
-        data = res.json
+        data = _json(res)
         assert data["calibration"]["camera_exposure_ms"] == 50
         assert camera.exposure_ms == 50
 
@@ -157,7 +171,7 @@ def test_scan_visibility_and_bounds_endpoints():
             body=json.dumps({"facet": 0, "step": 20}),
         )
         assert res.status_code == 200
-        data = res.json
+        data = _json(res)
         assert data["status"] == "success"
         assert "visible_pixels" in data
         bounds = data["visible_pixels"]
@@ -172,8 +186,9 @@ def test_scan_visibility_and_bounds_endpoints():
             body=json.dumps({"enabled": True, "facet": 0}),
         )
         assert res_bounds_on.status_code == 200
-        assert res_bounds_on.json["bounds_active"] is True
-        assert res_bounds_on.json["visible_pixels"] == bounds
+        bounds_on_data = _json(res_bounds_on)
+        assert bounds_on_data["bounds_active"] is True
+        assert bounds_on_data["visible_pixels"] == bounds
 
         # 3. Snapshot while bounds are active should capture successfully
         snap_res = await client.get("/api/camera/snapshot")
@@ -187,7 +202,7 @@ def test_scan_visibility_and_bounds_endpoints():
             body=json.dumps({"enabled": False, "facet": 0}),
         )
         assert res_bounds_off.status_code == 200
-        assert res_bounds_off.json["bounds_active"] is False
+        assert _json(res_bounds_off)["bounds_active"] is False
 
     asyncio.run(run())
 
@@ -303,7 +318,7 @@ def test_calibrate_and_pattern_error_endpoints():
             body=json.dumps({"iterations": 2, "num_dots": 6}),
         )
         assert res_cal.status_code == 200
-        cal_data = res_cal.json
+        cal_data = _json(res_cal)
         assert cal_data["status"] == "success"
         assert "facets" in cal_data
         for f_key in ("0", "1", "2", "3"):
@@ -320,7 +335,7 @@ def test_calibrate_and_pattern_error_endpoints():
             body=json.dumps({"num_dots": 6, "calibrate_first": True}),
         )
         assert res_ver.status_code == 200
-        report = res_ver.json
+        report = _json(res_ver)
         assert report["status"] == "success"
         assert report["passed"] is True
         assert report["max_error_before_um"] > 30.0
@@ -345,7 +360,7 @@ def test_calibrate_and_pattern_error_endpoints():
             body=json.dumps({"facets": custom_facets, "apply_correction": True}),
         )
         assert res_upd.status_code == 200
-        assert res_upd.json["apply_correction"] is True
+        assert _json(res_upd)["apply_correction"] is True
 
         res_custom = await client.post(
             "/api/calibration/pattern_error",
@@ -353,7 +368,7 @@ def test_calibrate_and_pattern_error_endpoints():
             body=json.dumps({"num_dots": 6, "calibrate_first": False}),
         )
         assert res_custom.status_code == 200
-        rep_custom = res_custom.json
+        rep_custom = _json(res_custom)
         assert rep_custom["status"] == "success"
         assert abs(rep_custom["facets"][0]["after_scan_um"]) > 5.0
         assert abs(rep_custom["facets"][0]["after_orth_um"]) > 5.0
@@ -563,7 +578,7 @@ def test_print_loop_prep_without_suffix_and_invalid_override(monkeypatch):
 
     invalid = asyncio.run(lh.print_loop_prep("job_e1_cor.pat"))
     assert invalid is False
-    assert lh.state["printing"] is False
+    assert lh.state["printing"] is False  # pyrefly: ignore[unnecessary-comparison]
     assert lh.state["error_message"] is not None
 
 
@@ -709,7 +724,6 @@ def test_calibration_esp32_uses_synchronize_kwarg(monkeypatch):
 
 def test_deploy_assets_migrates_existing_config_old(tmp_path, monkeypatch):
     """Verify deploy_assets() migrates pre-existing config_old.json when config.json is absent."""
-    import importlib.util
     import sys
     import types
 
@@ -721,7 +735,7 @@ def test_deploy_assets_migrates_existing_config_old(tmp_path, monkeypatch):
         json.dumps({"serial": "CUSTOM-999", "wifi_login": {"ssid": "LabWiFi"}})
     )
 
-    class StubFinder:
+    class StubFinder(importlib.abc.MetaPathFinder, importlib.abc.Loader):
         def find_spec(self, fullname, path, target=None):
             if fullname in ("control.build_info", "control.frozen_root"):
                 return importlib.util.spec_from_loader(fullname, self)
@@ -732,7 +746,7 @@ def test_deploy_assets_migrates_existing_config_old(tmp_path, monkeypatch):
 
         def exec_module(self, module):
             if module.__name__ == "control.build_info":
-                module.BUILD_ID = "build_test_123"
+                setattr(module, "BUILD_ID", "build_test_123")
             elif module.__name__ == "control.frozen_root":
                 new_cfg.write_text(
                     json.dumps(

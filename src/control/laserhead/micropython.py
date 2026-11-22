@@ -36,7 +36,7 @@ class Laserhead(ESP32Host, BaseLaserhead):
 
         facet_id  -- facet_id to determine internal facet off
         """
-        num_facets = self.cfg.laser_timing["facets"]
+        num_facets = int(self.cfg.laser_timing["facets"])
         if self.cur_facet_means is None:
             if (await self.fpga_state)["synchronized"]:
                 self.cur_facet_means = await self.measure_facet_means()
@@ -51,7 +51,7 @@ class Laserhead(ESP32Host, BaseLaserhead):
         shift, corr, _rmse = find_shift(self.cur_facet_means, self.facet_means)
 
         # Apply the shift to find the new position
-        current_index = (facet_id + shift) % num_facets
+        current_index = int((facet_id + shift) % num_facets)
 
         logger.info(
             f"Facet remap: facet_id {facet_id} mapped to index {current_index} (shift: {shift}, correlation: {corr:.4f})."
@@ -82,15 +82,38 @@ class Laserhead(ESP32Host, BaseLaserhead):
 
         super().apply_motor_settings()
 
-    async def enable_comp(self, **kwargs):
+    async def enable_comp(
+        self,
+        laser0=None,
+        laser1=None,
+        polygon=None,
+        synchronize=None,
+        singlefacet=None,
+    ):
         """enable components
 
-        laser0   -- True enables laser channel 0
-        laser1   -- True enables laser channel 1
-        polygon  -- False enables polygon motor
+        laser0      -- True enables laser channel 0
+        laser1      -- True enables laser channel 1
+        polygon     -- False enables polygon motor
+        synchronize -- Enables photodiode synchronization
+        singlefacet -- Enables single-facet mode
         """
-        await BaseLaserhead.enable_comp(self, **kwargs)
-        await ESP32Host.enable_comp(self, **kwargs)
+        await BaseLaserhead.enable_comp(
+            self,
+            laser0=laser0,
+            laser1=laser1,
+            polygon=polygon,
+            synchronize=synchronize,
+            singlefacet=singlefacet,
+        )
+        await ESP32Host.enable_comp(
+            self,
+            laser0=laser0,
+            laser1=laser1,
+            polygon=polygon,
+            synchronize=synchronize,
+            singlefacet=singlefacet,
+        )
 
     async def toggle_laser(self):
         await super().toggle_laser()
@@ -156,7 +179,7 @@ class Laserhead(ESP32Host, BaseLaserhead):
             logger.error(f"Error during hardware reset: {e}")
         await super().reset_estop()
 
-    async def home_axes(self, axes):
+    async def home_axes(self, axes, speed=None, displacement=200, pull_off=10):
         if self.state.get("estop", False):
             raise ValueError("Machine is locked in E-STOP state! Reset machine first.")
         logger.info(f"Homing axes {axes}.")
@@ -165,7 +188,13 @@ class Laserhead(ESP32Host, BaseLaserhead):
             tmc.spread_cycle = False
 
         try:
-            await ESP32Host.home_axes(self, axes)
+            await ESP32Host.home_axes(
+                self,
+                axes,
+                speed=speed,
+                displacement=displacement,
+                pull_off=pull_off,
+            )
         finally:
             for tmc in self.steppers.values():
                 tmc.spread_cycle = True
@@ -173,7 +202,7 @@ class Laserhead(ESP32Host, BaseLaserhead):
         self._save_position()
         await self.notify_listeners()
 
-    async def set_workspace_zero(self, axes=None):
+    async def set_workspace_zero(self, axes=None):  # pyrefly: ignore[bad-override]
         # 1. Allow the FPGA/hardware layer to reset its internal offsets
         ESP32Host.set_workspace_zero(self, axes)
 
@@ -181,12 +210,12 @@ class Laserhead(ESP32Host, BaseLaserhead):
         self._update_workspace_zero(axes)
         await self.notify_listeners()
 
-    async def set_spindle(self, value: int):
+    async def set_spindle(self, value: "int | float"):
         await BaseLaserhead.set_spindle(self, value)
         await self.set_spindle_speed(self.state["components"]["spindle"])
         await self.notify_listeners()
 
-    async def set_fan(self, value: int):
+    async def set_fan(self, value: "int | float"):
         await BaseLaserhead.set_fan(self, value)
         await self.set_fan_speed(self.state["components"]["fan"])
         await self.notify_listeners()

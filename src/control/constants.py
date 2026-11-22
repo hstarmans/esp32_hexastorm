@@ -123,7 +123,7 @@ def deploy_assets(overwrite=False):
         logger.error("Could not import build_info. Is the build correct?")
         return
 
-    current_build_id = build_info.BUILD_ID
+    current_build_id = getattr(build_info, "BUILD_ID", None)
 
     # Read currently deployed build ID from disk
     deployed_build_id = None

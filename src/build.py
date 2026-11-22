@@ -363,14 +363,14 @@ def verify_and_prepare_device(port_arg=None):
 
             try:
                 with serial.Serial(port, 115200) as s:
-                    s.setDTR(False)
-                    s.setRTS(True)
+                    s.dtr = False
+                    s.rts = True
                     time.sleep(0.1)
-                    s.setDTR(True)
-                    s.setRTS(False)
+                    s.dtr = True
+                    s.rts = False
                     time.sleep(0.1)
-                    s.setDTR(False)
-                    s.setRTS(False)
+                    s.dtr = False
+                    s.rts = False
             except (serial.SerialException, OSError):
                 pass
 
@@ -811,6 +811,7 @@ def main():
         logger.info(f"Build complete (--build-only). Binaries in: {local_build_dir}")
         return
 
+    assert active_port is not None
     if args.remote:
         logger.info(f"--- Transferring Binaries to Remote Target ({args.remote}) ---")
         transfer_binaries_remote(args.remote, local_build_dir)

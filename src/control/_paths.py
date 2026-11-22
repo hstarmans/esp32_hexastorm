@@ -157,7 +157,7 @@ def resolve_fpga_version(
 
 
 def resolve_hexastorm_src(
-    repo_root: Path | None = None,
+    repo_root: Path | str | None = None,
     require_calibration_core: bool = True,
 ) -> Path:
     """Locate the ``hexastorm`` package source directory (directory containing ``hexastorm/``).

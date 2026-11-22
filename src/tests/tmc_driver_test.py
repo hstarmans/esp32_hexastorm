@@ -38,5 +38,9 @@ for mtr_id in mtr_ids:
             setattr(tmc, key, value)
         print(f"success mtr_ids {mtr_id}")
     except Exception as e:  # noqa: BLE001
-        sys.print_exception(e)
+        print_exc = getattr(sys, "print_exception", None)
+        if print_exc is not None:
+            print_exc(e)
+        else:
+            print(e)
         print(f"fail mtr_ids {mtr_id}")

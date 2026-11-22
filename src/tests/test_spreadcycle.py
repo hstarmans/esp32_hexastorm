@@ -201,9 +201,9 @@ def _run_tune_spreadcycle(axis=None, speed=3.0, dist=3.0):
 
     while True:
         print(f"Executing baseline move in StealthChop (+{dist} mm / -{dist} mm)...")
-        lh.gotopoint(vec_fwd, speed=speed, absolute=False, check_sensors=False, validate_limits=False)
+        lh.gotopoint(vec_fwd, speed=speed, absolute=False, check_sensors=False, validate_limits=False)  # pyrefly: ignore[unused-coroutine]
         time.sleep(0.1)
-        lh.gotopoint(vec_bwd, speed=speed, absolute=False, check_sensors=False, validate_limits=False)
+        lh.gotopoint(vec_bwd, speed=speed, absolute=False, check_sensors=False, validate_limits=False)  # pyrefly: ignore[unused-coroutine]
         time.sleep(0.05)
 
         try:
@@ -275,11 +275,11 @@ def _run_tune_spreadcycle(axis=None, speed=3.0, dist=3.0):
         vec_bwd[axis_index] = -dist
 
         print(f"Moving +{dist} mm...")
-        lh.gotopoint(vec_fwd, speed=speed, absolute=False, check_sensors=False, validate_limits=False)
+        lh.gotopoint(vec_fwd, speed=speed, absolute=False, check_sensors=False, validate_limits=False)  # pyrefly: ignore[unused-coroutine]
         time.sleep(0.1)
 
         print(f"Moving -{dist} mm...")
-        lh.gotopoint(vec_bwd, speed=speed, absolute=False, check_sensors=False, validate_limits=False)
+        lh.gotopoint(vec_bwd, speed=speed, absolute=False, check_sensors=False, validate_limits=False)  # pyrefly: ignore[unused-coroutine]
         time.sleep(0.05)
 
         # 3. Check driver diagnostics

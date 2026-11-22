@@ -51,6 +51,16 @@ quote-style = "double"
 [tool.pyright]
 extraPaths = ["src", "vendor", "deps/hexastorm/src"]
 
+[tool.pyrefly]
+project-includes = ["src", "docker"]
+project-excludes = [
+    "src/control/frozen_root.py",
+    "src/root/templates/**",
+    "vendor/**",
+    "deps/**",
+]
+search-path = ["src", "vendor", "deps/hexastorm/src"]
+
 [project.scripts]
 build = "build:main"
 webapp = "control.webapp:main"
@@ -60,7 +70,10 @@ dev = [
     "black>=25.1.0",
     "micropython-esp32-stubs>=1.26.0.post1",
     "nbqa>=1.9.1",
+    "pyrefly>=1.5.0",
     "ruff>=0.11.5",
+    "types-pyserial>=3.5",
+    "types-requests>=2.32",
 ]
 
 [tool.pytest.ini_options]

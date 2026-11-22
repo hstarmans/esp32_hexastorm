@@ -152,7 +152,7 @@ def get_firmware_dct(require_new=True):
         logger.error("Cannot retrieve firmware url, probably wifi connection")
         return {}
 
-    if r.status_code == 200:
+    if getattr(r, "status_code", 0) == 200:
         release_dct = json.loads(r.text)
     else:
         logger.error("Response for firmware url is invalid")
@@ -215,8 +215,9 @@ async def update_firmware(force=False):
         try:
             # stream=True ensures we don't load the whole file into RAM
             with requests.get(asset_url, headers=head, stream=True) as resp:  # noqa: ASYNC210
-                if resp.status_code not in (200, 302):
-                    logger.error(f"Download failed with status code {resp.status_code}")
+                resp_status = getattr(resp, "status_code", 0)
+                if resp_status not in (200, 302):
+                    logger.error(f"Download failed with status code {resp_status}")
                     return False
 
                 # We want to clean up files BEFORE we reboot.
@@ -398,7 +399,7 @@ def mount_sd():
     """Mounts SDCard and change working directory."""
     try:
         sd = machine.SDCard(slot=2)
-        os.mount(sd, "/sd")
+        getattr(os, "mount")(sd, "/sd")
     except OSError:
         logger.error(
             """Cannot connect to sdcard.\n"""

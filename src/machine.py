@@ -31,13 +31,16 @@ class I2C:
     def readfrom(self, address, number_bytes):
         return bytearray([1])
 
+    def scan(self):
+        return []
+
 
 class SoftI2C(I2C):
     pass
 
 
 class UART:
-    def __init__(self, serialport, baudrate=115200, tx=43, rx=44):
+    def __init__(self, serialport, baudrate=115200, tx=43, rx=44, timeout=0, **kwargs):
         pass
 
     def init(self, speed=115200, bits=8, parity=None, stop=1):
@@ -45,6 +48,12 @@ class UART:
 
     def write(self, data):
         return data
+
+    def any(self) -> int:
+        return 0
+
+    def read(self, nbytes=None) -> bytes:
+        return b""
 
     def read_int(self, offset):
         return []
@@ -65,6 +74,7 @@ class Pin:
         self.id = id
         self.mode = mode
         self.pull = pull
+        self.val = value
 
     def on(self):
         pass
@@ -72,14 +82,17 @@ class Pin:
     def off(self):
         pass
 
-    def cleanup():
+    def cleanup(self):
         pass
 
-    def value(self, val):
+    def value(self, val=None):
+        if val is None:
+            return getattr(self, "val", 0)
         self.val = val
+        return val
 
-    def __call__(self, val):
-        self.value(val)
+    def __call__(self, val=None):
+        return self.value(val)
 
 
 class SoftSPI:
@@ -135,3 +148,44 @@ class SPI:
         # TMC stepper alters 5 th byte
         for i, _ in enumerate(txdata):
             rxdata[i] = txdata[i]
+
+    def write(self, data):
+        pass
+
+
+class PWM:
+    def __init__(self, pin, freq=1000, duty=0, **kwargs):
+        self.pin = pin
+        self._freq = freq
+        self._duty = duty
+
+    def freq(self, value=None):
+        if value is None:
+            return self._freq
+        self._freq = value
+        return value
+
+    def duty_u16(self, value=None):
+        if value is None:
+            return self._duty
+        self._duty = value
+        return value
+
+    def deinit(self):
+        pass
+
+
+class RTC:
+    def __init__(self):
+        self._data = b""
+
+    def memory(self, data=None):
+        if data is None:
+            return self._data
+        self._data = bytes(data)
+        return self._data
+
+
+class SDCard:
+    def __init__(self, *args, **kwargs):
+        pass

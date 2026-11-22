@@ -98,7 +98,7 @@ def _bounds_to_u_range(
     """Map [lower_px, upper_px] visibility indices into physical [u_min_mm, u_max_mm]."""
     if not bounds or len(bounds) != 2:
         return curve.lanewidth * 0.25, curve.lanewidth * 0.75
-    lower, upper = int(bounds[0]), int(bounds[1])
+    lower, upper = bounds[0], bounds[1]
     t0 = (lower * curve.total_ticks) / max(1, scan_len)
     t1 = ((upper + 1) * curve.total_ticks) / max(1, scan_len)
     u0 = curve.tick_to_u(t0)
@@ -164,7 +164,7 @@ async def project_and_capture_facet(
 
         Camera.mock_laser_events = events
         Camera.mock_laser_pattern = None
-        Camera.mock_active_facet = int(facet)
+        Camera.mock_active_facet = facet
         Camera.mock_v_stage_mm = 0.0
 
         if constants.ESP32:
@@ -626,7 +626,7 @@ async def run_pattern_error(
         if max_err_before > CALIBRATION_TOLERANCE_UM
         else True
     )
-    passed = bool(within_tolerance and improved)
+    passed = within_tolerance and improved
 
     report = {
         "status": "success",
@@ -697,7 +697,7 @@ def update_custom_facets(
 
     CONFIG["calibration"]["facets"] = facets_cfg
     if apply_correction is not None:
-        CONFIG["calibration"]["apply_correction"] = bool(apply_correction)
+        CONFIG["calibration"]["apply_correction"] = apply_correction
 
     last_rep = CONFIG["calibration"]["last_report"]
     if isinstance(last_rep, dict):
@@ -773,7 +773,7 @@ def set_bounds_preview(
     if enabled is None:
         _bounds_active = not _bounds_active
     else:
-        _bounds_active = bool(enabled)
+        _bounds_active = enabled
 
     if facet != "keep":
         if facet is None or facet == "all" or facet == -1 or facet == "-1":

@@ -4,6 +4,8 @@ from time import sleep
 import machine
 from machine import Pin
 
+sleep_ms = getattr(time, "sleep_ms", lambda ms: time.sleep(ms / 1000.0))
+
 # --- Configuration ---
 # configuration also works with fpga but you have to flip lines
 PIN_CRESET = 43
@@ -41,12 +43,12 @@ def program_fpga(filename):
     # 1. Handshake: Force SPI Slave Mode
     cs.value(1)
     creset.value(0)
-    time.sleep_ms(500)  # 10ms is plenty
+    sleep_ms(500)  # 10ms is plenty
 
     cs.value(0)  # Pull CS low
-    time.sleep_ms(500)
+    sleep_ms(500)
     creset.value(1)  # Release CRESET (FPGA samples CS low and enters Slave mode)
-    time.sleep_ms(500)  # Wait for internal memory clear (min 1200us)
+    sleep_ms(500)  # Wait for internal memory clear (min 1200us)
 
     # Fix 3: Send 8 dummy clocks BEFORE the bitstream.
     spi.write(b"\x00")
@@ -65,10 +67,10 @@ def program_fpga(filename):
 
     # Fix 4: Raise CS and send >49 dummy clocks (13 bytes = 104 clocks)
     cs.value(1)
-    time.sleep_ms(500)
+    sleep_ms(500)
     spi.write(bytes([0x00] * 13))
 
-    time.sleep_ms(500)  # Give CDONE a moment to pull up
+    sleep_ms(500)  # Give CDONE a moment to pull up
 
     if cdone.value():
         print("FPGA succesvol geprogrammeerd!")

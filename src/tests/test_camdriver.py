@@ -3,8 +3,10 @@ import time
 
 from camera import Camera, FrameSize, GrabMode, PixelFormat
 
-print("Free memory (PSRAM check):", gc.mem_free(), "bytes")
-if gc.mem_free() < 2000000:
+mem_free = getattr(gc, "mem_free", lambda: 0)
+
+print("Free memory (PSRAM check):", mem_free(), "bytes")
+if mem_free() < 2000000:
     print("WARNING: Low memory! Is PSRAM recognized by your firmware?")
 
 # 1. Initialize camera (Camera driver will manage hardware reset on Pin 42)

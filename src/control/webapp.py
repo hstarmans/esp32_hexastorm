@@ -269,8 +269,8 @@ async def upload(request, session):
         # Clean up: delete the partial file so it doesn't waste space
         try:
             os.remove(filepath)
-        except Exception as e:  # noqa: BLE001, capture everything just to be safe
-            logger.error(f"Removal failed: {e}")
+        except Exception as remove_err:  # noqa: BLE001, capture everything just to be safe
+            logger.error(f"Removal failed: {remove_err}")
 
         return {"error": "Upload failed", "details": str(e)}, 500
 

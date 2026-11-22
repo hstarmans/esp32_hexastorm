@@ -30,7 +30,11 @@ def run_test(class_name, function_name, *args, **kwargs):
     except Exception as e:  # noqa: BLE001
         # print exception in red
         s = io.StringIO()
-        sys.print_exception(e, s)
+        print_exc = getattr(sys, "print_exception", None)
+        if print_exc is not None:
+            print_exc(e, s)
+        else:
+            print(e, file=s)
         error_message = s.getvalue()
         logger.error(f"\033[91m{error_message}\033[0m")
     # reset after exception
