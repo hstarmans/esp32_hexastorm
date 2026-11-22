@@ -39,6 +39,7 @@ src = ["src", "vendor", "deps/hexastorm/src"]
 # exist in micropython  - see manifest.py
 builtins = ["include", "package", "module", "require", "options", "const"]
 extend-exclude = [
+    "src/control/build_info.py",
     "src/control/frozen_root.py",
     "src/root/templates",
     "vendor",
@@ -54,12 +55,14 @@ extraPaths = ["src", "vendor", "deps/hexastorm/src"]
 [tool.pyrefly]
 project-includes = ["src", "docker"]
 project-excludes = [
+    "src/control/build_info.py",
     "src/control/frozen_root.py",
     "src/root/templates/**",
     "vendor/**",
     "deps/**",
 ]
 search-path = ["src", "vendor", "deps/hexastorm/src"]
+replace-imports-with-any = ["control.build_info", "control.frozen_root"]
 
 [project.scripts]
 build = "build:main"
