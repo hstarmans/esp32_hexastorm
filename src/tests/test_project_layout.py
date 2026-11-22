@@ -187,18 +187,21 @@ def test_build_resolve_paths_respects_env_and_cli(tmp_path, monkeypatch):
 
 
 def test_docker_and_ci_files_exist_and_align():
-    """Verify Dockerfile, .dockerignore, build-firmware.sh, and GitHub CI workflow."""
+    """Verify Dockerfile, .dockerignore, build scripts, and GitHub CI workflow."""
     root = get_repo_root()
 
     dockerfile = root / "Dockerfile"
     dockerignore = root / ".dockerignore"
     script = root / "docker" / "build-firmware.sh"
+    build_fpga = root / "docker" / "build_fpga.py"
     ci_yml = root / ".github" / "workflows" / "ci.yml"
 
     assert dockerfile.is_file()
     assert dockerignore.is_file()
     assert script.is_file()
     assert os.access(script, os.X_OK), "docker/build-firmware.sh must be executable"
+    assert build_fpga.is_file()
+    assert os.access(build_fpga, os.X_OK), "docker/build_fpga.py must be executable"
     assert ci_yml.is_file()
 
     df_text = dockerfile.read_text()
@@ -208,6 +211,11 @@ def test_docker_and_ci_files_exist_and_align():
         "freezefs",
         "pyclean",
         "MICROPY_MPYCROSS",
+        "FPGA_VENV",
+        "amaranth",
+        "yowasp-yosys",
+        "yowasp-nextpnr-ice40",
+        "build_fpga.py",
     ):
         assert token in df_text
 
@@ -217,11 +225,17 @@ def test_docker_and_ci_files_exist_and_align():
         "src/manifest.py",
         "src/micropython.cmake",
         "MICROPY_MPYCROSS",
+        "build_fpga.py",
     ):
         assert token in script_text
 
     ci_text = ci_yml.read_text()
-    for token in ("submodules: recursive", "micropython.bin", "uv run pytest"):
+    for token in (
+        "submodules: recursive",
+        "micropython.bin",
+        "sd/fpga/fpga.bit",
+        "uv run pytest",
+    ):
         assert token in ci_text
 
 
@@ -234,19 +248,27 @@ def test_docker_build_command_and_local_flash_command(tmp_path, monkeypatch):
 
     hs_override = tmp_path / "custom_hexastorm"
     hs_override.mkdir()
+    custom_bit = tmp_path / "custom_top.bin"
+    custom_bit.write_bytes(b"\xff" * 64)
     monkeypatch.delenv("HEXASTORM_DIR", raising=False)
+    monkeypatch.delenv("FPGA_BITSTREAM", raising=False)
     cmd = build.build_docker_run_command(
         docker_paths,
         image_name="custom-builder:test",
         hexastorm_dir=str(hs_override),
         host_uid=1000,
         host_gid=1000,
+        fpga_bit=str(custom_bit),
+        rebuild_fpga=True,
     )
     assert cmd[:3] == ["docker", "run", "--rm"]
     assert f"{docker_paths['repo_root']}:/workspace" in cmd
     assert f"{build.DOCKER_CACHE_VOLUME}:/root/.cache" in cmd
     assert f"{hs_override.resolve()}:/hexastorm_override:ro" in cmd
     assert "HEXASTORM_DIR=/hexastorm_override" in cmd
+    assert f"{custom_bit.resolve()}:/fpga_override.bit:ro" in cmd
+    assert "FPGA_BITSTREAM=/fpga_override.bit" in cmd
+    assert "REBUILD_FPGA=1" in cmd
     assert "HOST_UID=1000" in cmd
     assert "HOST_GID=1000" in cmd
     assert cmd[-1] == "custom-builder:test"
@@ -349,4 +371,139 @@ def test_firmware_version_resolution_and_ota_comparison(tmp_path, monkeypatch):
     constants.deploy_assets(overwrite=True)
     migrated = json.loads(new_cfg.read_text())
     assert migrated["serial"] == "SN-42"
+    assert migrated["github"]["version"] == "v0.2.0"
+
+
+def test_compute_fpga_source_hash_and_version(tmp_path, monkeypatch):
+    """Verify HDL hash determinism, mutation sensitivity, and resolve_fpga_version."""
+    real_hs_src = resolve_hexastorm_src()
+    digest1 = _paths.compute_fpga_source_hash(real_hs_src)
+    digest2 = _paths.compute_fpga_source_hash(real_hs_src)
+    assert len(digest1) == 64
+    assert digest1 == digest2
+
+    fake_hs_src = tmp_path / "fake_hs" / "src"
+    pkg_dir = fake_hs_src / "hexastorm"
+    (pkg_dir / "blocks").mkdir(parents=True)
+    (pkg_dir / "core.py").write_text("class Dispatcher: pass\n")
+    (pkg_dir / "blocks" / "photodiode_debounce.py").write_text("x = 1\n")
+
+    h_before = _paths.compute_fpga_source_hash(fake_hs_src)
+    (pkg_dir / "blocks" / "photodiode_debounce.py").write_text("x = 2\n")
+    h_after = _paths.compute_fpga_source_hash(fake_hs_src)
+    assert h_before != h_after
+
+    monkeypatch.setenv("FPGA_VERSION", "v9.9.9-custom")
+    assert _paths.resolve_fpga_version(tmp_path) == "v9.9.9-custom"
+
+    monkeypatch.delenv("FPGA_VERSION", raising=False)
+    fake_bit = tmp_path / "fpga.bit"
+    fake_bit.write_bytes(b"bitstream-data")
+    ver_with_bit = _paths.resolve_fpga_version(
+        get_repo_root(), hexastorm_src=real_hs_src, bit_path=fake_bit
+    )
+    assert re.search(r"-[0-9a-f]{8}$", ver_with_bit)
+
+    iso_root = tmp_path / "isolated_repo"
+    (iso_root / "src" / "root").mkdir(parents=True)
+    (iso_root / "src" / "root" / "config.json").write_text(
+        json.dumps({"fpga": {"version": "0.7"}})
+    )
+    assert _paths.resolve_fpga_version(iso_root, hexastorm_src=fake_hs_src) == "0.7"
+    iso_ver_bit = _paths.resolve_fpga_version(
+        iso_root, hexastorm_src=fake_hs_src, bit_path=fake_bit
+    )
+    assert re.fullmatch(r"sha256-[0-9a-f]{8}", iso_ver_bit)
+
+
+def test_build_fpga_override_and_cache_hit(tmp_path, monkeypatch):
+    """Verify docker/build_fpga.py bitstream override copy and hash cache hit."""
+    script_path = get_repo_root() / "docker" / "build_fpga.py"
+    spec = importlib.util.spec_from_file_location("build_fpga_test", script_path)
+    assert spec is not None and spec.loader is not None
+    build_fpga_mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(build_fpga_mod)
+
+    override_src = tmp_path / "prebuilt_top.bin"
+    override_payload = b"\xaa\x55" * 100
+    override_src.write_bytes(override_payload)
+    out_bit = tmp_path / "out" / "fpga.bit"
+    fpga_build_dir = tmp_path / "build_fpga"
+
+    result = build_fpga_mod.build_or_copy_fpga(
+        workspace=get_repo_root(),
+        output=out_bit,
+        build_dir=fpga_build_dir,
+        bitstream=override_src,
+    )
+    assert result == out_bit.resolve()
+    assert out_bit.read_bytes() == override_payload
+
+    hs_src = resolve_hexastorm_src()
+    src_hash = _paths.compute_fpga_source_hash(hs_src)
+    cached_bin = fpga_build_dir / "build" / "top.bin"
+    cached_bin.parent.mkdir(parents=True)
+    cached_payload = b"\x7e\xaa\x99\x7e" + (b"\x00" * 60_000)
+    cached_bin.write_bytes(cached_payload)
+    (fpga_build_dir / ".fpga_hash").write_text(f"{src_hash}\n")
+
+    def _fail_subprocess(*a, **kw):
+        raise AssertionError("Synthesis subprocess should not run on cache hit")
+
+    monkeypatch.setattr(build_fpga_mod.subprocess, "run", _fail_subprocess)
+    out_cached = tmp_path / "cached_out" / "fpga.bit"
+    build_fpga_mod.build_or_copy_fpga(
+        workspace=get_repo_root(),
+        output=out_cached,
+        build_dir=fpga_build_dir,
+    )
+    assert out_cached.read_bytes() == cached_payload
+
+
+def test_fpga_version_in_constants_and_deploy_assets(tmp_path, monkeypatch):
+    """Verify get_fpga_version() and deploy_assets() syncing FPGA_VERSION to config."""
+    stub_build_info = types.ModuleType("control.build_info")
+    stub_build_info.BUILD_ID = "build_fpga_test"
+    stub_build_info.FIRMWARE_VERSION = "v0.2.0"
+    stub_build_info.FPGA_VERSION = "e1111f0-deadbeef"
+    monkeypatch.setitem(sys.modules, "control.build_info", stub_build_info)
+    monkeypatch.setattr(control, "build_info", stub_build_info, raising=False)
+    monkeypatch.setitem(constants.CONFIG["fpga"], "version", "0.1")
+
+    assert constants.get_fpga_version() == "e1111f0-deadbeef"
+
+    old_cfg = tmp_path / "config_old.json"
+    new_cfg = tmp_path / "config.json"
+    old_cfg.write_text(json.dumps({"fpga": {"version": "0.1"}, "serial": 7}))
+
+    class StubFinder:
+        def find_spec(self, fullname, path, target=None):
+            if fullname in ("control.build_info", "control.frozen_root"):
+                return importlib.util.spec_from_loader(fullname, self)
+            return None
+
+        def create_module(self, spec):
+            return types.ModuleType(spec.name)
+
+        def exec_module(self, module):
+            if module.__name__ == "control.build_info":
+                module.BUILD_ID = "build_fpga_test"
+                module.FIRMWARE_VERSION = "v0.2.0"
+                module.FPGA_VERSION = "e1111f0-deadbeef"
+            elif module.__name__ == "control.frozen_root":
+                new_cfg.write_text(json.dumps({"fpga": {"version": "0.1"}}))
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delitem(sys.modules, "control.build_info", raising=False)
+    monkeypatch.delitem(sys.modules, "control.frozen_root", raising=False)
+    monkeypatch.delattr(control, "build_info", raising=False)
+    monkeypatch.delattr(control, "frozen_root", raising=False)
+    monkeypatch.setattr(sys, "meta_path", [StubFinder(), *sys.meta_path])
+    monkeypatch.setattr(constants, "ESP32", True)
+    monkeypatch.setattr(constants, "CONFIG_FILE", str(new_cfg))
+    monkeypatch.setattr(constants, "CONFIG_OLD_FILE", str(old_cfg))
+
+    constants.deploy_assets(overwrite=True)
+    migrated = json.loads(new_cfg.read_text())
+    assert migrated["fpga"]["version"] == "e1111f0-deadbeef"
     assert migrated["github"]["version"] == "v0.2.0"

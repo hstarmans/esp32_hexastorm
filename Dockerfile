@@ -18,8 +18,19 @@ RUN git clone --depth 1 --branch "${MICROPYTHON_VERSION}" https://github.com/mic
 
 ENV MICROPY_MPYCROSS=${MICROPYTHON_DIR}/mpy-cross/build/mpy-cross
 
+# Isolated Python venv for Amaranth/YoWASP iCE40UP5K FPGA bitstream synthesis
+# (kept separate from ESP-IDF's Python env to avoid dependency conflicts).
+ENV FPGA_VENV=/opt/fpga-venv
+RUN python3 -m venv "${FPGA_VENV}" \
+    && "${FPGA_VENV}/bin/pip" install --no-cache-dir \
+        "amaranth>=0.5.10,<0.6" \
+        "yowasp-yosys>=0.71.0.0.post1285" \
+        "yowasp-nextpnr-ice40>=0.11.1.0.post826" \
+        "numpy>=2.0"
+
 COPY docker/build-firmware.sh /usr/local/bin/build-firmware.sh
-RUN chmod +x /usr/local/bin/build-firmware.sh
+COPY docker/build_fpga.py /usr/local/bin/build_fpga.py
+RUN chmod +x /usr/local/bin/build-firmware.sh /usr/local/bin/build_fpga.py
 
 WORKDIR /workspace
 CMD ["/usr/local/bin/build-firmware.sh"]

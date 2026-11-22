@@ -60,6 +60,7 @@ jobs:
             -e FIRMWARE_VERSION="${{ github.ref_type == 'tag' && github.ref_name || '' }}" \
             hexastorm-esp32s3-builder:ci
           test -f build/HEXASTORM_S3/micropython.bin
+          test -f src/root/sd/fpga/fpga.bit
 
       - name: Upload firmware artifacts
         uses: actions/upload-artifact@v4
@@ -71,6 +72,7 @@ jobs:
             build/HEXASTORM_S3/bootloader/bootloader.bin
             build/HEXASTORM_S3/partition_table/partition-table.bin
             build/HEXASTORM_S3/ota_data_initial.bin
+            src/root/sd/fpga/fpga.bit
 
       - name: Publish OTA firmware to GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')

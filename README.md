@@ -126,14 +126,17 @@ uv run ruff check src
 
 ## Building & Flashing Firmware (Recommended: Docker)
 
-No manual ESP-IDF or MicroPython checkout is needed when using Docker — only `uv` and Docker on the build machine (`esptool` is installed inside the project's `.venv`):
+No manual ESP-IDF, MicroPython, or Yosys/nextpnr checkout is needed when using Docker — only `uv` and Docker on the build machine (`esptool` is installed inside the project's `.venv`). Each build automatically synthesizes the iCE40UP5K FPGA bitstream from `deps/hexastorm` (`HEXASTORM_DIR` override supported) and bundles `/sd/fpga/fpga.bit` inside `micropython.bin` via `freezefs` so every fresh flash or OTA update flashes matching FPGA gateware on boot:
 
 ```bash
-# Build inside Docker and flash directly over local USB
+# Synthesize FPGA bitstream + build firmware in Docker and flash over local USB
 uv run build --docker
 
-# Compile firmware binaries only (build/HEXASTORM_S3/micropython.bin) without hardware attached
+# Compile binaries only (build/HEXASTORM_S3/micropython.bin + src/root/sd/fpga/fpga.bit)
 uv run build --docker --build-only
+
+# Use a prebuilt bitstream override instead of running synthesis
+uv run build --docker --fpga-bit path/to/top.bin
 
 # Compile locally in Docker and flash over SSH to a remote host
 uv run build --docker --remote hexastorm@pihome.home

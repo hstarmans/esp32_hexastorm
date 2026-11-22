@@ -85,6 +85,15 @@ try:
         check=True,
     )
 
+    fpga_bit = root_assets / "sd" / "fpga" / "fpga.bit"
+    if os.environ.get("ALLOW_MISSING_FPGA") != "1" and (
+        not fpga_bit.is_file() or fpga_bit.stat().st_size == 0
+    ):
+        raise AssetGenerationError(
+            f"Missing FPGA bitstream at {fpga_bit}. "
+            "Build with Docker ('uv run build --docker') or pass '--fpga-bit <path>'."
+        )
+
     # Pack assets
     subprocess.run(
         [
@@ -104,11 +113,18 @@ try:
     with open(frozen_output, "a") as f:
         f.write(f'\nBUILD_ID = "{build_id}"\n')
 
+    hexastorm_src_path = paths_helper.resolve_hexastorm_src(repo_root)
     firmware_version = paths_helper.resolve_firmware_version(repo_root)
+    fpga_version = paths_helper.resolve_fpga_version(
+        repo_root,
+        hexastorm_src=hexastorm_src_path,
+        bit_path=fpga_bit if fpga_bit.is_file() else None,
+    )
     build_info_output = code_dir / "build_info.py"
     with open(build_info_output, "w") as f:
         f.write(f'BUILD_ID = "{build_id}"\n')
         f.write(f'FIRMWARE_VERSION = "{firmware_version}"\n')
+        f.write(f'FPGA_VERSION = "{fpga_version}"\n')
 except subprocess.CalledProcessError as e:
     logger.error(f"Error during asset packing: {e}")
     sys.exit(1)
@@ -119,7 +135,7 @@ if not frozen_output.is_file():
 # We check if 'package' exists in the global scope to know if we are in 'make'
 if "package" in globals():
     vendor_dir = str(repo_root / "vendor")
-    hexastorm_src_dir = str(paths_helper.resolve_hexastorm_src(repo_root))
+    hexastorm_src_dir = str(hexastorm_src_path)
     camera_api_src = repo_root / "deps" / "micropython-camera-API" / "src"
 
     if not (camera_api_src / "acamera.py").is_file():

@@ -190,11 +190,17 @@ def deploy_assets(overwrite=False):
             logger.info("Migrating user settings into new configuration file...")
             new_dct = merge_configs(new_dct, old_dct)
 
-            fw_ver = getattr(build_info, "FIRMWARE_VERSION", None)
-            if fw_ver:
-                if "github" not in new_dct or not isinstance(new_dct["github"], dict):
-                    new_dct["github"] = {}
-                new_dct["github"]["version"] = str(fw_ver)
+            for attr_name, cfg_section in (
+                ("FIRMWARE_VERSION", "github"),
+                ("FPGA_VERSION", "fpga"),
+            ):
+                ver = getattr(build_info, attr_name, None)
+                if ver:
+                    if cfg_section not in new_dct or not isinstance(
+                        new_dct[cfg_section], dict
+                    ):
+                        new_dct[cfg_section] = {}
+                    new_dct[cfg_section]["version"] = str(ver)
 
             # Save the merged config back to config.json with pretty formatting
             clean_dct = sanitize_types(new_dct)
@@ -371,17 +377,26 @@ def update_config():
         camera.set_exposure_ms(CONFIG["calibration"]["camera_exposure_ms"])
 
 
-def get_firmware_version():
-    """Return the active firmware version from frozen build_info, falling back to CONFIG."""
+def _get_build_version(attr_name, cfg_section):
     try:
         from . import build_info
 
-        ver = getattr(build_info, "FIRMWARE_VERSION", None)
+        ver = getattr(build_info, attr_name, None)
         if ver:
             return str(ver)
     except ImportError:
         pass
-    return str(CONFIG.get("github", {}).get("version", "unknown"))
+    return str(CONFIG.get(cfg_section, {}).get("version", "unknown"))
+
+
+def get_firmware_version():
+    """Return the active firmware version from frozen build_info, falling back to CONFIG."""
+    return _get_build_version("FIRMWARE_VERSION", "github")
+
+
+def get_fpga_version():
+    """Return the active FPGA gateware version from frozen build_info, falling back to CONFIG."""
+    return _get_build_version("FPGA_VERSION", "fpga")
 
 
 if ESP32:

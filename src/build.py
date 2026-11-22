@@ -88,6 +88,8 @@ def build_docker_run_command(
     host_uid=None,
     host_gid=None,
     firmware_version=None,
+    fpga_bit=None,
+    rebuild_fpga=False,
 ):
     """Construct the ``docker run`` invocation that compiles firmware into ``build/``."""
     cmd = [
@@ -113,6 +115,23 @@ def build_docker_run_command(
                 "HEXASTORM_DIR=/hexastorm_override",
             ]
         )
+
+    fpga_bit_raw = (
+        fpga_bit if fpga_bit is not None else os.environ.get("FPGA_BITSTREAM")
+    )
+    if fpga_bit_raw:
+        abs_bit = os.path.abspath(os.path.expanduser(fpga_bit_raw))
+        cmd.extend(
+            [
+                "-v",
+                f"{abs_bit}:/fpga_override.bit:ro",
+                "-e",
+                "FPGA_BITSTREAM=/fpga_override.bit",
+            ]
+        )
+
+    if rebuild_fpga:
+        cmd.extend(["-e", "REBUILD_FPGA=1"])
 
     fw_ver = (
         firmware_version
@@ -594,6 +613,61 @@ def _validate_submodule_deps(repo_root: str) -> None:
         sys.exit(1)
 
 
+def prepare_native_fpga_bitstream(repo_root, fpga_bit=None, rebuild_fpga=False):
+    """Ensure src/root/sd/fpga/fpga.bit is staged before a native firmware build."""
+    fpga_out = os.path.join(repo_root, "src", "root", "sd", "fpga", "fpga.bit")
+    fpga_build_dir = os.path.join(repo_root, "build", "fpga")
+    build_fpga_script = os.path.join(repo_root, "docker", "build_fpga.py")
+    fpga_bit_raw = (
+        fpga_bit if fpga_bit is not None else os.environ.get("FPGA_BITSTREAM")
+    )
+
+    if fpga_bit_raw:
+        abs_bit = os.path.abspath(os.path.expanduser(fpga_bit_raw))
+        if not os.path.isfile(abs_bit) or os.path.getsize(abs_bit) == 0:
+            logger.error(f"FPGA bitstream override not found or empty: {abs_bit}")
+            sys.exit(1)
+        os.makedirs(os.path.dirname(fpga_out), exist_ok=True)
+        shutil.copy2(abs_bit, fpga_out)
+        logger.info(f"Copied FPGA bitstream override -> {fpga_out}")
+        return fpga_out
+
+    has_bit = os.path.isfile(fpga_out) and os.path.getsize(fpga_out) > 0
+    if not rebuild_fpga and has_bit:
+        return fpga_out
+
+    hs_src = resolve_hexastorm_src(repo_root)
+    hs_repo = (
+        os.path.dirname(hs_src) if os.path.basename(hs_src) == "src" else str(hs_src)
+    )
+    if os.path.isfile(os.path.join(hs_repo, "pyproject.toml")) and shutil.which("uv"):
+        cmd = [
+            "uv",
+            "--project",
+            hs_repo,
+            "run",
+            "python",
+            build_fpga_script,
+            "--workspace",
+            repo_root,
+            "--build-dir",
+            fpga_build_dir,
+            "--output",
+            fpga_out,
+        ]
+        if rebuild_fpga:
+            cmd.append("--rebuild")
+        logger.info("--- Synthesizing FPGA Bitstream (Native via hexastorm uv) ---")
+        subprocess.run(cmd, check=True)
+        return fpga_out
+
+    logger.error(
+        f"Missing FPGA bitstream at {fpga_out} and cannot synthesize natively. "
+        "Run 'uv run build --docker' or pass '--fpga-bit <path>'."
+    )
+    sys.exit(1)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Build and flash ESP32 firmware")
     parser.add_argument(
@@ -632,6 +706,16 @@ def main():
         "--docker-image",
         default=DEFAULT_DOCKER_IMAGE,
         help="Docker builder image tag to use with --docker",
+    )
+    parser.add_argument(
+        "--fpga-bit",
+        default=None,
+        help="Path to prebuilt FPGA .bit file to bundle instead of synthesizing HDL",
+    )
+    parser.add_argument(
+        "--rebuild-fpga",
+        action="store_true",
+        help="Force resynthesizing the iCE40UP5K FPGA bitstream",
     )
     parser.add_argument(
         "--build-only",
@@ -674,6 +758,8 @@ def main():
             image_name=args.docker_image,
             host_uid=host_uid,
             host_gid=host_gid,
+            fpga_bit=args.fpga_bit,
+            rebuild_fpga=args.rebuild_fpga,
         )
         logger.info("--- Building Firmware (Docker) ---")
         subprocess.run(docker_cmd, check=True)
@@ -691,6 +777,12 @@ def main():
                 "Set IDF_PATH, pass --idf-path, or use --docker."
             )
             sys.exit(1)
+
+        prepare_native_fpga_bitstream(
+            paths["repo_root"],
+            fpga_bit=args.fpga_bit,
+            rebuild_fpga=args.rebuild_fpga,
+        )
 
         make_cmd = [
             "make",

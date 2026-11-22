@@ -36,7 +36,7 @@ External dependencies are split cleanly by role so no manual symlinks are needed
   * `deps/micropython-ulab` (`6.12`) — C vector/matrix library linked via [src/micropython.cmake](src/micropython.cmake).
   * `deps/micropython-camera-API` (`v0.6.2`) — MicroPython camera wrapper linked via [src/micropython.cmake](src/micropython.cmake) plus Python `acamera.py` frozen via [src/manifest.py](src/manifest.py).
   * `deps/esp32-camera` — ESP-IDF OV2640 sensor driver registered directly as component `esp32-camera` via `EXTRA_COMPONENT_DIRS` in [boards/HEXASTORM_S3/mpconfigboard.cmake](boards/HEXASTORM_S3/mpconfigboard.cmake).
-  * `deps/hexastorm` — Hardware-agnostic FPGA gateware/host/calibration repo. Only lightweight pure-Python/`ulab` modules (`ulabext.py`, `config.py`, `calibration/core.py`, `fpga_host/*`) are frozen into MicroPython, so heavy PC dependencies (`amaranth`, `yowasp-yosys`, `matplotlib`) are never pulled into `esp32_hexastorm`.
+  * `deps/hexastorm` — Hardware-agnostic FPGA gateware/host/calibration repo. During firmware builds, [docker/build_fpga.py](docker/build_fpga.py) synthesizes the iCE40UP5K `dispatcher` bitstream (`top.bin`) inside an isolated container venv (`/opt/fpga-venv` with `amaranth` + YoWASP tools) into `src/root/sd/fpga/fpga.bit` (cached by HDL source hash), while `src/manifest.py` only freezes lightweight pure-Python/`ulab` runtime modules (`ulabext.py`, `config.py`, `calibration/core.py`, `fpga_host/*`) so heavy PC/synthesis dependencies never enter MicroPython's Python build.
   * **Live dual-repo workflow:** `src/control/_paths.py` and `src/manifest.py` inspect `HEXASTORM_DIR` first, then `deps/hexastorm/src`, then sibling `../hexastorm/src`. Set `HEXASTORM_DIR=../hexastorm` during local co-development (even with `--docker`, which automatically bind-mounts it read-only), and bump the pinned submodule commit with `git submodule update --remote deps/hexastorm` once tested.
 * **Vendored pure-Python MicroPython libs (`vendor/`):** `microdot`, `utemplate`, `ota`, `mrequests`, `winbond`, and `tmc` live in `vendor/` instead of `src/`. See [vendor/VERSIONS.md](vendor/VERSIONS.md) for upstream URLs, versions, licenses, and local patches (notably HTTPS TLS + redirect + streaming OTA patches in `vendor/mrequests/urequests.py`).
 
@@ -55,20 +55,26 @@ The repository ships a self-contained [Dockerfile](Dockerfile) built on `espress
 
 2. **Other common Docker workflows:**
    ```bash
-   # Compile binaries into build/HEXASTORM_S3/ without connecting an ESP32:
+   # Compile binaries into build/HEXASTORM_S3/ + synthesize src/root/sd/fpga/fpga.bit
    uv run build --docker --build-only
 
-   # Compile locally on macOS/Linux in Docker and flash over SSH to a remote host:
+   # Force FPGA resynthesis (bypassing the build/fpga/.fpga_hash cache)
+   uv run build --docker --rebuild-fpga --build-only
+
+   # Stage a prebuilt .bit file instead of running HDL synthesis
+   uv run build --docker --fpga-bit ../hexastorm/build/top.bin
+
+   # Compile locally on macOS/Linux in Docker and flash over SSH to a remote host
    uv run build --docker --remote hexastorm@pihome.home
 
-   # Force rebuilding the Docker image (e.g. after editing Dockerfile):
+   # Force rebuilding the Docker image (e.g. after editing Dockerfile)
    uv run build --docker --rebuild-image --build-only
    ```
 
 3. **How host/container build caching works:**
    * `build.py --docker` mounts the repository at `/workspace` and persists IDF managed component downloads (`espressif__esp32-camera`, `espressif__mdns`, `espressif__tinyusb`) in a named Docker volume (`hexastorm-esp-cache:/root/.cache`).
-   * Inside the container, [docker/build-firmware.sh](docker/build-firmware.sh) runs `make` using the out-of-tree `boards/HEXASTORM_S3/` board definition and fixes file ownership on Linux via `HOST_UID`/`HOST_GID`.
-   * [src/manifest.py](src/manifest.py) calls `python_module_cmd(...)`, which runs `freezefs` and `pyclean` via ESP-IDF's active Python inside Docker (never clashing with your host `.venv`) and falls back to `uv run python -m ...` during native builds.
+   * Inside the container, [docker/build-firmware.sh](docker/build-firmware.sh) first runs [docker/build_fpga.py](docker/build_fpga.py) inside `/opt/fpga-venv` to build (or reuse cached) `src/root/sd/fpga/fpga.bit`, then runs `make` using the out-of-tree `boards/HEXASTORM_S3/` board definition and fixes file ownership on Linux via `HOST_UID`/`HOST_GID`.
+   * [src/manifest.py](src/manifest.py) verifies `src/root/sd/fpga/fpga.bit` is present before running `freezefs`, and freezes `FIRMWARE_VERSION` and `FPGA_VERSION` into `src/control/build_info.py`. It calls `python_module_cmd(...)` so `freezefs` and `pyclean` execute cleanly in both Docker and native environments.
 
 ### Out-of-Tree Board Definition (`boards/HEXASTORM_S3/`)
 
@@ -131,17 +137,13 @@ After flashing MicroPython, connect over USB using `mpremote` (recommended) or [
 
    asyncio.run(bootlib.connect_wifi())
    ```
-2. **Generate and flash the iCE40UP5K FPGA bitstream:**
-   Generate the `.bit` file in the sibling [Hexastorm](https://github.com/hstarmans/hexastorm) repository with:
+2. **FPGA Bitstream Workflow (Bundled vs. Rapid HDL Iteration):**
+   Every firmware build bundles `src/root/sd/fpga/fpga.bit` via `freezefs`, so `boot.py` → `deploy_assets()` extracts `/sd/fpga/fpga.bit` automatically on first boot or after an ESP32/OTA update, and `ESP32Host.reset()` flashes the iCE40UP5K over SPI at startup.
+   For fast gateware iteration in the sibling [Hexastorm](https://github.com/hstarmans/hexastorm) repository without rebuilding the ESP32 firmware:
    ```bash
    uv run build
    ```
-   Copy the `.bit` file onto the ESP32 and flash the FPGA from the ESP32 REPL:
-   ```python
-   import tools
-
-   tools.lh.flash_fpga("nameofbitfile.bit")
-   ```
+   This uploads `:sd/fpga/fpga.bit` directly via `mpremote` and calls `flash_fpga('sd/fpga/fpga.bit')`. Because `deploy_assets()` skips extraction across normal reboots when `BUILD_ID` is unchanged, your manually uploaded bitstream stays active until the next firmware flash/OTA.
 
 ---
 

@@ -1,11 +1,26 @@
 """Path resolution helpers for CPython tooling, tests, and firmware manifest builds."""
 
+import hashlib
 import json
 import os
 import subprocess
 import sys
 from importlib.util import find_spec
 from pathlib import Path
+
+FPGA_HDL_FILES = (
+    "build.py",
+    "config.py",
+    "core.py",
+    "lasers.py",
+    "movement.py",
+    "platforms.py",
+    "pwm.py",
+    "resources.py",
+    "spi_helpers.py",
+    "utils.py",
+)
+FPGA_HDL_DIRS = ("blocks", "luna")
 
 
 def get_repo_root() -> Path:
@@ -48,6 +63,91 @@ def resolve_firmware_version(repo_root: Path | None = None) -> str:
     try:
         data = json.loads(config_path.read_text())
         ver = data.get("github", {}).get("version")
+        if ver:
+            return str(ver)
+    except (OSError, ValueError):
+        pass
+
+    return "0.1"
+
+
+def compute_fpga_source_hash(hexastorm_src: Path) -> str:
+    """Compute a deterministic SHA-256 digest of the iCE40UP5K HDL synthesis sources."""
+    pkg_dir = Path(hexastorm_src).resolve() / "hexastorm"
+    if not (pkg_dir / "core.py").is_file():
+        raise FileNotFoundError(f"Missing hexastorm HDL sources at {pkg_dir}")
+
+    files: list[Path] = []
+    for rel_file in FPGA_HDL_FILES:
+        candidate = pkg_dir / rel_file
+        if candidate.is_file():
+            files.append(candidate)
+
+    for rel_dir in FPGA_HDL_DIRS:
+        sub_dir = pkg_dir / rel_dir
+        if sub_dir.is_dir():
+            files.extend(p for p in sub_dir.rglob("*.py") if p.is_file())
+
+    hasher = hashlib.sha256()
+    for path in sorted(files, key=lambda p: p.relative_to(pkg_dir).as_posix()):
+        rel = path.relative_to(pkg_dir).as_posix().encode("utf-8")
+        hasher.update(rel + b"\0")
+        hasher.update(path.read_bytes() + b"\0")
+    return hasher.hexdigest()
+
+
+def resolve_fpga_version(
+    repo_root: Path | None = None,
+    hexastorm_src: Path | None = None,
+    bit_path: Path | None = None,
+) -> str:
+    """Determine the FPGA gateware version string to freeze into build_info.py."""
+    env_ver = os.environ.get("FPGA_VERSION", "").strip()
+    if env_ver:
+        return env_ver
+
+    root = get_repo_root() if repo_root is None else Path(repo_root).resolve()
+
+    if hexastorm_src is not None:
+        hs_path = Path(hexastorm_src).resolve()
+        hs_repo = hs_path.parent if hs_path.name == "src" else hs_path
+    else:
+        try:
+            resolved = resolve_hexastorm_src(root, require_calibration_core=False)
+            hs_repo = resolved.parent if resolved.name == "src" else resolved
+        except FileNotFoundError:
+            hs_repo = root / "deps" / "hexastorm"
+
+    commit = ""
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(hs_repo), "rev-parse", "--short", "HEAD"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if proc.returncode == 0:
+            commit = proc.stdout.strip()
+    except OSError:
+        pass
+
+    bit_short = ""
+    if bit_path is not None:
+        bit_candidate = Path(bit_path)
+        if bit_candidate.is_file():
+            bit_short = hashlib.sha256(bit_candidate.read_bytes()).hexdigest()[:8]
+
+    if commit and bit_short:
+        return f"{commit}-{bit_short}"
+    if bit_short:
+        return f"sha256-{bit_short}"
+    if commit:
+        return commit
+
+    config_path = root / "src" / "root" / "config.json"
+    try:
+        data = json.loads(config_path.read_text())
+        ver = data.get("fpga", {}).get("version")
         if ver:
             return str(ver)
     except (OSError, ValueError):
