@@ -7,3 +7,6 @@
 [submodule "deps/hexastorm"]
 	path = deps/hexastorm
 	url = https://github.com/hstarmans/hexastorm.git
+[submodule "deps/esp32-camera"]
+	path = deps/esp32-camera
+	url = https://github.com/cnadler86/esp32-camera.git
