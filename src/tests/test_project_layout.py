@@ -1,10 +1,14 @@
+import importlib.util
+import json
 import os
 import re
 import sys
+import types
 
 import build
+import control
 import pytest
-from control import _paths
+from control import _paths, bootlib, constants
 from control._paths import get_repo_root, resolve_hexastorm_src
 from hexastorm.config import PlatformConfig
 
@@ -41,6 +45,7 @@ def test_submodules_and_micropython_cmake_paths():
     for sub in (
         "deps/micropython-ulab",
         "deps/micropython-camera-API",
+        "deps/esp32-camera",
         "deps/hexastorm",
     ):
         assert sub in gitmodules_text
@@ -48,6 +53,7 @@ def test_submodules_and_micropython_cmake_paths():
     assert (root / "deps" / "micropython-ulab" / "code" / "micropython.cmake").is_file()
     assert (root / "deps" / "micropython-camera-API" / "micropython.cmake").is_file()
     assert (root / "deps" / "micropython-camera-API" / "src" / "acamera.py").is_file()
+    assert (root / "deps" / "esp32-camera" / "CMakeLists.txt").is_file()
 
     cmake_file = root / "src" / "micropython.cmake"
     cmake_text = cmake_file.read_text()
@@ -56,6 +62,9 @@ def test_submodules_and_micropython_cmake_paths():
     for rel_path in includes:
         target = (cmake_file.parent / rel_path).resolve()
         assert target.is_file(), f"Missing cmake include target: {target}"
+
+    assert "_HEXASTORM_SAVED_MANIFEST" in cmake_text
+    assert "idf_component_get_property(esp32_camera_lib esp32-camera COMPONENT_LIB)" in cmake_text
 
 
 def test_out_of_tree_board_matches_platform_config():
@@ -68,11 +77,13 @@ def test_out_of_tree_board_matches_platform_config():
         board_dir / "mpconfigboard.cmake",
         board_dir / "sdkconfig.board.in",
         board_dir / "partitions-32MiB-ota.csv",
-        board_dir / "components" / "hexastorm_camera_dep" / "CMakeLists.txt",
-        board_dir / "components" / "hexastorm_camera_dep" / "idf_component.yml",
     )
     for path in expected_files:
         assert path.is_file(), f"Missing board file: {path}"
+
+    board_cmake = (board_dir / "mpconfigboard.cmake").read_text()
+    assert "deps/esp32-camera" in board_cmake
+    assert "IDF_COMPONENTS esp32-camera" in board_cmake
 
     header_text = (board_dir / "mpconfigboard.h").read_text()
     defines = {
@@ -255,3 +266,76 @@ def test_manifest_python_module_cmd_fallback(monkeypatch):
         "-m",
         "freezefs",
     ]
+
+
+def test_firmware_version_resolution_and_ota_comparison(tmp_path, monkeypatch):
+    """Verify frozen FIRMWARE_VERSION resolution, Docker forwarding, and OTA comparison."""
+    monkeypatch.setenv("FIRMWARE_VERSION", "v0.2.5")
+    assert _paths.resolve_firmware_version(tmp_path) == "v0.2.5"
+
+    monkeypatch.delenv("FIRMWARE_VERSION", raising=False)
+    cfg_dir = tmp_path / "src" / "root"
+    cfg_dir.mkdir(parents=True)
+    (cfg_dir / "config.json").write_text(json.dumps({"github": {"version": "0.9"}}))
+    assert _paths.resolve_firmware_version(tmp_path) == "0.9"
+
+    docker_paths = build.resolve_build_paths(use_docker=True)
+    cmd = build.build_docker_run_command(docker_paths, firmware_version="v0.2.0")
+    idx = cmd.index("FIRMWARE_VERSION=v0.2.0")
+    assert cmd[idx - 1] == "-e"
+
+    stub_build_info = types.ModuleType("control.build_info")
+    stub_build_info.BUILD_ID = "build_test_fw"
+    stub_build_info.FIRMWARE_VERSION = "v0.2.0"
+    monkeypatch.setitem(sys.modules, "control.build_info", stub_build_info)
+    monkeypatch.setattr(control, "build_info", stub_build_info, raising=False)
+    monkeypatch.setitem(constants.CONFIG["github"], "version", "0.1")
+
+    assert constants.get_firmware_version() == "v0.2.0"
+
+    class DummyResp:
+        def __init__(self, tag_name):
+            self.status_code = 200
+            self.text = json.dumps({"tag_name": tag_name})
+
+    monkeypatch.setattr(bootlib.requests, "get", lambda *a, **kw: DummyResp("v0.2.0"))
+    assert bootlib.get_firmware_dct(require_new=True) == {}
+
+    monkeypatch.setattr(bootlib.requests, "get", lambda *a, **kw: DummyResp("v0.3.0"))
+    assert bootlib.get_firmware_dct(require_new=True)["tag_name"] == "v0.3.0"
+
+    # Also verify deploy_assets() preserves FIRMWARE_VERSION when migrating config_old.json
+    old_cfg = tmp_path / "config_old.json"
+    new_cfg = tmp_path / "config.json"
+    old_cfg.write_text(json.dumps({"github": {"version": "0.1"}, "serial": "SN-42"}))
+
+    class StubFinder:
+        def find_spec(self, fullname, path, target=None):
+            if fullname in ("control.build_info", "control.frozen_root"):
+                return importlib.util.spec_from_loader(fullname, self)
+            return None
+
+        def create_module(self, spec):
+            return types.ModuleType(spec.name)
+
+        def exec_module(self, module):
+            if module.__name__ == "control.build_info":
+                module.BUILD_ID = "build_test_fw"
+                module.FIRMWARE_VERSION = "v0.2.0"
+            elif module.__name__ == "control.frozen_root":
+                new_cfg.write_text(json.dumps({"github": {"version": "0.1"}}))
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delitem(sys.modules, "control.build_info", raising=False)
+    monkeypatch.delitem(sys.modules, "control.frozen_root", raising=False)
+    monkeypatch.delattr(control, "build_info", raising=False)
+    monkeypatch.delattr(control, "frozen_root", raising=False)
+    monkeypatch.setattr(sys, "meta_path", [StubFinder(), *sys.meta_path])
+    monkeypatch.setattr(constants, "ESP32", True)
+    monkeypatch.setattr(constants, "CONFIG_FILE", str(new_cfg))
+    monkeypatch.setattr(constants, "CONFIG_OLD_FILE", str(old_cfg))
+
+    constants.deploy_assets(overwrite=True)
+    migrated = json.loads(new_cfg.read_text())
+    assert migrated["serial"] == "SN-42"
+    assert migrated["github"]["version"] == "v0.2.0"

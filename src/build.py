@@ -87,6 +87,7 @@ def build_docker_run_command(
     hexastorm_dir=None,
     host_uid=None,
     host_gid=None,
+    firmware_version=None,
 ):
     """Construct the ``docker run`` invocation that compiles firmware into ``build/``."""
     cmd = [
@@ -112,6 +113,14 @@ def build_docker_run_command(
                 "HEXASTORM_DIR=/hexastorm_override",
             ]
         )
+
+    fw_ver = (
+        firmware_version
+        if firmware_version is not None
+        else os.environ.get("FIRMWARE_VERSION")
+    )
+    if fw_ver:
+        cmd.extend(["-e", f"FIRMWARE_VERSION={fw_ver}"])
 
     if host_uid is not None and host_gid is not None:
         cmd.extend(["-e", f"HOST_UID={host_uid}", "-e", f"HOST_GID={host_gid}"])
@@ -566,6 +575,7 @@ def _validate_submodule_deps(repo_root: str) -> None:
     required = [
         os.path.join(repo_root, "deps", "micropython-ulab", "code", "micropython.cmake"),
         os.path.join(repo_root, "deps", "micropython-camera-API", "micropython.cmake"),
+        os.path.join(repo_root, "deps", "esp32-camera", "CMakeLists.txt"),
     ]
     missing = [p for p in required if not os.path.isfile(p)]
     if missing:

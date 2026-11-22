@@ -171,7 +171,9 @@ def get_firmware_dct(require_new=True):
             logger.warning(f"Version number '{code}' invalid, fallback to (0, 0, 0)")
             return (0, 0, 0)
 
-    if (not require_new) or (clean(release_dct["tag_name"]) > clean(gh["version"])):
+    if (not require_new) or (
+        clean(release_dct["tag_name"]) > clean(constants.get_firmware_version())
+    ):
         return release_dct
     else:
         logger.info("No new firmware")

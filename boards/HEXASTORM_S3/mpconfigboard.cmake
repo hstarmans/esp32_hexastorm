@@ -15,5 +15,5 @@ set(SDKCONFIG_DEFAULTS
     ${CMAKE_BINARY_DIR}/sdkconfig.hexastorm
 )
 
-list(APPEND EXTRA_COMPONENT_DIRS ${MICROPY_BOARD_DIR}/components)
-list(APPEND IDF_COMPONENTS hexastorm_camera_dep)
+list(APPEND EXTRA_COMPONENT_DIRS "${MICROPY_BOARD_DIR}/../../deps/esp32-camera")
+list(APPEND IDF_COMPONENTS esp32-camera)

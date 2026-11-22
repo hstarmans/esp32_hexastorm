@@ -34,7 +34,8 @@ This guide covers cloning with tracked submodules, dependency layout, building f
 External dependencies are split cleanly by role so no manual symlinks are needed:
 * **C / Submodule dependencies (`deps/`):** Tracked via `.gitmodules` and pinned to tested commits/tags:
   * `deps/micropython-ulab` (`6.12`) — C vector/matrix library linked via [src/micropython.cmake](src/micropython.cmake).
-  * `deps/micropython-camera-API` (`v0.6.2`) — C OV2640 camera driver linked via [src/micropython.cmake](src/micropython.cmake) plus Python `acamera.py` frozen via [src/manifest.py](src/manifest.py).
+  * `deps/micropython-camera-API` (`v0.6.2`) — MicroPython camera wrapper linked via [src/micropython.cmake](src/micropython.cmake) plus Python `acamera.py` frozen via [src/manifest.py](src/manifest.py).
+  * `deps/esp32-camera` — ESP-IDF OV2640 sensor driver registered directly as component `esp32-camera` via `EXTRA_COMPONENT_DIRS` in [boards/HEXASTORM_S3/mpconfigboard.cmake](boards/HEXASTORM_S3/mpconfigboard.cmake).
   * `deps/hexastorm` — Hardware-agnostic FPGA gateware/host/calibration repo. Only lightweight pure-Python/`ulab` modules (`ulabext.py`, `config.py`, `calibration/core.py`, `fpga_host/*`) are frozen into MicroPython, so heavy PC dependencies (`amaranth`, `yowasp-yosys`, `matplotlib`) are never pulled into `esp32_hexastorm`.
   * **Live dual-repo workflow:** `src/control/_paths.py` and `src/manifest.py` inspect `HEXASTORM_DIR` first, then `deps/hexastorm/src`, then sibling `../hexastorm/src`. Set `HEXASTORM_DIR=../hexastorm` during local co-development (even with `--docker`, which automatically bind-mounts it read-only), and bump the pinned submodule commit with `git submodule update --remote deps/hexastorm` once tested.
 * **Vendored pure-Python MicroPython libs (`vendor/`):** `microdot`, `utemplate`, `ota`, `mrequests`, `winbond`, and `tmc` live in `vendor/` instead of `src/`. See [vendor/VERSIONS.md](vendor/VERSIONS.md) for upstream URLs, versions, licenses, and local patches (notably HTTPS TLS + redirect + streaming OTA patches in `vendor/mrequests/urequests.py`).
@@ -72,8 +73,7 @@ The repository ships a self-contained [Dockerfile](Dockerfile) built on `espress
 ### Out-of-Tree Board Definition (`boards/HEXASTORM_S3/`)
 
 No manual edits to upstream MicroPython are ever needed. `boards/HEXASTORM_S3/` provides:
-* `mpconfigboard.cmake` — sets `IDF_TARGET esp32s3`, selects 240 MHz + Octal SPIRAM defaults, configures `sdkconfig.board.in`, and registers `components/hexastorm_camera_dep`.
-* `components/hexastorm_camera_dep/idf_component.yml` — pulls `espressif/esp32-camera` from `https://github.com/cnadler86/esp32-camera.git`.
+* `mpconfigboard.cmake` — sets `IDF_TARGET esp32s3`, selects 240 MHz + Octal SPIRAM defaults, configures `sdkconfig.board.in`, and appends `deps/esp32-camera` to `EXTRA_COMPONENT_DIRS`.
 * `partitions-32MiB-ota.csv` & `sdkconfig.board.in` — 32 MiB Octal Flash with dual `ota_0`/`ota_1` partitions (`0x300000` each) and app rollback enabled.
 * `mpconfigboard.h` — sets `MICROPY_HW_I2C0_SCL (17)`, `MICROPY_HW_I2C0_SDA (18)`, and OV2640 pins matching `PlatformConfig.esp32_cfg` in `hexastorm/config.py` (`SIOD = 18` SDA, `SIOC = 17` SCL, `XCLK = 10 MHz`, verified by `test_project_layout.py`).
 

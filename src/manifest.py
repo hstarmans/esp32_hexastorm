@@ -104,9 +104,11 @@ try:
     with open(frozen_output, "a") as f:
         f.write(f'\nBUILD_ID = "{build_id}"\n')
 
+    firmware_version = paths_helper.resolve_firmware_version(repo_root)
     build_info_output = code_dir / "build_info.py"
     with open(build_info_output, "w") as f:
         f.write(f'BUILD_ID = "{build_id}"\n')
+        f.write(f'FIRMWARE_VERSION = "{firmware_version}"\n')
 except subprocess.CalledProcessError as e:
     logger.error(f"Error during asset packing: {e}")
     sys.exit(1)

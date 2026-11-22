@@ -190,6 +190,12 @@ def deploy_assets(overwrite=False):
             logger.info("Migrating user settings into new configuration file...")
             new_dct = merge_configs(new_dct, old_dct)
 
+            fw_ver = getattr(build_info, "FIRMWARE_VERSION", None)
+            if fw_ver:
+                if "github" not in new_dct or not isinstance(new_dct["github"], dict):
+                    new_dct["github"] = {}
+                new_dct["github"]["version"] = str(fw_ver)
+
             # Save the merged config back to config.json with pretty formatting
             clean_dct = sanitize_types(new_dct)
             with open(CONFIG_FILE, "w") as f_out:
@@ -363,6 +369,19 @@ def update_config():
         from .camera import camera
 
         camera.set_exposure_ms(CONFIG["calibration"]["camera_exposure_ms"])
+
+
+def get_firmware_version():
+    """Return the active firmware version from frozen build_info, falling back to CONFIG."""
+    try:
+        from . import build_info
+
+        ver = getattr(build_info, "FIRMWARE_VERSION", None)
+        if ver:
+            return str(ver)
+    except ImportError:
+        pass
+    return str(CONFIG.get("github", {}).get("version", "unknown"))
 
 
 if ESP32:

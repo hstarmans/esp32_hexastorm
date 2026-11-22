@@ -57,6 +57,7 @@ jobs:
           docker run --rm \
             -v "${{ github.workspace }}:/workspace" \
             -e IDF_GIT_SAFE_DIR=/workspace:/opt/micropython \
+            -e FIRMWARE_VERSION="${{ github.ref_type == 'tag' && github.ref_name || '' }}" \
             hexastorm-esp32s3-builder:ci
           test -f build/HEXASTORM_S3/micropython.bin
 

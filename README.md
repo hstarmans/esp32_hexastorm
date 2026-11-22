@@ -8,16 +8,22 @@ The workstation's real-time timing is driven by a Lattice iCE40UP5K FPGA program
 
 ## Architecture Overview
 
-```text
-Browser UI (Alpine.js + Bootstrap + SSE /state)
-   │  HTTP + Server-Sent Events (port 5000, default password: hex)
-   ▼
-ESP32-S3 MicroPython (Microdot webapp.py + BaseLaserhead / Laserhead)
-   ├──▶ 5 MHz SPI (cmd + 64-bit word) ──▶ Lattice iCE40UP5K FPGA
-   │       • 24 MHz event-driven laser scanline & PDM modulation
-   │       • 1 MHz discrete forward-difference X/Y/Z stepper moves
-   ├──▶ UART / I2C / PWM ──▶ TMC2209 steppers, digipot, prism, spindle, fan
-   └──▶ Parallel DVP + I2C ──▶ OV2640 camera + on-board ulab 2D calibration
+```mermaid
+flowchart TD
+    UI["Web UI (Alpine.js + Bootstrap)"] -->|"HTTP & SSE /state (port 5000)"| WEB["Microdot Webserver (webapp.py)"]
+
+    subgraph ESP32["ESP32-S3 (MicroPython Firmware)"]
+        WEB --> LH["Laserhead Controller (BaseLaserhead / ESP32Host)"]
+        WEB --> CAL["2D Optical Calibration (hexastorm.calibration.core)"]
+        WEB --> OTA["GitHub OTA & Config (bootlib.py / SafeNVS)"]
+        CAL --> CAM_CTRL["OV2640 Camera Controller (camera.py)"]
+    end
+
+    LH -->|"5 MHz SPI (cmd + 64-bit word)"| FPGA["Lattice iCE40UP5K FPGA (24 MHz laser PDM / 1 MHz steppers)"]
+    LH -->|"UART (115200 baud)"| TMC["TMC2209 Stepper Drivers (X/Y/Z)"]
+    LH -->|"I2C & PWM"| PERIPH["Laser Power, Prism, Spindle & Fan"]
+    CAM_CTRL -->|"Parallel DVP + I2C (10 MHz XCLK)"| OV["OV2640 Camera Sensor"]
+    OTA -.->|"HTTPS OTA (micropython.bin)"| GH["GitHub Releases (CI Docker Build)"]
 ```
 
 * **Coordinate Persistence & Crash Protection:** Machine (`mpos`) and workspace offset (`woff`) coordinates are persisted in ESP32 NVS in micrometers via `SafeNVS` (`nvs_mock.json` on PC). Boot crashes are tracked in RTC memory (`bootlib.check_crash_loop_rtc()`), entering safe mode after repeated failures and clearing the counter after 5 seconds of stable uptime (`_mark_boot_stable()`).
@@ -56,7 +62,7 @@ The **Camera & Calibration** panel (`camera_panel.html`, `src/control/calibratio
 | [Dockerfile](Dockerfile), [docker/](docker/) | Reproducible builder container (`espressif/idf:v5.5.2` + MicroPython `v1.28.0` + `mpy-cross`) |
 | [.github/workflows/ci.yml](.github/workflows/ci.yml) | Automated `pytest`/`ruff` checks, Docker firmware CI builds, and tagged OTA releases |
 | [boards/HEXASTORM_S3/](boards/HEXASTORM_S3/) | Out-of-tree MicroPython board definition (`mpconfigboard.h`, 32 MiB OTA partitions, `esp32-camera` component) |
-| [deps/](deps/) | Git submodules (`hexastorm`, `micropython-ulab`, `micropython-camera-API`) — no local symlinks |
+| [deps/](deps/) | Git submodules (`hexastorm`, `micropython-ulab`, `micropython-camera-API`, `esp32-camera`) — no local symlinks |
 | [vendor/](vendor/) | Vendored pure-Python MicroPython libraries (`microdot`, `utemplate`, `ota`, `mrequests`, `winbond`, `tmc`) + [VERSIONS.md](vendor/VERSIONS.md) |
 | [src/boot.py](src/boot.py) | Early boot logger setup, asset deployment (`constants`), and RTC crash-loop guard |
 | [src/main.py](src/main.py) | Async startup: Wi-Fi manager, NTP sync, optional WebREPL, Microdot server, and 5s stability mark |

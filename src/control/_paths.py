@@ -1,6 +1,8 @@
 """Path resolution helpers for CPython tooling, tests, and firmware manifest builds."""
 
+import json
 import os
+import subprocess
 import sys
 from importlib.util import find_spec
 from pathlib import Path
@@ -16,6 +18,42 @@ def python_module_cmd(module_name: str) -> list[str]:
     if find_spec(module_name) is not None:
         return [sys.executable, "-m", module_name]
     return ["uv", "run", "python", "-m", module_name]
+
+
+def resolve_firmware_version(repo_root: Path | None = None) -> str:
+    """Determine the firmware version string to freeze into build_info.py."""
+    env_ver = os.environ.get("FIRMWARE_VERSION", "").strip()
+    if env_ver:
+        return env_ver
+
+    root = get_repo_root() if repo_root is None else Path(repo_root).resolve()
+    for git_args in (
+        ["git", "-C", str(root), "describe", "--tags", "--exact-match"],
+        ["git", "-C", str(root), "describe", "--tags", "--abbrev=0"],
+    ):
+        try:
+            proc = subprocess.run(
+                git_args,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            tag = proc.stdout.strip()
+            if proc.returncode == 0 and tag:
+                return tag
+        except OSError:
+            break
+
+    config_path = root / "src" / "root" / "config.json"
+    try:
+        data = json.loads(config_path.read_text())
+        ver = data.get("github", {}).get("version")
+        if ver:
+            return str(ver)
+    except (OSError, ValueError):
+        pass
+
+    return "0.1"
 
 
 def resolve_hexastorm_src(

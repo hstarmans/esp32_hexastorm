@@ -637,7 +637,7 @@ async def api_check_update(request, session):
     """
     logger.info("Checking GitHub for firmware updates...")
 
-    current_version = CONFIG.get("github", {}).get("version", "unknown")
+    current_version = constants.get_firmware_version()
 
     # get_firmware_dct returns {} if no new update is found
     release_dct = bootlib.get_firmware_dct(require_new=True)
