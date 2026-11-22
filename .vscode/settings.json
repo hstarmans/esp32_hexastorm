@@ -1,5 +1,11 @@
-{  "python.analysis.diagnosticSeverityOverrides": {
+{
+    "python.analysis.extraPaths": [
+        "src",
+        "vendor",
+        "deps/hexastorm/src"
+    ],
+    "python.analysis.diagnosticSeverityOverrides": {
         "reportMissingModuleSource": "none"
     },
-    "cmake.ignoreCMakeListsMissing": true,
+    "cmake.ignoreCMakeListsMissing": true
 }

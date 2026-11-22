@@ -5,6 +5,7 @@ import re
 from pathlib import Path
 
 import pytest
+
 from control import constants, webapp
 from control.laserhead import base as base_mod
 from control.laserhead import laserhead

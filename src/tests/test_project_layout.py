@@ -1,13 +1,16 @@
+import importlib.abc
 import importlib.util
 import json
 import os
 import re
 import sys
+import tomllib
 import types
+
+import pytest
 
 import build
 import control
-import pytest
 from control import _paths, bootlib, constants
 from control._paths import get_repo_root, resolve_hexastorm_src
 from hexastorm.config import PlatformConfig
@@ -301,6 +304,46 @@ def test_manifest_python_module_cmd_fallback(monkeypatch):
     ]
 
 
+class _StubBuildInfoModule(types.ModuleType):
+    BUILD_ID: str
+    FIRMWARE_VERSION: str
+    FPGA_VERSION: str
+
+
+class _StubDeployFinder(importlib.abc.MetaPathFinder, importlib.abc.Loader):
+    def __init__(
+        self,
+        new_cfg,
+        *,
+        build_id: str,
+        firmware_version: str,
+        factory_cfg: dict,
+        fpga_version: str | None = None,
+    ):
+        self.new_cfg = new_cfg
+        self.build_id = build_id
+        self.firmware_version = firmware_version
+        self.factory_cfg = factory_cfg
+        self.fpga_version = fpga_version
+
+    def find_spec(self, fullname, path, target=None):
+        if fullname in ("control.build_info", "control.frozen_root"):
+            return importlib.util.spec_from_loader(fullname, self)
+        return None
+
+    def create_module(self, spec):
+        return _StubBuildInfoModule(spec.name)
+
+    def exec_module(self, module):
+        if module.__name__ == "control.build_info":
+            setattr(module, "BUILD_ID", self.build_id)
+            setattr(module, "FIRMWARE_VERSION", self.firmware_version)
+            if self.fpga_version is not None:
+                setattr(module, "FPGA_VERSION", self.fpga_version)
+        elif module.__name__ == "control.frozen_root":
+            self.new_cfg.write_text(json.dumps(self.factory_cfg))
+
+
 def test_firmware_version_resolution_and_ota_comparison(tmp_path, monkeypatch):
     """Verify frozen FIRMWARE_VERSION resolution, Docker forwarding, and OTA comparison."""
     monkeypatch.setenv("FIRMWARE_VERSION", "v0.2.5")
@@ -317,7 +360,7 @@ def test_firmware_version_resolution_and_ota_comparison(tmp_path, monkeypatch):
     idx = cmd.index("FIRMWARE_VERSION=v0.2.0")
     assert cmd[idx - 1] == "-e"
 
-    stub_build_info = types.ModuleType("control.build_info")
+    stub_build_info = _StubBuildInfoModule("control.build_info")
     stub_build_info.BUILD_ID = "build_test_fw"
     stub_build_info.FIRMWARE_VERSION = "v0.2.0"
     monkeypatch.setitem(sys.modules, "control.build_info", stub_build_info)
@@ -342,28 +385,19 @@ def test_firmware_version_resolution_and_ota_comparison(tmp_path, monkeypatch):
     new_cfg = tmp_path / "config.json"
     old_cfg.write_text(json.dumps({"github": {"version": "0.1"}, "serial": "SN-42"}))
 
-    class StubFinder:
-        def find_spec(self, fullname, path, target=None):
-            if fullname in ("control.build_info", "control.frozen_root"):
-                return importlib.util.spec_from_loader(fullname, self)
-            return None
-
-        def create_module(self, spec):
-            return types.ModuleType(spec.name)
-
-        def exec_module(self, module):
-            if module.__name__ == "control.build_info":
-                module.BUILD_ID = "build_test_fw"
-                module.FIRMWARE_VERSION = "v0.2.0"
-            elif module.__name__ == "control.frozen_root":
-                new_cfg.write_text(json.dumps({"github": {"version": "0.1"}}))
+    stub_finder = _StubDeployFinder(
+        new_cfg,
+        build_id="build_test_fw",
+        firmware_version="v0.2.0",
+        factory_cfg={"github": {"version": "0.1"}},
+    )
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.delitem(sys.modules, "control.build_info", raising=False)
     monkeypatch.delitem(sys.modules, "control.frozen_root", raising=False)
     monkeypatch.delattr(control, "build_info", raising=False)
     monkeypatch.delattr(control, "frozen_root", raising=False)
-    monkeypatch.setattr(sys, "meta_path", [StubFinder(), *sys.meta_path])
+    monkeypatch.setattr(sys, "meta_path", [stub_finder, *sys.meta_path])
     monkeypatch.setattr(constants, "ESP32", True)
     monkeypatch.setattr(constants, "CONFIG_FILE", str(new_cfg))
     monkeypatch.setattr(constants, "CONFIG_OLD_FILE", str(old_cfg))
@@ -462,7 +496,7 @@ def test_build_fpga_override_and_cache_hit(tmp_path, monkeypatch):
 
 def test_fpga_version_in_constants_and_deploy_assets(tmp_path, monkeypatch):
     """Verify get_fpga_version() and deploy_assets() syncing FPGA_VERSION to config."""
-    stub_build_info = types.ModuleType("control.build_info")
+    stub_build_info = _StubBuildInfoModule("control.build_info")
     stub_build_info.BUILD_ID = "build_fpga_test"
     stub_build_info.FIRMWARE_VERSION = "v0.2.0"
     stub_build_info.FPGA_VERSION = "e1111f0-deadbeef"
@@ -476,29 +510,20 @@ def test_fpga_version_in_constants_and_deploy_assets(tmp_path, monkeypatch):
     new_cfg = tmp_path / "config.json"
     old_cfg.write_text(json.dumps({"fpga": {"version": "0.1"}, "serial": 7}))
 
-    class StubFinder:
-        def find_spec(self, fullname, path, target=None):
-            if fullname in ("control.build_info", "control.frozen_root"):
-                return importlib.util.spec_from_loader(fullname, self)
-            return None
-
-        def create_module(self, spec):
-            return types.ModuleType(spec.name)
-
-        def exec_module(self, module):
-            if module.__name__ == "control.build_info":
-                module.BUILD_ID = "build_fpga_test"
-                module.FIRMWARE_VERSION = "v0.2.0"
-                module.FPGA_VERSION = "e1111f0-deadbeef"
-            elif module.__name__ == "control.frozen_root":
-                new_cfg.write_text(json.dumps({"fpga": {"version": "0.1"}}))
+    stub_finder = _StubDeployFinder(
+        new_cfg,
+        build_id="build_fpga_test",
+        firmware_version="v0.2.0",
+        fpga_version="e1111f0-deadbeef",
+        factory_cfg={"fpga": {"version": "0.1"}},
+    )
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.delitem(sys.modules, "control.build_info", raising=False)
     monkeypatch.delitem(sys.modules, "control.frozen_root", raising=False)
     monkeypatch.delattr(control, "build_info", raising=False)
     monkeypatch.delattr(control, "frozen_root", raising=False)
-    monkeypatch.setattr(sys, "meta_path", [StubFinder(), *sys.meta_path])
+    monkeypatch.setattr(sys, "meta_path", [stub_finder, *sys.meta_path])
     monkeypatch.setattr(constants, "ESP32", True)
     monkeypatch.setattr(constants, "CONFIG_FILE", str(new_cfg))
     monkeypatch.setattr(constants, "CONFIG_OLD_FILE", str(old_cfg))
@@ -507,3 +532,17 @@ def test_fpga_version_in_constants_and_deploy_assets(tmp_path, monkeypatch):
     migrated = json.loads(new_cfg.read_text())
     assert migrated["fpga"]["version"] == "e1111f0-deadbeef"
     assert migrated["github"]["version"] == "v0.2.0"
+
+
+def test_linter_and_ide_paths_include_hexastorm():
+    """Verify Ruff, Pyright, pytest, and VS Code extra paths include deps/hexastorm/src."""
+    root = get_repo_root()
+    pyproject = tomllib.loads((root / "pyproject.toml").read_text())
+
+    expected_paths = ["src", "vendor", "deps/hexastorm/src"]
+    assert pyproject["tool"]["ruff"]["src"] == expected_paths
+    assert pyproject["tool"]["pyright"]["extraPaths"] == expected_paths
+    assert pyproject["tool"]["pytest"]["ini_options"]["pythonpath"] == expected_paths
+
+    vscode_settings = json.loads((root / ".vscode" / "settings.json").read_text())
+    assert vscode_settings["python.analysis.extraPaths"] == expected_paths

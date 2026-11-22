@@ -35,6 +35,7 @@ where = ["src", "vendor"]
 
 [tool.ruff]
 line-length = 88
+src = ["src", "vendor", "deps/hexastorm/src"]
 # exist in micropython  - see manifest.py
 builtins = ["include", "package", "module", "require", "options", "const"]
 extend-exclude = [
@@ -46,6 +47,9 @@ extend-exclude = [
 
 [tool.ruff.format]
 quote-style = "double"
+
+[tool.pyright]
+extraPaths = ["src", "vendor", "deps/hexastorm/src"]
 
 [project.scripts]
 build = "build:main"
@@ -61,7 +65,7 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["src/tests"]
-pythonpath = ["src", "vendor"]
+pythonpath = ["src", "vendor", "deps/hexastorm/src"]
 python_files = [
     "test_cameracontroller.py",
     "test_webapp_endpoints.py",
