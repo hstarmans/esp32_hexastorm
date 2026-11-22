@@ -9,27 +9,21 @@ The workstation's real-time timing is driven by a Lattice iCE40UP5K FPGA program
 ## Architecture Overview
 
 ```mermaid
-flowchart LR
-    UI["Web UI (Alpine.js)"] -->|"HTTP & SSE"| WEB["Microdot (webapp.py)"]
-    GH["GitHub Releases"] -.->|"HTTPS OTA"| OTA
+flowchart TD
+    UI["Web UI (Alpine.js + Bootstrap)"] -->|"HTTP & SSE /state (port 5000)"| WEB["Microdot Webserver (webapp.py)"]
 
-    subgraph ESP32["ESP32-S3 (MicroPython)"]
-        WEB --> LH["Laserhead (BaseLaserhead / ESP32Host)"]
-        WEB --> CAL["2D Calibration & OV2640"]
-        WEB --> OTA["OTA & SafeNVS (bootlib.py)"]
+    subgraph ESP32["ESP32-S3 (MicroPython Firmware)"]
+        WEB --> LH["Laserhead Controller (BaseLaserhead / ESP32Host)"]
+        WEB --> CAL["2D Optical Calibration (hexastorm.calibration.core)"]
+        WEB --> OTA["GitHub OTA & Config (bootlib.py / SafeNVS)"]
+        CAL --> CAM_CTRL["OV2640 Camera Controller (camera.py)"]
     end
 
-    subgraph HW["Hardware"]
-        FPGA["iCE40UP5K FPGA (24 MHz laser / 1 MHz steppers)"]
-        TMC["TMC2209 Steppers (X/Y/Z)"]
-        PERIPH["Laser Power, Prism, Spindle & Fan"]
-        OV["OV2640 Sensor (10 MHz XCLK)"]
-    end
-
-    LH -->|"5 MHz SPI"| FPGA
-    LH -->|"UART"| TMC
-    LH -->|"I2C & PWM"| PERIPH
-    CAL -->|"DVP & I2C"| OV
+    LH -->|"5 MHz SPI (cmd + 64-bit word)"| FPGA["Lattice iCE40UP5K FPGA (24 MHz laser PDM / 1 MHz steppers)"]
+    LH -->|"UART (115200 baud)"| TMC["TMC2209 Stepper Drivers (X/Y/Z)"]
+    LH -->|"I2C & PWM"| PERIPH["Laser Power, Prism, Spindle & Fan"]
+    CAM_CTRL -->|"Parallel DVP + I2C (10 MHz XCLK)"| OV["OV2640 Camera Sensor"]
+    OTA -.->|"HTTPS OTA (micropython.bin)"| GH["GitHub Releases (CI Docker Build)"]
 ```
 
 * **Coordinate Persistence & Crash Protection:** Machine (`mpos`) and workspace offset (`woff`) coordinates are persisted in ESP32 NVS in micrometers via `SafeNVS` (`nvs_mock.json` on PC). Boot crashes are tracked in RTC memory (`bootlib.check_crash_loop_rtc()`), entering safe mode after repeated failures and clearing the counter after 5 seconds of stable uptime (`_mark_boot_stable()`).
