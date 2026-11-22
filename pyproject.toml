@@ -13,6 +13,7 @@ license = { file = "LICENSE.txt" }
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "esptool>=4.8",
     "freezefs>=2.4",
     "numpy>=2.2.4",
     "pillow>=11.1.0",

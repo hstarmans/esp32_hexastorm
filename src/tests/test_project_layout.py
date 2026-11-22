@@ -1,8 +1,10 @@
 import os
 import re
+import sys
 
 import build
 import pytest
+from control import _paths
 from control._paths import get_repo_root, resolve_hexastorm_src
 from hexastorm.config import PlatformConfig
 
@@ -171,3 +173,85 @@ def test_build_resolve_paths_respects_env_and_cli(tmp_path, monkeypatch):
     assert paths_cli["local_build_dir"] == os.path.join(
         str(mp_cli_port), "build-HEXASTORM_S3"
     )
+
+
+def test_docker_and_ci_files_exist_and_align():
+    """Verify Dockerfile, .dockerignore, build-firmware.sh, and GitHub CI workflow."""
+    root = get_repo_root()
+
+    dockerfile = root / "Dockerfile"
+    dockerignore = root / ".dockerignore"
+    script = root / "docker" / "build-firmware.sh"
+    ci_yml = root / ".github" / "workflows" / "ci.yml"
+
+    assert dockerfile.is_file()
+    assert dockerignore.is_file()
+    assert script.is_file()
+    assert os.access(script, os.X_OK), "docker/build-firmware.sh must be executable"
+    assert ci_yml.is_file()
+
+    df_text = dockerfile.read_text()
+    for token in ("espressif/idf:v5.5.2", "v1.28.0", "freezefs", "pyclean"):
+        assert token in df_text
+
+    script_text = script.read_text()
+    for token in ("HEXASTORM_S3", "src/manifest.py", "src/micropython.cmake"):
+        assert token in script_text
+
+    ci_text = ci_yml.read_text()
+    for token in ("submodules: recursive", "micropython.bin", "uv run pytest"):
+        assert token in ci_text
+
+
+def test_docker_build_command_and_local_flash_command(tmp_path, monkeypatch):
+    """Verify Docker run invocation, build/HEXASTORM_S3 path, and host esptool flash args."""
+    docker_paths = build.resolve_build_paths(use_docker=True)
+    assert docker_paths["local_build_dir"] == os.path.join(
+        str(get_repo_root()), "build", "HEXASTORM_S3"
+    )
+
+    hs_override = tmp_path / "custom_hexastorm"
+    hs_override.mkdir()
+    monkeypatch.delenv("HEXASTORM_DIR", raising=False)
+    cmd = build.build_docker_run_command(
+        docker_paths,
+        image_name="custom-builder:test",
+        hexastorm_dir=str(hs_override),
+        host_uid=1000,
+        host_gid=1000,
+    )
+    assert cmd[:3] == ["docker", "run", "--rm"]
+    assert f"{docker_paths['repo_root']}:/workspace" in cmd
+    assert f"{build.DOCKER_CACHE_VOLUME}:/root/.cache" in cmd
+    assert f"{hs_override.resolve()}:/hexastorm_override:ro" in cmd
+    assert "HEXASTORM_DIR=/hexastorm_override" in cmd
+    assert "HOST_UID=1000" in cmd
+    assert "HOST_GID=1000" in cmd
+    assert cmd[-1] == "custom-builder:test"
+
+    flash_cmd = build.build_local_flash_command("/dev/ttyACM0", str(tmp_path))
+    assert flash_cmd[:3] == [sys.executable, "-m", "esptool"]
+    assert "/dev/ttyACM0" in flash_cmd
+    for offset, rel_bin in (
+        ("0x0", os.path.join("bootloader", "bootloader.bin")),
+        ("0x10000", "micropython.bin"),
+        ("0x8000", os.path.join("partition_table", "partition-table.bin")),
+        ("0xd000", "ota_data_initial.bin"),
+    ):
+        idx = flash_cmd.index(offset)
+        assert flash_cmd[idx + 1] == os.path.join(str(tmp_path), rel_bin)
+
+
+def test_manifest_python_module_cmd_fallback(monkeypatch):
+    """Verify python_module_cmd runs via sys.executable when installed and falls back to uv."""
+    monkeypatch.setattr(_paths, "find_spec", lambda name: object())
+    assert _paths.python_module_cmd("freezefs") == [sys.executable, "-m", "freezefs"]
+
+    monkeypatch.setattr(_paths, "find_spec", lambda name: None)
+    assert _paths.python_module_cmd("freezefs") == [
+        "uv",
+        "run",
+        "python",
+        "-m",
+        "freezefs",
+    ]

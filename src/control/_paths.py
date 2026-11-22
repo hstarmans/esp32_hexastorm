@@ -2,12 +2,20 @@
 
 import os
 import sys
+from importlib.util import find_spec
 from pathlib import Path
 
 
 def get_repo_root() -> Path:
     """Return the root directory of the esp32_hexastorm repository."""
     return Path(__file__).resolve().parents[2]
+
+
+def python_module_cmd(module_name: str) -> list[str]:
+    """Return command prefix to run a Python module tool in the current env or via uv."""
+    if find_spec(module_name) is not None:
+        return [sys.executable, "-m", module_name]
+    return ["uv", "run", "python", "-m", module_name]
 
 
 def resolve_hexastorm_src(

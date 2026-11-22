@@ -1,6 +1,6 @@
 # ESP32-S3 Developer & Deployment Guide
 
-This guide covers cloning with tracked submodules, dependency layout, building MicroPython firmware using the out-of-tree `boards/HEXASTORM_S3/` board definition, flashing the FPGA bitstream, runtime architecture, and local testing.
+This guide covers cloning with tracked submodules, dependency layout, building firmware cleanly with Docker or GitHub Actions CI (plus optional native ESP-IDF setup), flashing the FPGA bitstream, runtime architecture, and local testing.
 
 ---
 
@@ -22,6 +22,7 @@ This guide covers cloning with tracked submodules, dependency layout, building M
    curl -LsSf https://astral.sh/uv/install.sh | sh
    uv sync
    ```
+   This also installs `esptool` into the virtual environment so host USB flashing works without needing a local ESP-IDF installation.
 
 3. **Create the local jobs folder for CPython testing:**
    ```bash
@@ -35,16 +36,61 @@ External dependencies are split cleanly by role so no manual symlinks are needed
   * `deps/micropython-ulab` (`6.12`) — C vector/matrix library linked via [src/micropython.cmake](src/micropython.cmake).
   * `deps/micropython-camera-API` (`v0.6.2`) — C OV2640 camera driver linked via [src/micropython.cmake](src/micropython.cmake) plus Python `acamera.py` frozen via [src/manifest.py](src/manifest.py).
   * `deps/hexastorm` — Hardware-agnostic FPGA gateware/host/calibration repo. Only lightweight pure-Python/`ulab` modules (`ulabext.py`, `config.py`, `calibration/core.py`, `fpga_host/*`) are frozen into MicroPython, so heavy PC dependencies (`amaranth`, `yowasp-yosys`, `matplotlib`) are never pulled into `esp32_hexastorm`.
-  * **Live dual-repo workflow:** `src/control/_paths.py` and `src/manifest.py` inspect `HEXASTORM_DIR` first, then `deps/hexastorm/src`, then sibling `../hexastorm/src`. Set `HEXASTORM_DIR=../hexastorm` during local co-development, and bump the pinned submodule commit with `git submodule update --remote deps/hexastorm` once tested.
+  * **Live dual-repo workflow:** `src/control/_paths.py` and `src/manifest.py` inspect `HEXASTORM_DIR` first, then `deps/hexastorm/src`, then sibling `../hexastorm/src`. Set `HEXASTORM_DIR=../hexastorm` during local co-development (even with `--docker`, which automatically bind-mounts it read-only), and bump the pinned submodule commit with `git submodule update --remote deps/hexastorm` once tested.
 * **Vendored pure-Python MicroPython libs (`vendor/`):** `microdot`, `utemplate`, `ota`, `mrequests`, `winbond`, and `tmc` live in `vendor/` instead of `src/`. See [vendor/VERSIONS.md](vendor/VERSIONS.md) for upstream URLs, versions, licenses, and local patches (notably HTTPS TLS + redirect + streaming OTA patches in `vendor/mrequests/urequests.py`).
 
 ---
 
-## Building the ESP32-S3 MicroPython Firmware
+## Building & Flashing Firmware (Recommended: Docker)
 
-Firmware builds use ESP-IDF `v5.5.2` and MicroPython `v1.28.0`. All board-specific configuration, 32 MiB OTA partitions, OV2640 pin macros, and `esp32-camera` IDF component dependencies live in `boards/HEXASTORM_S3/`, so the `micropython` checkout stays completely unmodified.
+The repository ships a self-contained [Dockerfile](Dockerfile) built on `espressif/idf:v5.5.2` with MicroPython `v1.28.0`, prebuilt `mpy-cross`, ESP32 submodules, `freezefs`, and `pyclean` baked into a cached image layer. Because `.dockerignore` excludes the workspace source tree from the Docker build context, edits to your Python/HTML/C files never invalidate the toolchain image cache.
 
-1. **Install and activate ESP-IDF (`v5.5.2`):**
+1. **One-command build & flash (host USB):**
+   ```bash
+   # Builds Docker image automatically on first run, compiles build/HEXASTORM_S3/,
+   # reboots the ESP32-S3 into bootloader, and flashes from host via esptool:
+   uv run build --docker
+   ```
+
+2. **Other common Docker workflows:**
+   ```bash
+   # Compile binaries into build/HEXASTORM_S3/ without connecting an ESP32:
+   uv run build --docker --build-only
+
+   # Compile locally on macOS/Linux in Docker and flash over SSH to a remote host:
+   uv run build --docker --remote hexastorm@pihome.home
+
+   # Force rebuilding the Docker image (e.g. after editing Dockerfile):
+   uv run build --docker --rebuild-image --build-only
+   ```
+
+3. **How host/container build caching works:**
+   * `build.py --docker` mounts the repository at `/workspace` and persists IDF managed component downloads (`espressif__esp32-camera`, `espressif__mdns`, `espressif__tinyusb`) in a named Docker volume (`hexastorm-esp-cache:/root/.cache`).
+   * Inside the container, [docker/build-firmware.sh](docker/build-firmware.sh) runs `make` using the out-of-tree `boards/HEXASTORM_S3/` board definition and fixes file ownership on Linux via `HOST_UID`/`HOST_GID`.
+   * [src/manifest.py](src/manifest.py) calls `python_module_cmd(...)`, which runs `freezefs` and `pyclean` via ESP-IDF's active Python inside Docker (never clashing with your host `.venv`) and falls back to `uv run python -m ...` during native builds.
+
+### Out-of-Tree Board Definition (`boards/HEXASTORM_S3/`)
+
+No manual edits to upstream MicroPython are ever needed. `boards/HEXASTORM_S3/` provides:
+* `mpconfigboard.cmake` — sets `IDF_TARGET esp32s3`, selects 240 MHz + Octal SPIRAM defaults, configures `sdkconfig.board.in`, and registers `components/hexastorm_camera_dep`.
+* `components/hexastorm_camera_dep/idf_component.yml` — pulls `espressif/esp32-camera` from `https://github.com/cnadler86/esp32-camera.git`.
+* `partitions-32MiB-ota.csv` & `sdkconfig.board.in` — 32 MiB Octal Flash with dual `ota_0`/`ota_1` partitions (`0x300000` each) and app rollback enabled.
+* `mpconfigboard.h` — sets `MICROPY_HW_I2C0_SCL (17)`, `MICROPY_HW_I2C0_SDA (18)`, and OV2640 pins matching `PlatformConfig.esp32_cfg` in `hexastorm/config.py` (`SIOD = 18` SDA, `SIOC = 17` SCL, `XCLK = 10 MHz`, verified by `test_project_layout.py`).
+
+### GitHub Actions CI & Automated OTA Releases (`.github/workflows/ci.yml`)
+
+Every push and pull request runs:
+* **`test` job:** `uv sync`, `uv run pytest`, and `uv run ruff check src`.
+* **`firmware` job:** Builds firmware inside the `Dockerfile` container and uploads `micropython.bin`, `firmware.bin`, `bootloader.bin`, `partition-table.bin`, and `ota_data_initial.bin` as workflow artifacts.
+* **Tagged OTA releases (`git tag vX.Y.Z && git push --tags`):** Automatically creates a GitHub Release with `micropython.bin` attached so ESP32-S3 units can update directly via the web UI (`bootlib.update_firmware()`).
+
+---
+
+## Optional: Native Toolchain Build (Without Docker)
+
+If you prefer building natively outside Docker (ESP-IDF `v5.5.2` + MicroPython `v1.28.0`):
+
+1. **Install ESP-IDF `v5.5.2`:**
    ```bash
    git clone -b v5.5.2 --recursive https://github.com/espressif/esp-idf.git
    cd esp-idf
@@ -52,59 +98,25 @@ Firmware builds use ESP-IDF `v5.5.2` and MicroPython `v1.28.0`. All board-specif
    source export.sh
    ```
 
-2. **Clone `micropython` (`v1.28.0`) and build `mpy-cross`:**
+2. **Clone `micropython` (`v1.28.0`), build `mpy-cross`, and fetch ESP32 submodules:**
    ```bash
-   git clone https://github.com/micropython/micropython.git
+   git clone --depth 1 --branch v1.28.0 https://github.com/micropython/micropython.git
    cd micropython
-   git checkout -f v1.28.0
-   git submodule update --init --recursive
-   cd mpy-cross
-   make
-   cd ../ports/esp32
-   make submodules
+   git submodule update --init --recursive --depth 1
+   make -C mpy-cross -j
+   make -C ports/esp32 BOARD=ESP32_GENERIC_S3 submodules
    ```
 
-3. **Out-of-tree board definition (`boards/HEXASTORM_S3/`):**
-   No manual edits to `ports/esp32/boards/ESP32_GENERIC_S3/` or `ports/esp32/main/idf_component.yml` are required. `boards/HEXASTORM_S3/` provides:
-   * `mpconfigboard.cmake` — sets `IDF_TARGET esp32s3`, selects 240 MHz + Octal SPIRAM defaults, configures `sdkconfig.board.in`, and registers `components/hexastorm_camera_dep`.
-   * `components/hexastorm_camera_dep/idf_component.yml` — pulls `espressif/esp32-camera` from `https://github.com/cnadler86/esp32-camera.git`.
-   * `partitions-32MiB-ota.csv` & `sdkconfig.board.in` — 32 MiB Octal Flash with dual `ota_0`/`ota_1` partitions (`0x300000` each) and app rollback enabled.
-   * `mpconfigboard.h` — sets `MICROPY_HW_I2C0_SCL (17)`, `MICROPY_HW_I2C0_SDA (18)`, and OV2640 pins matching `PlatformConfig.esp32_cfg` in `hexastorm/config.py` (`SIOD = 18` SDA, `SIOC = 17` SCL, `XCLK = 10 MHz`, verified by `test_project_layout.py`).
+3. **Build & flash via `uv run build`:**
+   Point `MICROPYTHON_DIR` and `IDF_PATH` (or `--micropython-dir` / `--idf-path`) at your native checkouts; defaults fall back to `~/Documents/Python/{micropython,esp-idf}`:
+   ```bash
+   export MICROPYTHON_DIR=/path/to/micropython
+   export IDF_PATH=/path/to/esp-idf
 
----
-
-## Automated Build, Flash & Frozen Manifest
-
-`src/build.py` (`uv run build`) auto-detects the ESP32-S3 (USB VID `0x303A`), reboots MicroPython into bootloader mode, compiles using `BOARD_DIR=boards/HEXASTORM_S3`, and flashes via `esptool`.
-
-Configure toolchains via environment variables (or CLI flags) instead of hardcoded paths; defaults fall back to `~/Documents/Python/{micropython,esp-idf}`:
-
-```bash
-export MICROPYTHON_DIR=/path/to/micropython
-export IDF_PATH=/path/to/esp-idf
-
-uv run build
-uv run build --port /dev/ttyACM0
-uv run build --remote hexastorm@pihome.home
-```
-
-To invoke `make` manually inside `ports/esp32`:
-```bash
-make -j$(nproc 2>/dev/null || sysctl -n hw.ncpu) \
-    BOARD=HEXASTORM_S3 \
-    BOARD_DIR=/path/to/esp32_hexastorm/boards/HEXASTORM_S3 \
-    FROZEN_MANIFEST=/path/to/esp32_hexastorm/src/manifest.py \
-    USER_C_MODULES=/path/to/esp32_hexastorm/src/micropython.cmake \
-    erase deploy
-```
-
-### What `src/manifest.py` Packages
-
-Whenever `manifest.py` runs, it:
-1. Cleans stale compiled `root/templates/*.py` files and packs `src/root/` via `freezefs` into `src/control/frozen_root.py` along with a timestamped `BUILD_ID` (`src/control/build_info.py`).
-2. Freezes `control/` from `src/`.
-3. Freezes vendored packages (`microdot`, `utemplate`, `ota`, `mrequests`, `winbond`, `tmc`) from `vendor/`.
-4. Freezes explicit `hexastorm` modules (`__init__.py`, `ulabext.py`, `config.py`, `calibration/__init__.py`, `calibration/core.py`, `fpga_host/*`, `tests/test_mpy.py`) via `resolve_hexastorm_src()` and `acamera.py` from `deps/micropython-camera-API/src`.
+   uv run build
+   uv run build --port /dev/ttyACM0
+   uv run build --remote hexastorm@pihome.home
+   ```
 
 ---
 
@@ -175,7 +187,7 @@ Run the mock webserver locally (port `5000`, password `hex`) using `FakeScanhead
 uv run webapp
 ```
 
-Run the fast in-process `pytest` suite (`microdot.test_client.TestClient`, mock `FakeScanhead` calibration, `.pat` packet streaming, REST endpoint guards, frontend template/JS route contract checks, and board/submodule layout verification) and linter:
+Run the fast in-process `pytest` suite (`microdot.test_client.TestClient`, mock `FakeScanhead` calibration, `.pat` packet streaming, REST endpoint guards, frontend template/JS route contract checks, Docker/CI/layout checks, and `HEXASTORM_S3` pin alignment) and linter:
 ```bash
 uv run pytest
 uv run ruff check src

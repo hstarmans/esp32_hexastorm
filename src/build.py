@@ -2,6 +2,7 @@ import argparse
 import logging
 import os
 import shlex
+import shutil
 import subprocess
 import sys
 import time
@@ -27,13 +28,16 @@ logger = logging.getLogger(__name__)
 # --- Configuration Paths ---
 HOME_DIR = os.path.expanduser("~")
 BOARD_NAME = "HEXASTORM_S3"
+DEFAULT_DOCKER_IMAGE = "hexastorm-esp32s3-builder:v5.5.2-mp1.28.0"
+DOCKER_CACHE_VOLUME = "hexastorm-esp-cache"
 
 
-def resolve_build_paths(micropython_dir=None, idf_path=None):
+def resolve_build_paths(micropython_dir=None, idf_path=None, use_docker=False):
     """Resolve MicroPython, ESP-IDF, board, manifest, and output paths.
 
     CLI arguments override ``MICROPYTHON_DIR`` / ``IDF_PATH`` environment variables,
-    which fall back to ``~/Documents/Python/{micropython,esp-idf}``.
+    which fall back to ``~/Documents/Python/{micropython,esp-idf}``. When
+    ``use_docker=True``, firmware artifacts are written to ``build/<BOARD_NAME>``.
     """
     repo_root = os.path.dirname(SRC_DIR)
     board_dir = os.path.join(repo_root, "boards", BOARD_NAME)
@@ -59,6 +63,12 @@ def resolve_build_paths(micropython_dir=None, idf_path=None):
     )
     idf_expanded = os.path.abspath(os.path.expanduser(idf_raw))
 
+    local_build_dir = (
+        os.path.join(repo_root, "build", BOARD_NAME)
+        if use_docker
+        else os.path.join(esp32_port_dir, f"build-{BOARD_NAME}")
+    )
+
     return {
         "repo_root": repo_root,
         "board_name": BOARD_NAME,
@@ -67,8 +77,102 @@ def resolve_build_paths(micropython_dir=None, idf_path=None):
         "idf_export_path": os.path.join(idf_expanded, "export.sh"),
         "manifest_path": os.path.join(SRC_DIR, "manifest.py"),
         "cmake_path": os.path.join(SRC_DIR, "micropython.cmake"),
-        "local_build_dir": os.path.join(esp32_port_dir, f"build-{BOARD_NAME}"),
+        "local_build_dir": local_build_dir,
     }
+
+
+def build_docker_run_command(
+    paths,
+    image_name=DEFAULT_DOCKER_IMAGE,
+    hexastorm_dir=None,
+    host_uid=None,
+    host_gid=None,
+):
+    """Construct the ``docker run`` invocation that compiles firmware into ``build/``."""
+    cmd = [
+        "docker",
+        "run",
+        "--rm",
+        "-v",
+        f"{paths['repo_root']}:/workspace",
+        "-v",
+        f"{DOCKER_CACHE_VOLUME}:/root/.cache",
+        "-e",
+        "IDF_GIT_SAFE_DIR=/workspace:/opt/micropython",
+    ]
+
+    hs_raw = hexastorm_dir if hexastorm_dir is not None else os.environ.get("HEXASTORM_DIR")
+    if hs_raw:
+        abs_hs = os.path.abspath(os.path.expanduser(hs_raw))
+        cmd.extend(
+            [
+                "-v",
+                f"{abs_hs}:/hexastorm_override:ro",
+                "-e",
+                "HEXASTORM_DIR=/hexastorm_override",
+            ]
+        )
+
+    if host_uid is not None and host_gid is not None:
+        cmd.extend(["-e", f"HOST_UID={host_uid}", "-e", f"HOST_GID={host_gid}"])
+
+    cmd.append(image_name)
+    return cmd
+
+
+def ensure_docker_image(repo_root, image_name=DEFAULT_DOCKER_IMAGE, rebuild=False):
+    """Verify Docker is installed and build the firmware builder image if missing."""
+    if shutil.which("docker") is None:
+        logger.error("Docker executable not found in PATH. Install Docker to use --docker.")
+        sys.exit(1)
+
+    if not rebuild:
+        inspect = subprocess.run(
+            ["docker", "image", "inspect", image_name],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        if inspect.returncode == 0:
+            return
+
+    logger.info(f"Building Docker builder image {image_name}...")
+    subprocess.run(
+        ["docker", "build", "-t", image_name, repo_root],
+        check=True,
+    )
+
+
+def build_local_flash_command(active_port, local_build_dir):
+    """Construct the host ``python -m esptool`` flash command list."""
+    return [
+        sys.executable,
+        "-m",
+        "esptool",
+        "--chip",
+        "esp32s3",
+        "-p",
+        active_port,
+        "-b",
+        "460800",
+        "--before=default_reset",
+        "--after=watchdog_reset",
+        "write_flash",
+        "--flash_mode",
+        "dio",
+        "--flash_freq",
+        "80m",
+        "--flash_size",
+        "32MB",
+        "0x0",
+        os.path.join(local_build_dir, "bootloader", "bootloader.bin"),
+        "0x10000",
+        os.path.join(local_build_dir, "micropython.bin"),
+        "0x8000",
+        os.path.join(local_build_dir, "partition_table", "partition-table.bin"),
+        "0xd000",
+        os.path.join(local_build_dir, "ota_data_initial.bin"),
+    ]
 
 
 def find_espressif_device(port_arg=None):
@@ -504,11 +608,32 @@ def main():
         default=None,
         help="Path to ESP-IDF directory containing export.sh (overrides IDF_PATH)",
     )
+    parser.add_argument(
+        "--docker",
+        action="store_true",
+        help="Compile firmware inside the reproducible Docker builder container",
+    )
+    parser.add_argument(
+        "--rebuild-image",
+        action="store_true",
+        help="Force rebuilding the Docker firmware builder image before building",
+    )
+    parser.add_argument(
+        "--docker-image",
+        default=DEFAULT_DOCKER_IMAGE,
+        help="Docker builder image tag to use with --docker",
+    )
+    parser.add_argument(
+        "--build-only",
+        action="store_true",
+        help="Build firmware binaries without checking for or flashing an ESP32",
+    )
     args = parser.parse_args()
 
     paths = resolve_build_paths(
         micropython_dir=args.micropython_dir,
         idf_path=args.idf_path,
+        use_docker=args.docker,
     )
 
     _validate_submodule_deps(paths["repo_root"])
@@ -518,49 +643,71 @@ def main():
         sys.exit(1)
 
     # Pre-flight check: ensure device is ready to be flashed BEFORE building.
-    logger.info("--- Pre-flight Device Check ---")
-    if args.remote:
-        active_port = verify_and_prepare_remote_device(args.remote, args.port)
+    active_port = None
+    if not args.build_only:
+        logger.info("--- Pre-flight Device Check ---")
+        if args.remote:
+            active_port = verify_and_prepare_remote_device(args.remote, args.port)
+        else:
+            active_port = verify_and_prepare_device(args.port)
+
+    if args.docker:
+        ensure_docker_image(
+            paths["repo_root"],
+            image_name=args.docker_image,
+            rebuild=args.rebuild_image,
+        )
+        host_uid = os.getuid() if sys.platform.startswith("linux") else None
+        host_gid = os.getgid() if sys.platform.startswith("linux") else None
+        docker_cmd = build_docker_run_command(
+            paths,
+            image_name=args.docker_image,
+            host_uid=host_uid,
+            host_gid=host_gid,
+        )
+        logger.info("--- Building Firmware (Docker) ---")
+        subprocess.run(docker_cmd, check=True)
     else:
-        active_port = verify_and_prepare_device(args.port)
+        if not os.path.exists(paths["esp32_port_dir"]):
+            logger.error(
+                f"MicroPython ESP32 port directory not found at {paths['esp32_port_dir']}. "
+                "Set MICROPYTHON_DIR, pass --micropython-dir, or use --docker."
+            )
+            sys.exit(1)
 
-    if not os.path.exists(paths["esp32_port_dir"]):
-        logger.error(
-            f"MicroPython ESP32 port directory not found at {paths['esp32_port_dir']}. "
-            "Set MICROPYTHON_DIR or pass --micropython-dir."
+        if not os.path.exists(paths["idf_export_path"]):
+            logger.error(
+                f"ESP-IDF export.sh not found at {paths['idf_export_path']}. "
+                "Set IDF_PATH, pass --idf-path, or use --docker."
+            )
+            sys.exit(1)
+
+        make_cmd = [
+            "make",
+            f"-j{os.cpu_count() or 4}",
+            f"BOARD={paths['board_name']}",
+            f"BOARD_DIR={paths['board_dir']}",
+            f"FROZEN_MANIFEST={paths['manifest_path']}",
+            f"USER_C_MODULES={paths['cmake_path']}",
+        ]
+        quoted_make = " ".join(shlex.quote(part) for part in make_cmd)
+        build_cmd = f"source {shlex.quote(paths['idf_export_path'])} && {quoted_make}"
+
+        logger.info("--- Building Firmware (Native) ---")
+        # executable='/bin/bash' is required because 'source' is a bash built-in
+        subprocess.run(
+            build_cmd,
+            shell=True,
+            cwd=paths["esp32_port_dir"],
+            executable="/bin/bash",
+            check=True,
         )
-        sys.exit(1)
-
-    if not os.path.exists(paths["idf_export_path"]):
-        logger.error(
-            f"ESP-IDF export.sh not found at {paths['idf_export_path']}. "
-            "Set IDF_PATH or pass --idf-path."
-        )
-        sys.exit(1)
-
-    # Build command using out-of-tree board HEXASTORM_S3
-    make_cmd = [
-        "make",
-        f"-j{os.cpu_count() or 4}",
-        f"BOARD={paths['board_name']}",
-        f"BOARD_DIR={paths['board_dir']}",
-        f"FROZEN_MANIFEST={paths['manifest_path']}",
-        f"USER_C_MODULES={paths['cmake_path']}",
-    ]
-    quoted_make = " ".join(shlex.quote(part) for part in make_cmd)
-    build_cmd = f"source {shlex.quote(paths['idf_export_path'])} && {quoted_make}"
-
-    logger.info("--- Building Firmware ---")
-    # executable='/bin/bash' is required because 'source' is a bash built-in
-    subprocess.run(
-        build_cmd,
-        shell=True,
-        cwd=paths["esp32_port_dir"],
-        executable="/bin/bash",
-        check=True,
-    )
 
     local_build_dir = paths["local_build_dir"]
+
+    if args.build_only:
+        logger.info(f"Build complete (--build-only). Binaries in: {local_build_dir}")
+        return
 
     if args.remote:
         logger.info(f"--- Transferring Binaries to Remote Target ({args.remote}) ---")
@@ -579,23 +726,10 @@ def main():
         logger.info(f"--- Flashing Firmware Remotely on {args.remote} ---")
         run_remote_ssh(args.remote, remote_flash_cmd, check=True, capture_output=False)
     else:
-        flash_cmd = (
-            f"source {shlex.quote(paths['idf_export_path'])} && "
-            f"esptool.py --chip esp32s3 -p {shlex.quote(active_port)} -b 460800 --before=default_reset "
-            f"--after=watchdog_reset write_flash --flash_mode dio --flash_freq 80m "
-            f"--flash_size 32MB 0x0 build-{paths['board_name']}/bootloader/bootloader.bin "
-            f"0x10000 build-{paths['board_name']}/micropython.bin "
-            f"0x8000 build-{paths['board_name']}/partition_table/partition-table.bin "
-            f"0xd000 build-{paths['board_name']}/ota_data_initial.bin"
-        )
-
         logger.info("--- Flashing Firmware ---")
         check_port_availability(active_port)
         subprocess.run(
-            flash_cmd,
-            shell=True,
-            cwd=paths["esp32_port_dir"],
-            executable="/bin/bash",
+            build_local_flash_command(active_port, local_build_dir),
             check=True,
         )
 

@@ -22,7 +22,7 @@ ESP32-S3 MicroPython (Microdot webapp.py + BaseLaserhead / Laserhead)
 
 * **Coordinate Persistence & Crash Protection:** Machine (`mpos`) and workspace offset (`woff`) coordinates are persisted in ESP32 NVS in micrometers via `SafeNVS` (`nvs_mock.json` on PC). Boot crashes are tracked in RTC memory (`bootlib.check_crash_loop_rtc()`), entering safe mode after repeated failures and clearing the counter after 5 seconds of stable uptime (`_mark_boot_stable()`).
 * **Timing Split on FPGA:** Laser exposures run at `24 MHz` (photodiode-locked scanline events + Sigma-Delta PDM), while coordinated homing, positioning, and CNC G-code moves run on the `1 MHz` forward-difference stepper engine.
-* **Clean Dependency Separation:** Application code lives in `src/`, pure-Python vendored MicroPython libraries live in `vendor/` (documented in `vendor/VERSIONS.md`), C/submodule repositories live in `deps/`, and the ESP32-S3 MicroPython board definition lives out-of-tree in `boards/HEXASTORM_S3/`.
+* **Clean Dependency Separation:** Application code lives in `src/`, pure-Python vendored MicroPython libraries live in `vendor/` (documented in `vendor/VERSIONS.md`), C/submodule repositories live in `deps/`, the ESP32-S3 MicroPython board definition lives out-of-tree in `boards/HEXASTORM_S3/`, and reproducible firmware compilation runs inside Docker (`Dockerfile`) and GitHub Actions (`.github/workflows/ci.yml`).
 
 ---
 
@@ -34,7 +34,7 @@ ESP32-S3 MicroPython (Microdot webapp.py + BaseLaserhead / Laserhead)
   * **CNC Mode (`.gcode`, `.nc`, `.tap`):** On-board G-code interpreter supporting `G90`/`G91`, `G21`, `M3`/`M5` spindle control, and feedrates.
 * **Peripherals & Diode Diagnostics:** Remote toggling/control for UV laser, rotating polygon prism, spindle PWM, cooling fan PWM, and photodiode facet jitter measurement (`test_diode` + saved reference `facetmeans`).
 * **Live Camera & On-Board 2D Calibration:** OV2640 capture, saved inspection target coordinates, FOV scan visibility, single/all-facet dot preview, and automated 2D facet calibration & verification.
-* **Settings & GitHub OTA:** Browser-based configuration for Wi-Fi, static IP, TMC2209/axis parameters, tool offsets, and direct-to-flash OTA updates with automatic `config.json` migration.
+* **Settings & GitHub OTA:** Browser-based configuration for Wi-Fi, static IP, TMC2209/axis parameters, tool offsets, and direct-to-flash OTA updates fed by tagged GitHub Releases built in CI.
 
 ---
 
@@ -53,6 +53,8 @@ The **Camera & Calibration** panel (`camera_panel.html`, `src/control/calibratio
 
 | Path | Purpose |
 | :--- | :--- |
+| [Dockerfile](Dockerfile), [docker/](docker/) | Reproducible builder container (`espressif/idf:v5.5.2` + MicroPython `v1.28.0` + `mpy-cross`) |
+| [.github/workflows/ci.yml](.github/workflows/ci.yml) | Automated `pytest`/`ruff` checks, Docker firmware CI builds, and tagged OTA releases |
 | [boards/HEXASTORM_S3/](boards/HEXASTORM_S3/) | Out-of-tree MicroPython board definition (`mpconfigboard.h`, 32 MiB OTA partitions, `esp32-camera` component) |
 | [deps/](deps/) | Git submodules (`hexastorm`, `micropython-ulab`, `micropython-camera-API`) — no local symlinks |
 | [vendor/](vendor/) | Vendored pure-Python MicroPython libraries (`microdot`, `utemplate`, `ota`, `mrequests`, `winbond`, `tmc`) + [VERSIONS.md](vendor/VERSIONS.md) |
@@ -68,9 +70,9 @@ The **Camera & Calibration** panel (`camera_panel.html`, `src/control/calibratio
 | [src/camera.py](src/camera.py) | CPython mock `camera` module backed by `hexastorm.calibration.FakeScanhead` |
 | [src/manifest.py](src/manifest.py) | Packs `src/root/` via `freezefs` and freezes `control/`, `vendor/`, `deps/` & `hexastorm` |
 | [src/micropython.cmake](src/micropython.cmake) | Integrates `deps/micropython-ulab` and `deps/micropython-camera-API` into MicroPython build |
-| [src/build.py](src/build.py) | Out-of-tree MicroPython ESP32-S3 build (`BOARD=HEXASTORM_S3`) & local/SSH `esptool` flash CLI |
+| [src/build.py](src/build.py) | One-command firmware builder (`--docker` or native) and host/SSH `esptool` flash CLI |
 | [src/root/](src/root/) | Web UI HTML templates, `static/home.js`, factory `config.json`, and mock runtime files |
-| [src/tests/](src/tests/) | Pytest endpoint, UI-contract, layout, and `FakeScanhead` calibration tests + on-device scripts |
+| [src/tests/](src/tests/) | Pytest endpoint, UI-contract, layout/Docker, and `FakeScanhead` calibration tests + on-device scripts |
 
 ---
 
@@ -101,7 +103,7 @@ uv run webapp
 
 When actively developing in a sibling `../hexastorm` checkout, set `HEXASTORM_DIR=../hexastorm` to override `deps/hexastorm`.
 
-Run the automated test suite (`microdot.test_client.TestClient` HTTP endpoint tests, frontend template/JS route contract checks, layout/pin checks, `FakeScanhead` 2D calibration, and `.pat` packet streaming) and linter:
+Run the automated test suite (`microdot.test_client.TestClient` HTTP endpoint tests, frontend template/JS route contract checks, layout/Docker/pin checks, `FakeScanhead` 2D calibration, and `.pat` packet streaming) and linter:
 
 ```bash
 uv run pytest
@@ -110,11 +112,19 @@ uv run ruff check src
 
 ---
 
-## Building & Flashing
+## Building & Flashing Firmware (Recommended: Docker)
 
-See [developer.md](developer.md) for ESP-IDF / MicroPython setup, out-of-tree board configuration (`boards/HEXASTORM_S3`), dependency versioning (`vendor/VERSIONS.md`), and the REST API reference. Once `MICROPYTHON_DIR` and `IDF_PATH` are set (or in `~/Documents/Python/`), build and flash locally or over SSH with:
+No manual ESP-IDF or MicroPython checkout is needed when using Docker — only `uv` and Docker on the build machine (`esptool` is installed inside the project's `.venv`):
 
 ```bash
-uv run build
-uv run build --remote user@host
+# Build inside Docker and flash directly over local USB
+uv run build --docker
+
+# Compile firmware binaries only (build/HEXASTORM_S3/micropython.bin) without hardware attached
+uv run build --docker --build-only
+
+# Compile locally in Docker and flash over SSH to a remote host
+uv run build --docker --remote hexastorm@pihome.home
 ```
+
+See [developer.md](developer.md) for Docker/CI details, native toolchain setup, `boards/HEXASTORM_S3` architecture, dependency versioning (`vendor/VERSIONS.md`), and the REST API reference.

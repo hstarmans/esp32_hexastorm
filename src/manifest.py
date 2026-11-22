@@ -52,6 +52,7 @@ repo_root = base_dir.parent
 code_dir = base_dir / "control"
 frozen_output = code_dir / "frozen_root.py"
 root_assets = base_dir / "root"
+paths_helper = _load_paths_helper(code_dir)
 
 # Cleanup Old Build Artifacts
 if frozen_output.is_file():
@@ -73,7 +74,13 @@ try:
 
     # Clean templates
     subprocess.run(
-        ["uv", "run", "pyclean", ".", "--erase", "root/templates/*.py", "--yes"],
+        [
+            *paths_helper.python_module_cmd("pyclean"),
+            ".",
+            "--erase",
+            "root/templates/*.py",
+            "--yes",
+        ],
         cwd=base_dir,
         check=True,
     )
@@ -81,11 +88,7 @@ try:
     # Pack assets
     subprocess.run(
         [
-            "uv",
-            "run",
-            "python",
-            "-m",
-            "freezefs",
+            *paths_helper.python_module_cmd("freezefs"),
             str(root_assets),  # Source
             str(frozen_output),  # Destination
             "--target=/",
@@ -113,7 +116,6 @@ if not frozen_output.is_file():
 
 # We check if 'package' exists in the global scope to know if we are in 'make'
 if "package" in globals():
-    paths_helper = _load_paths_helper(code_dir)
     vendor_dir = str(repo_root / "vendor")
     hexastorm_src_dir = str(paths_helper.resolve_hexastorm_src(repo_root))
     camera_api_src = repo_root / "deps" / "micropython-camera-API" / "src"
