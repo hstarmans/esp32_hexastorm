@@ -202,11 +202,22 @@ def test_docker_and_ci_files_exist_and_align():
     assert ci_yml.is_file()
 
     df_text = dockerfile.read_text()
-    for token in ("espressif/idf:v5.5.2", "v1.28.0", "freezefs", "pyclean"):
+    for token in (
+        "espressif/idf:v5.5.2",
+        "v1.28.0",
+        "freezefs",
+        "pyclean",
+        "MICROPY_MPYCROSS",
+    ):
         assert token in df_text
 
     script_text = script.read_text()
-    for token in ("HEXASTORM_S3", "src/manifest.py", "src/micropython.cmake"):
+    for token in (
+        "HEXASTORM_S3",
+        "src/manifest.py",
+        "src/micropython.cmake",
+        "MICROPY_MPYCROSS",
+    ):
         assert token in script_text
 
     ci_text = ci_yml.read_text()

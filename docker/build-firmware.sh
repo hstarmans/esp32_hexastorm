@@ -11,6 +11,7 @@ if [ -z "${IDF_PYTHON_ENV_PATH:-}" ]; then
 fi
 
 mkdir -p "$(dirname "${BUILD_DIR}")"
+export MICROPY_MPYCROSS="${MICROPY_MPYCROSS:-${MICROPYTHON_DIR}/mpy-cross/build/mpy-cross}"
 
 make -C "${MICROPYTHON_DIR}/ports/esp32" \
     -j"$(nproc)" \

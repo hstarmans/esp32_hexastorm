@@ -16,6 +16,8 @@ RUN git clone --depth 1 --branch "${MICROPYTHON_VERSION}" https://github.com/mic
     && make -C "${MICROPYTHON_DIR}/mpy-cross" -j"$(nproc)" \
     && bash -lc '. "${IDF_PATH}/export.sh" && make -C "${MICROPYTHON_DIR}/ports/esp32" BOARD=ESP32_GENERIC_S3 submodules && rm -rf "${MICROPYTHON_DIR}/ports/esp32/build-ESP32_GENERIC_S3"'
 
+ENV MICROPY_MPYCROSS=${MICROPYTHON_DIR}/mpy-cross/build/mpy-cross
+
 COPY docker/build-firmware.sh /usr/local/bin/build-firmware.sh
 RUN chmod +x /usr/local/bin/build-firmware.sh
 
