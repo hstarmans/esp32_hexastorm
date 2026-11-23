@@ -380,6 +380,13 @@ async def project_and_capture_facet(
         return frame
 
 
+async def _disable_preview_if_active(laserhead) -> None:
+    """Stop Preview Dots cleanly before starting exclusive camera/FPGA calibration."""
+    if _bounds_active:
+        set_bounds_preview(laserhead, enabled=False)
+        await asyncio.sleep(0)
+
+
 async def run_scan_visibility(
     laserhead,
     camera,
@@ -422,6 +429,7 @@ async def run_scan_visibility(
     )
 
     try:
+        await _disable_preview_if_active(laserhead)
         if constants.ESP32:
             await laserhead.synchronize(True)
             await laserhead.enable_comp(
@@ -636,6 +644,7 @@ async def run_facet_calibration(
     )
 
     try:
+        await _disable_preview_if_active(laserhead)
         if constants.ESP32:
             await laserhead.synchronize(True)
             await laserhead.enable_comp(
@@ -831,6 +840,7 @@ async def run_pattern_error(
     avg_capture_ms = 0.0
 
     try:
+        await _disable_preview_if_active(laserhead)
         if constants.ESP32:
             await laserhead.synchronize(True)
             await laserhead.enable_comp(

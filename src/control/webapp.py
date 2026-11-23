@@ -733,6 +733,13 @@ async def camera_snapshot(request, session):
     Return a single JPEG snapshot from the camera.
     Uses OV2640 hardware JPEG on ESP32 or simulated mock on PC.
     """
+    if is_calibration_running():
+        return Response(
+            "Camera busy: calibration in progress",
+            status_code=409,
+            headers={"Content-Type": "text/plain"},
+        )
+
     jpeg_data = await capture_jpeg_with_preview(laserhead, camera)
     if not jpeg_data:
         err_msg = camera.last_error or "Camera hardware capture failed"
@@ -936,6 +943,8 @@ async def api_show_bounds(request, session):
     data = request.json
     enabled = data["enabled"]
     facet = data["facet"]
+    if enabled and is_calibration_running():
+        return {"error": "Busy calibrating"}, 409
     active = set_bounds_preview(laserhead=laserhead, enabled=enabled, facet=facet)
 
     devicestate.update()

@@ -387,6 +387,15 @@ def test_background_calibration_sse_status_and_cancel():
         client = TestClient(app)
         await login_resp_check(client)
 
+        # Enable Preview Dots first and confirm starting calibration disables it + locks camera snapshot
+        res_prev = await client.post(
+            "/api/calibration/show_bounds",
+            headers={"Content-Type": "application/json"},
+            body=json.dumps({"enabled": True, "facet": 0}),
+        )
+        assert res_prev.status_code == 200
+        assert _json(res_prev)["bounds_active"] is True
+
         # 1. Start fast scan visibility in background (returns HTTP 202 immediately)
         res_scan_bg = await client.post(
             "/api/calibration/scan_visibility",
@@ -398,7 +407,7 @@ def test_background_calibration_sse_status_and_cancel():
         assert scan_bg_data["status"] == "started"
         assert scan_bg_data["task"] == "scan_visibility"
 
-        # Starting a second calibration concurrently must return 409 Conflict
+        # Starting a second calibration, camera snapshot, or bounds preview concurrently must return 409 Conflict
         res_busy = await client.post(
             "/api/calibration/pattern_error",
             headers={"Content-Type": "application/json"},
@@ -406,8 +415,22 @@ def test_background_calibration_sse_status_and_cancel():
         )
         assert res_busy.status_code == 409
 
+        res_snap_busy = await client.get("/api/camera/snapshot")
+        assert res_snap_busy.status_code == 409
+
+        res_bounds_busy = await client.post(
+            "/api/calibration/show_bounds",
+            headers={"Content-Type": "application/json"},
+            body=json.dumps({"enabled": True, "facet": 0}),
+        )
+        assert res_bounds_busy.status_code == 409
+
         if webapp._calib_bg_task is not None:
             await webapp._calib_bg_task
+
+        from control.calibration import is_bounds_active
+
+        assert is_bounds_active() is False
 
         res_status = await client.get("/api/calibration/status")
         assert res_status.status_code == 200
