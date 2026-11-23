@@ -84,6 +84,7 @@ testpaths = ["src/tests"]
 pythonpath = ["src", "vendor", "deps/hexastorm/src"]
 python_files = [
     "test_cameracontroller.py",
+    "test_micropython_calibration.py",
     "test_webapp_endpoints.py",
     "test_project_layout.py",
 ]

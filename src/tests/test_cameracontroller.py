@@ -328,7 +328,7 @@ def test_calibrate_and_pattern_error_endpoints():
             assert "spot_size_um" in cal_data["facets"][f_key]
             assert "period_ms" in cal_data["facets"][f_key]
 
-        # 2. Run Verified Calibration (pattern_error)
+        # 2. Run fast Verified Calibration (pattern_error)
         res_ver = await client.post(
             "/api/calibration/pattern_error",
             headers={"Content-Type": "application/json"},
@@ -338,6 +338,8 @@ def test_calibrate_and_pattern_error_endpoints():
         report = _json(res_ver)
         assert report["status"] == "success"
         assert report["passed"] is True
+        assert report["exposures_2d"] == 2
+        assert report["timing"]["captures"] <= 25
         assert report["max_error_before_um"] > 30.0
         assert report["max_error_after_um"] <= 30.0
         assert report["max_error_after_um"] < 10.0
@@ -374,6 +376,81 @@ def test_calibrate_and_pattern_error_endpoints():
         assert abs(rep_custom["facets"][0]["after_orth_um"]) > 5.0
 
     asyncio.run(run())
+
+
+def test_background_calibration_sse_status_and_cancel():
+    """Verify non-blocking background calibration, status/SSE progress, and graceful cancel."""
+    from camera import FrameSize, PixelFormat
+    from control import webapp
+
+    async def run():
+        client = TestClient(app)
+        await login_resp_check(client)
+
+        # 1. Start fast scan visibility in background (returns HTTP 202 immediately)
+        res_scan_bg = await client.post(
+            "/api/calibration/scan_visibility",
+            headers={"Content-Type": "application/json"},
+            body=json.dumps({"facet": 0, "step": 20, "fast": True, "background": True}),
+        )
+        assert res_scan_bg.status_code == 202
+        scan_bg_data = _json(res_scan_bg)
+        assert scan_bg_data["status"] == "started"
+        assert scan_bg_data["task"] == "scan_visibility"
+
+        # Starting a second calibration concurrently must return 409 Conflict
+        res_busy = await client.post(
+            "/api/calibration/pattern_error",
+            headers={"Content-Type": "application/json"},
+            body=json.dumps({"num_dots": 6, "calibrate_first": True}),
+        )
+        assert res_busy.status_code == 409
+
+        if webapp._calib_bg_task is not None:
+            await webapp._calib_bg_task
+
+        res_status = await client.get("/api/calibration/status")
+        assert res_status.status_code == 200
+        st = _json(res_status)
+        assert st["running"] is False
+        assert st["state"] == "done"
+        assert st["progress_pct"] == 100
+        assert webapp.devicestate.data["calibration"]["visible_pixels"] is not None
+
+        # 2. Start 2D pattern_error in background and cancel mid-run
+        res_pat_bg = await client.post(
+            "/api/calibration/pattern_error",
+            headers={"Content-Type": "application/json"},
+            body=json.dumps({"num_dots": 6, "calibrate_first": True, "background": True}),
+        )
+        assert res_pat_bg.status_code == 202
+        await asyncio.sleep(0.02)
+
+        res_cancel = await client.post("/api/calibration/cancel")
+        assert res_cancel.status_code == 200
+        assert _json(res_cancel)["status"] == "cancelling"
+
+        if webapp._calib_bg_task is not None:
+            await webapp._calib_bg_task
+
+        res_status2 = await client.get("/api/calibration/status")
+        assert res_status2.status_code == 200
+        st2 = _json(res_status2)
+        assert st2["running"] is False
+        assert st2["state"] == "cancelled"
+        assert camera.current_frame_size == FrameSize.UXGA
+        assert camera.current_pixel_format == PixelFormat.JPEG
+
+    asyncio.run(run())
+
+
+async def login_resp_check(client: TestClient) -> None:
+    res = await client.post(
+        "/",
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        body="password=hex",
+    )
+    assert res.status_code in (200, 302)
 
 
 def test_event_driven_print_loop_and_zero_steps(tmp_path, monkeypatch):

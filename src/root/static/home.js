@@ -137,14 +137,15 @@ document.addEventListener("alpine:init", () => {
          * Run optical scan visibility calibration
          * @param {number} [facet=0]
          * @param {number} [step=20]
+         * @param {boolean} [background=false]
          * @returns {Promise<any>}
          */
-        async runScanVisibility(facet = 0, step = 20) {
+        async runScanVisibility(facet = 0, step = 20, background = false) {
             try {
                 const res = await fetch('/api/calibration/scan_visibility', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ facet, step })
+                    body: JSON.stringify({ facet, step, fast: true, background })
                 });
                 if (!res.ok) {
                     const err = await res.text();
@@ -213,14 +214,16 @@ document.addEventListener("alpine:init", () => {
          * Run Verified Calibration (pattern_error) comparing Before vs After 2D errors
          * @param {number} [num_dots=6]
          * @param {boolean} [calibrate_first=true]
+         * @param {boolean} [background=false]
+         * @param {string} [slicer='analytical']
          * @returns {Promise<any>}
          */
-        async runPatternError(num_dots = 6, calibrate_first = true) {
+        async runPatternError(num_dots = 6, calibrate_first = true, background = false, slicer = 'analytical') {
             try {
                 const res = await fetch('/api/calibration/pattern_error', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ num_dots, calibrate_first })
+                    body: JSON.stringify({ num_dots, calibrate_first, background, slicer })
                 });
                 if (!res.ok) {
                     const err = await res.text();
@@ -229,6 +232,28 @@ document.addEventListener("alpine:init", () => {
                 return await res.json();
             } catch (e) {
                 console.error("Pattern error verification failed:", e);
+                throw e;
+            }
+        },
+
+        /**
+         * Cancel any active background calibration workflow
+         * @returns {Promise<any>}
+         */
+        async cancelCalibration() {
+            try {
+                const res = await fetch('/api/calibration/cancel', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({})
+                });
+                if (!res.ok) {
+                    const err = await res.text();
+                    throw new Error(err || `HTTP ${res.status}`);
+                }
+                return await res.json();
+            } catch (e) {
+                console.error("Cancel calibration failed:", e);
                 throw e;
             }
         }
@@ -261,7 +286,21 @@ document.addEventListener("alpine:init", () => {
             visible_pixels: null,
             bounds_active: false,
             facets: {},
-            last_report: null
+            last_report: null,
+            task: {
+                running: false,
+                task: null,
+                state: 'idle',
+                phase: '',
+                progress_pct: 0,
+                step_current: 0,
+                step_total: 0,
+                message: '',
+                last_capture_ms: 0,
+                avg_capture_ms: 0,
+                elapsed_ms: 0,
+                error: null
+            }
         },
         /** @type {PrintJob} */
         job: {

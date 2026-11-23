@@ -153,7 +153,7 @@ class BaseLaserhead:
         }
         self._state: "dict[str, Any]" = state
 
-    async def set_error(self, msg: str | None):
+    async def set_error(self, msg: "str | None"):
         self.state["error_message"] = msg
         self.state["printing"] = False
         logger.error(msg)

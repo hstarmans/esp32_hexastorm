@@ -161,6 +161,7 @@ if "package" in globals():
     module("hexastorm/config.py", base_path=hexastorm_src_dir)
     module("hexastorm/calibration/__init__.py", base_path=hexastorm_src_dir)
     module("hexastorm/calibration/core.py", base_path=hexastorm_src_dir)
+    module("hexastorm/calibration/vector_lite.py", base_path=hexastorm_src_dir)
     module("hexastorm/fpga_host/__init__.py", base_path=hexastorm_src_dir)
     module("hexastorm/fpga_host/interface.py", base_path=hexastorm_src_dir)
     module("hexastorm/fpga_host/syncwrap.py", base_path=hexastorm_src_dir)

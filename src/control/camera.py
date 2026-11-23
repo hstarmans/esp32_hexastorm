@@ -7,12 +7,24 @@ Unified controller using the 'camera' module (real on ESP32, mock on CPython).
 import logging
 
 from camera import (
-    FRAME_SIZE_DIMS,
     Camera,
     FrameSize,
     GrabMode,
     PixelFormat,
 )
+
+try:
+    from camera import FRAME_SIZE_DIMS
+except ImportError:
+    FRAME_SIZE_DIMS = {
+        FrameSize.QQVGA: (160, 120),
+        FrameSize.QVGA: (320, 240),
+        FrameSize.VGA: (640, 480),
+        FrameSize.SVGA: (800, 600),
+        FrameSize.HD: (1280, 720),
+        FrameSize.SXGA: (1280, 1024),
+        FrameSize.UXGA: (1600, 1200),
+    }
 from hexastorm.config import PlatformConfig
 
 logger = logging.getLogger(__name__)
@@ -185,7 +197,7 @@ class CameraController:
         try:
             # Create a 2D ndarray from the raw byte buffer and copy so buffer can be safely freed
             arr = np.frombuffer(raw, dtype=np.uint8).reshape((h, w))
-            arr_copy = np.array(arr)
+            arr_copy = np.array(arr, dtype=np.uint8)
         finally:
             if hasattr(cam, "free_buffer"):
                 cam.free_buffer()

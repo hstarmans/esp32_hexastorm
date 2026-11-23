@@ -55,6 +55,13 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Run MicroPython + ulab calibration test
+        run: |
+          docker run --rm \
+            --entrypoint /workspace/docker/run-mpy-tests.sh \
+            -v "${{ github.workspace }}:/workspace" \
+            hexastorm-esp32s3-builder:ci
+
       - name: Compile HEXASTORM_S3 firmware
         run: |
           docker run --rm \

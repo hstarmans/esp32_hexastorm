@@ -57,11 +57,21 @@ def test_submodules_and_micropython_cmake_paths():
     assert (root / "deps" / "micropython-camera-API" / "micropython.cmake").is_file()
     assert (root / "deps" / "micropython-camera-API" / "src" / "acamera.py").is_file()
     assert (root / "deps" / "esp32-camera" / "CMakeLists.txt").is_file()
+    assert (
+        root
+        / "deps"
+        / "hexastorm"
+        / "src"
+        / "hexastorm"
+        / "exposure"
+        / "csrc"
+        / "micropython.cmake"
+    ).is_file()
 
     cmake_file = root / "src" / "micropython.cmake"
     cmake_text = cmake_file.read_text()
     includes = re.findall(r"include\(\$\{CMAKE_CURRENT_LIST_DIR\}/([^)]+)\)", cmake_text)
-    assert len(includes) == 2
+    assert len(includes) == 3
     for rel_path in includes:
         target = (cmake_file.parent / rel_path).resolve()
         assert target.is_file(), f"Missing cmake include target: {target}"
@@ -197,6 +207,7 @@ def test_docker_and_ci_files_exist_and_align():
     dockerignore = root / ".dockerignore"
     script = root / "docker" / "build-firmware.sh"
     build_fpga = root / "docker" / "build_fpga.py"
+    run_mpy = root / "docker" / "run-mpy-tests.sh"
     ci_yml = root / ".github" / "workflows" / "ci.yml"
 
     assert dockerfile.is_file()
@@ -205,6 +216,8 @@ def test_docker_and_ci_files_exist_and_align():
     assert os.access(script, os.X_OK), "docker/build-firmware.sh must be executable"
     assert build_fpga.is_file()
     assert os.access(build_fpga, os.X_OK), "docker/build_fpga.py must be executable"
+    assert run_mpy.is_file()
+    assert os.access(run_mpy, os.X_OK), "docker/run-mpy-tests.sh must be executable"
     assert ci_yml.is_file()
 
     df_text = dockerfile.read_text()
@@ -237,6 +250,7 @@ def test_docker_and_ci_files_exist_and_align():
         "submodules: recursive",
         "micropython.bin",
         "sd/fpga/fpga.bit",
+        "run-mpy-tests.sh",
         "uv run pytest",
     ):
         assert token in ci_text

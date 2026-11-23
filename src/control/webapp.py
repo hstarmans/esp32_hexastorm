@@ -14,13 +14,19 @@ from microdot.utemplate import Template
 
 from . import bootlib, constants
 from .calibration import (
+    CalibrationCancelled,
     capture_jpeg_with_preview,
+    finish_calibration_status,
+    get_calibration_status,
     get_preview_facet,
     is_bounds_active,
+    is_calibration_running,
+    request_cancel_calibration,
     run_facet_calibration,
     run_pattern_error,
     run_scan_visibility,
     set_bounds_preview,
+    start_calibration_status,
     update_custom_facets,
 )
 from .camera import camera
@@ -112,6 +118,7 @@ class DeviceState:
         calib_dict = dict(CONFIG["calibration"])
         calib_dict["bounds_active"] = is_bounds_active()
         calib_dict["preview_facet"] = get_preview_facet()
+        calib_dict["task"] = get_calibration_status()
 
         dct = {
             "files": files,
@@ -370,6 +377,7 @@ async def api_gotopoint(request, session):
 @app.post("/control/abort")
 @with_session
 async def api_abort(request, session):
+    request_cancel_calibration()
     await laserhead.emergency_stop()
     return devicestate.data
 
@@ -790,29 +798,134 @@ async def api_move_to_camera(request, session):
     return devicestate.data
 
 
+_calib_bg_task = None
+
+
+async def _run_calibration_managed(task_name: str, coro_factory):
+    """Run calibration task, updating calibration status & SSE listeners on every step."""
+
+    async def _progress_cb(_pct, _detail):
+        devicestate.update()
+        await laserhead.notify_listeners()
+
+    start_calibration_status(task_name, f"Starting {task_name}...")
+    devicestate.update()
+    await laserhead.notify_listeners()
+    try:
+        result = await coro_factory(_progress_cb)
+        timing = result.get("timing") or {}
+        elapsed_s = float(timing.get("total_ms", 0)) / 1000.0
+        captures = int(timing.get("captures", 0))
+        if task_name == "scan_visibility":
+            bounds = result.get("visible_pixels")
+            msg = (
+                f"Visible px {bounds[0]}..{bounds[1]} ({result.get('percentage', 0)}%, {captures} frames in {elapsed_s:.1f}s)"
+                if bounds
+                else f"No signal in FOV ({captures} frames in {elapsed_s:.1f}s)"
+            )
+        elif task_name == "pattern_error":
+            verdict = "PASS" if result.get("passed") else "FAIL"
+            msg = f"2D Verified ({verdict}: {result.get('max_error_after_um')} um, {captures} frames in {elapsed_s:.1f}s)"
+        else:
+            msg = f"Calibration complete ({captures} frames in {elapsed_s:.1f}s)"
+        finish_calibration_status("done", msg)
+        devicestate.update()
+        await laserhead.notify_listeners()
+        return result
+    except CalibrationCancelled as exc:
+        finish_calibration_status("cancelled", str(exc))
+        devicestate.update()
+        await laserhead.notify_listeners()
+        raise
+    except Exception as exc:  # noqa: BLE001
+        logger.error(f"Calibration task {task_name} failed: {exc}")
+        finish_calibration_status("error", f"{task_name} failed: {exc}", str(exc))
+        devicestate.update()
+        await laserhead.notify_listeners()
+        raise
+
+
+def _execute_calibration(task_name: str, coro_factory, background: bool):
+    """Guard busy state and run calibration either as background task (202) or inline."""
+    global _calib_bg_task
+    if laserhead.state["printing"] or is_calibration_running():
+        return {"error": "Busy printing or calibrating"}, 409
+
+    if background:
+
+        async def _bg_runner():
+            try:
+                await _run_calibration_managed(task_name, coro_factory)
+            except CalibrationCancelled:
+                pass
+            except Exception as exc:  # noqa: BLE001
+                logger.error(f"Background calibration {task_name} failed: {exc}")
+
+        start_calibration_status(task_name, f"Starting {task_name}...")
+        devicestate.update()
+        _calib_bg_task = asyncio.create_task(_bg_runner())
+        return (
+            {
+                "status": "started",
+                "task": task_name,
+                "calibration_status": get_calibration_status(),
+            },
+            202,
+        )
+
+    return None
+
+
+@app.get("/api/calibration/status")
+@with_session
+async def api_calibration_status(request, session):
+    """Return live calibration task progress, timing telemetry, and error info."""
+    return get_calibration_status()
+
+
+@app.post("/api/calibration/cancel")
+@with_session
+async def api_calibration_cancel(request, session):
+    """Request cancellation of any active calibration workflow."""
+    cancelled = request_cancel_calibration()
+    devicestate.update()
+    await laserhead.notify_listeners()
+    return {
+        "status": "cancelling" if cancelled else "idle",
+        "calibration_status": get_calibration_status(),
+    }
+
+
 @app.post("/api/calibration/scan_visibility")
 @with_session
 async def api_scan_visibility(request, session):
     """Run optical scan visibility calibration across scanline length."""
-    if laserhead.state["printing"]:
-        return {"error": "Busy printing"}, 409
-
-    data = request.json
+    data = request.json or {}
     facet = int(data["facet"])
     step = max(1, int(data["step"]))
+    fast = bool(data.get("fast", True))
+    background = bool(data.get("background", False))
 
-    try:
-        result = await run_scan_visibility(
+    def _run(cb):
+        return run_scan_visibility(
             laserhead=laserhead,
             camera=camera,
             facet=facet,
             step=step,
+            fast=fast,
+            progress_callback=cb,
         )
-        devicestate.update()
+
+    bg_resp = _execute_calibration("scan_visibility", _run, background=background)
+    if bg_resp is not None:
         await laserhead.notify_listeners()
-        return result
+        return bg_resp
+
+    try:
+        return await _run_calibration_managed("scan_visibility", _run)
+    except CalibrationCancelled as exc:
+        return {"error": str(exc)}, 409
     except Exception as e:  # noqa: BLE001
-        logger.error(f"Scan visibility routine failed: {e}")
         return {"error": str(e)}, 500
 
 
@@ -839,25 +952,30 @@ async def api_show_bounds(request, session):
 @with_session
 async def api_calibrate_facets(request, session):
     """Run multi-facet dot calibration on-board."""
-    if laserhead.state["printing"]:
-        return {"error": "Busy printing"}, 409
-
-    data = request.json
+    data = request.json or {}
     iterations = max(1, int(data["iterations"]))
     num_dots = max(2, int(data["num_dots"]))
+    background = bool(data.get("background", False))
 
-    try:
-        result = await run_facet_calibration(
+    def _run(cb):
+        return run_facet_calibration(
             laserhead=laserhead,
             camera=camera,
             iterations=iterations,
             num_dots=num_dots,
+            progress_callback=cb,
         )
-        devicestate.update()
+
+    bg_resp = _execute_calibration("calibrate", _run, background=background)
+    if bg_resp is not None:
         await laserhead.notify_listeners()
-        return result
+        return bg_resp
+
+    try:
+        return await _run_calibration_managed("calibrate", _run)
+    except CalibrationCancelled as exc:
+        return {"error": str(exc)}, 409
     except Exception as e:  # noqa: BLE001
-        logger.error(f"Facet calibration failed: {e}")
         return {"error": str(e)}, 500
 
 
@@ -865,25 +983,36 @@ async def api_calibrate_facets(request, session):
 @with_session
 async def api_pattern_error(request, session):
     """Run Verified Calibration (pattern_error) comparing Before vs After 2D errors."""
-    if laserhead.state["printing"]:
-        return {"error": "Busy printing"}, 409
-
-    data = request.json
+    data = request.json or {}
     num_dots = max(2, int(data["num_dots"]))
     calibrate_first = bool(data["calibrate_first"])
+    exposures_2d = max(1, int(data.get("exposures_2d", 2)))
+    verify_before_2d = bool(data.get("verify_before_2d", False))
+    slicer = str(data.get("slicer", "analytical"))
+    background = bool(data.get("background", False))
 
-    try:
-        result = await run_pattern_error(
+    def _run(cb):
+        return run_pattern_error(
             laserhead=laserhead,
             camera=camera,
             num_dots=num_dots,
             calibrate_first=calibrate_first,
+            exposures_2d=exposures_2d,
+            verify_before_2d=verify_before_2d,
+            slicer=slicer,
+            progress_callback=cb,
         )
-        devicestate.update()
+
+    bg_resp = _execute_calibration("pattern_error", _run, background=background)
+    if bg_resp is not None:
         await laserhead.notify_listeners()
-        return result
+        return bg_resp
+
+    try:
+        return await _run_calibration_managed("pattern_error", _run)
+    except CalibrationCancelled as exc:
+        return {"error": str(exc)}, 409
     except Exception as e:  # noqa: BLE001
-        logger.error(f"Pattern error verification failed: {e}")
         return {"error": str(e)}, 500
 
 

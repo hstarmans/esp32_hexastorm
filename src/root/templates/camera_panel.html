@@ -266,22 +266,41 @@
                     x-data="{
                         scanning: false,
                         calibrating: false,
+                        useVectorCore: false,
                         previewFacet: '0',
                         scanResult: null,
                         scanError: null,
                         calibReport: null,
+
+                        get calibTask() {
+                            return $store.machine.calibration?.task || {};
+                        },
+
+                        get isBusyTask() {
+                            return Boolean(this.calibTask.running || this.scanning || this.calibrating);
+                        },
+
+                        get progressPct() {
+                            return this.calibTask.running ? Math.max(4, Number(this.calibTask.progress_pct || 0)) : 100;
+                        },
 
                         get activeReport() {
                             return this.calibReport || $store.machine.calibration?.last_report;
                         },
 
                         async runScan() {
-                            if (this.scanning || this.calibrating) return;
+                            if (this.isBusyTask) return;
                             this.scanning = true;
                             this.scanError = null;
                             this.scanResult = null;
                             try {
-                                const res = await api.runScanVisibility(0, 20);
+                                const res = await api.runScanVisibility(0, 20, true);
+                                if (res.status === 'started') {
+                                    if ($store.machine.calibration && res.calibration_status) {
+                                        $store.machine.calibration.task = res.calibration_status;
+                                    }
+                                    return;
+                                }
                                 if (res.visible_pixels) {
                                     this.scanResult = `Visible: px ${res.visible_pixels[0]} - ${res.visible_pixels[1]} (${res.percentage}%)`;
                                 } else {
@@ -360,7 +379,7 @@
                         },
 
                         async runVerifyCalibration(calibrateFirst = true) {
-                            if (this.scanning || this.calibrating) return;
+                            if (this.isBusyTask) return;
                             this.calibrating = true;
                             this.scanError = null;
                             try {
@@ -374,25 +393,49 @@
                                         })
                                     });
                                 }
-                                const res = await fetch('/api/calibration/pattern_error', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ num_dots: 6, calibrate_first: calibrateFirst })
-                                });
-                                if (!res.ok) {
-                                    const errData = await res.json().catch(() => ({}));
-                                    throw new Error(errData.error || ('HTTP ' + res.status));
+                                const slicerName = this.useVectorCore ? 'vector_core' : 'analytical';
+                                const res = await api.runPatternError(6, calibrateFirst, true, slicerName);
+                                if (res.status === 'started') {
+                                    if ($store.machine.calibration && res.calibration_status) {
+                                        $store.machine.calibration.task = res.calibration_status;
+                                    }
+                                    return;
                                 }
-                                const report = await res.json();
-                                this.calibReport = report;
+                                this.calibReport = res;
                                 refresh();
                             } catch (err) {
                                 this.scanError = err.message || 'Calibration failed';
                             } finally {
                                 this.calibrating = false;
                             }
+                        },
+
+                        async cancelTask() {
+                            try {
+                                await api.cancelCalibration();
+                            } catch (err) {
+                                this.scanError = err.message || 'Cancel failed';
+                            }
                         }
-                    }">
+                    }"
+                    x-init='$watch("$store.machine.calibration?.task?.state", (state, prev) => {
+                        if (prev === "running" && state && state !== "running") {
+                            const task = $store.machine.calibration?.task || {};
+                            if (state === "done") {
+                                if (task.task === "scan_visibility") {
+                                    scanResult = task.message || "Scan visibility complete";
+                                } else if (task.task === "pattern_error") {
+                                    calibReport = null;
+                                    scanResult = task.message || "2D verification complete";
+                                }
+                                refresh();
+                            } else if (state === "error") {
+                                scanError = task.error || task.message || "Calibration failed";
+                            } else if (state === "cancelled") {
+                                scanResult = task.message || "Calibration cancelled";
+                            }
+                        }
+                    })'>
                     <div class="d-flex justify-content-between align-items-center mb-2">
                         <span class="fw-bold small text-light">
                             <i class="bi bi-arrows-expand text-info me-1"></i> Scan Visibility &amp; Calibration
@@ -415,19 +458,29 @@
                         <div class="alert alert-danger py-1 px-2 small mb-2 text-center font-monospace" style="font-size: 0.76rem;" x-text="scanError"></div>
                     </template>
 
-                    <!-- Scanning / Calibration Progress Bar -->
-                    <div class="progress mb-2" x-show="scanning || calibrating" style="height: 6px;">
-                        <div class="progress-bar progress-bar-striped progress-bar-animated bg-info" role="progressbar" style="width: 100%;"></div>
-                    </div>
+                    <!-- Live SSE Progress, Timing Telemetry & Cancel Button -->
+                    <template x-if="isBusyTask">
+                        <div class="mb-2">
+                            <div class="progress mb-1" style="height: 8px;">
+                                <div class="progress-bar progress-bar-striped progress-bar-animated bg-info" role="progressbar"
+                                    :style="'width: ' + progressPct + '%'"></div>
+                            </div>
+                            <div class="d-flex justify-content-between align-items-center gap-2 font-monospace text-info" style="font-size: 0.7rem;">
+                                <span class="text-truncate" x-text="(calibTask.progress_pct || 0) + '% · ' + (calibTask.message || 'Running...')"></span>
+                                <button type="button" class="btn btn-outline-danger btn-sm py-0 px-2" style="font-size: 0.68rem;"
+                                    @click="cancelTask()" title="Cancel active calibration">Cancel</button>
+                            </div>
+                        </div>
+                    </template>
 
                     <!-- Action Buttons -->
                     <div class="d-flex gap-2 mb-2">
                         <button type="button" class="btn btn-sm btn-outline-info flex-grow-1 py-2 d-flex align-items-center justify-content-center gap-1"
-                            :disabled="scanning || calibrating" @click="runScan()"
-                            title="Run automated scanline visibility test (SVGA 800x600 grayscale with dark-frame subtraction)">
-                            <span class="spinner-border spinner-border-sm me-1" role="status" x-show="scanning"></span>
-                            <i class="bi bi-search" x-show="!scanning"></i>
-                            <span x-text="scanning ? 'Scanning...' : 'Scan Visibility'"></span>
+                            :disabled="isBusyTask" @click="runScan()"
+                            title="Run fast scanline visibility test (SVGA 800x600 grayscale with dark-frame subtraction)">
+                            <span class="spinner-border spinner-border-sm me-1" role="status" x-show="scanning || (calibTask.running && calibTask.task === 'scan_visibility')"></span>
+                            <i class="bi bi-search" x-show="!(scanning || (calibTask.running && calibTask.task === 'scan_visibility'))"></i>
+                            <span x-text="(scanning || (calibTask.running && calibTask.task === 'scan_visibility')) ? 'Scanning...' : 'Scan Visibility'"></span>
                         </button>
 
                         <div class="input-group input-group-sm" style="width: auto;">
@@ -450,13 +503,22 @@
                         </div>
                     </div>
 
-                    <!-- Calibrate & Verify Button -->
+                    <!-- Calibrate & Verify Button + Optional C Vector Core Slicer Switch -->
+                    <div class="d-flex align-items-center justify-content-between mb-2 px-1">
+                        <div class="form-check form-switch mb-0">
+                            <input class="form-check-input" type="checkbox" role="switch" id="vectorCoreSlicerSwitch" x-model="useVectorCore">
+                            <label class="form-check-label text-secondary font-monospace" for="vectorCoreSlicerSwitch" style="font-size: 0.7rem;"
+                                title="Route calibration circles through C99 _vector_core slicer instead of analytical slicer">
+                                Use C _vector_core slicer
+                            </label>
+                        </div>
+                    </div>
                     <button type="button" class="btn btn-sm btn-outline-success w-100 py-2 d-flex align-items-center justify-content-center gap-1"
-                        :disabled="scanning || calibrating" @click="runVerifyCalibration()"
+                        :disabled="isBusyTask" @click="runVerifyCalibration()"
                         title="Measure 2D facet offsets (Scan & Orthogonal), apply corrections, and verify residual error <= 30 um">
-                        <span class="spinner-border spinner-border-sm me-1" role="status" x-show="calibrating"></span>
-                        <i class="bi bi-bullseye" x-show="!calibrating"></i>
-                        <span x-text="calibrating ? 'Calibrating & Verifying...' : 'Calibrate & Verify (2D)'"></span>
+                        <span class="spinner-border spinner-border-sm me-1" role="status" x-show="calibrating || (calibTask.running && calibTask.task === 'pattern_error')"></span>
+                        <i class="bi bi-bullseye" x-show="!(calibrating || (calibTask.running && calibTask.task === 'pattern_error'))"></i>
+                        <span x-text="(calibrating || (calibTask.running && calibTask.task === 'pattern_error')) ? 'Calibrating (' + (calibTask.progress_pct || 0) + '%)...' : 'Calibrate & Verify (2D)'"></span>
                     </button>
 
                     <!-- Verified Calibration Report Table -->

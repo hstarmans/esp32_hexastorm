@@ -4,6 +4,9 @@
 # Ulab
 include(${CMAKE_CURRENT_LIST_DIR}/../deps/micropython-ulab/code/micropython.cmake)
 
+# Vector Core (C99 scanline-polygon intersection kernel)
+include(${CMAKE_CURRENT_LIST_DIR}/../deps/hexastorm/src/hexastorm/exposure/csrc/micropython.cmake)
+
 # Camera (preserve MICROPY_FROZEN_MANIFEST, which micropython-camera-API overwrites)
 set(_HEXASTORM_SAVED_MANIFEST "${MICROPY_FROZEN_MANIFEST}")
 include(${CMAKE_CURRENT_LIST_DIR}/../deps/micropython-camera-API/micropython.cmake)
