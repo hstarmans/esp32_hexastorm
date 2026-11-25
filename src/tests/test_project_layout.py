@@ -248,10 +248,12 @@ def test_docker_and_ci_files_exist_and_align():
     ci_text = ci_yml.read_text()
     for token in (
         "submodules: recursive",
+        "needs: test",
         "micropython.bin",
         "sd/fpga/fpga.bit",
         "run-mpy-tests.sh",
         "uv run pytest",
+        "generate_release_notes: true",
     ):
         assert token in ci_text
 
@@ -393,6 +395,14 @@ def test_firmware_version_resolution_and_ota_comparison(tmp_path, monkeypatch):
 
     monkeypatch.setattr(bootlib.requests, "get", lambda *a, **kw: DummyResp("v0.3.0"))
     assert bootlib.get_firmware_dct(require_new=True)["tag_name"] == "v0.3.0"
+
+    stub_build_info.FIRMWARE_VERSION = "v2026.11.1"
+    monkeypatch.setattr(bootlib.requests, "get", lambda *a, **kw: DummyResp("v2026.11.1"))
+    assert bootlib.get_firmware_dct(require_new=True) == {}
+
+    monkeypatch.setattr(bootlib.requests, "get", lambda *a, **kw: DummyResp("v2026.11.2"))
+    assert bootlib.get_firmware_dct(require_new=True)["tag_name"] == "v2026.11.2"
+    stub_build_info.FIRMWARE_VERSION = "v0.2.0"
 
     # Also verify deploy_assets() preserves FIRMWARE_VERSION when migrating config_old.json
     old_cfg = tmp_path / "config_old.json"

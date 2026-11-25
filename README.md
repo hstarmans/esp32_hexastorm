@@ -40,7 +40,7 @@ flowchart TD
   * **CNC Mode (`.gcode`, `.nc`, `.tap`):** On-board G-code interpreter supporting `G90`/`G91`, `G21`, `M3`/`M5` spindle control, and feedrates.
 * **Peripherals & Diode Diagnostics:** Remote toggling/control for UV laser, rotating polygon prism, spindle PWM, cooling fan PWM, and photodiode facet jitter measurement (`test_diode` + saved reference `facetmeans`).
 * **Live Camera & On-Board 2D Calibration:** OV2640 capture, saved inspection target coordinates, FOV scan visibility, single/all-facet dot preview, and automated 2D facet calibration & verification.
-* **Settings & GitHub OTA:** Browser-based configuration for Wi-Fi, static IP, TMC2209/axis parameters, tool offsets, and direct-to-flash OTA updates fed by tagged GitHub Releases built in CI.
+* **Settings & GitHub OTA:** Browser-based configuration for Wi-Fi, static IP, TMC2209/axis parameters, tool offsets, and direct-to-flash OTA updates fed by CalVer-tagged GitHub Releases (`vYYYY.MM.N`, e.g. `v2026.11.1`) built in CI.
 
 ---
 
@@ -60,7 +60,7 @@ The **Camera & Calibration** panel (`camera_panel.html`, `src/control/calibratio
 | Path                                                    | Purpose                                                                                                                                                   |
 | :------------------------------------------------------ | :-------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [Dockerfile](Dockerfile), [docker/](docker/)              | Reproducible builder container (`espressif/idf:v5.5.2` + MicroPython `v1.28.0` + `mpy-cross`)                                                       |
-| [.github/workflows/ci.yml](.github/workflows/ci.yml)     | Automated `pytest`/`ruff` checks, Docker firmware CI builds, and tagged OTA releases                                                                  |
+| [.github/workflows/ci.yml](.github/workflows/ci.yml)     | Automated `pytest`/`ruff`/`pyrefly` checks, Docker firmware CI builds, and CalVer-tagged OTA releases                                                  |
 | [boards/HEXASTORM_S3/](boards/HEXASTORM_S3/)             | Out-of-tree MicroPython board definition (`mpconfigboard.h`, 32 MiB OTA partitions, `esp32-camera` component)                                         |
 | [deps/](deps/)                                           | Git submodules (`hexastorm`, `micropython-ulab`, `micropython-camera-API`, `esp32-camera`) — no local symlinks                                   |
 | [vendor/](vendor/)                                       | Vendored pure-Python MicroPython libraries (`microdot`, `utemplate`, `ota`, `mrequests`, `winbond`, `tmc`) + [VERSIONS.md](vendor/VERSIONS.md) |
@@ -135,5 +135,16 @@ uv run build --docker --fpga-bit path/to/top.bin
 # Compile locally in Docker and flash over SSH to a remote host
 uv run build --docker --remote hexastorm@pihome.home
 ```
+
+### Releases & OTA Updates (CalVer)
+
+Firmware releases use CalVer tags formatted as `vYYYY.MM.N` (year, two-digit month, sequence number starting at `1`, e.g. `v2026.11.1`), matching the 3-part OTA version check in `src/control/bootlib.py` and baked automatically into `FIRMWARE_VERSION`:
+
+```bash
+git tag -a v2026.11.1 -m "Release v2026.11.1"
+git push origin v2026.11.1
+```
+
+CI gates releases on passing tests (`needs: test`), attaches `micropython.bin` with auto-generated release notes, and marks tags containing `-` (e.g. `v2026.11.1-rc1`) as GitHub pre-releases so OTA `/releases/latest` skips them.
 
 See [developer.md](developer.md) for Docker/CI details, native toolchain setup, `boards/HEXASTORM_S3` architecture, dependency versioning (`vendor/VERSIONS.md`), and the REST API reference.

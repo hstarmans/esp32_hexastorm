@@ -34,6 +34,7 @@ jobs:
 
   firmware:
     name: Build ESP32-S3 Firmware (Docker)
+    needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -89,3 +90,5 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: build/HEXASTORM_S3/micropython.bin
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}

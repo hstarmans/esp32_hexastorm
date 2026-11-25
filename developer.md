@@ -86,9 +86,9 @@ No manual edits to upstream MicroPython are ever needed. `boards/HEXASTORM_S3/` 
 ### GitHub Actions CI & Automated OTA Releases (`.github/workflows/ci.yml`)
 
 Every push and pull request runs:
-* **`test` job:** `uv sync`, `uv run pytest`, and `uv run ruff check src`.
-* **`firmware` job:** Builds firmware inside the `Dockerfile` container and uploads `micropython.bin`, `firmware.bin`, `bootloader.bin`, `partition-table.bin`, and `ota_data_initial.bin` as workflow artifacts.
-* **Tagged OTA releases (`git tag vX.Y.Z && git push --tags`):** Automatically creates a GitHub Release with `micropython.bin` attached so ESP32-S3 units can update directly via the web UI (`bootlib.update_firmware()`).
+* **`test` job:** `uv sync`, `uv run pytest`, `uv run ruff check src docker`, and `uv run pyrefly check`.
+* **`firmware` job (`needs: test`):** Runs `docker/run-mpy-tests.sh`, builds `HEXASTORM_S3` and `src/root/sd/fpga/fpga.bit` inside the `Dockerfile` container, and uploads `micropython.bin`, `firmware.bin`, `bootloader.bin`, `partition-table.bin`, `ota_data_initial.bin`, and `fpga.bit` as workflow artifacts.
+* **Tagged CalVer OTA releases (`git tag -a vYYYY.MM.N -m "Release vYYYY.MM.N" && git push origin vYYYY.MM.N`, e.g. `v2026.11.1`):** Automatically publishes a GitHub Release with auto-generated release notes and `micropython.bin` attached so ESP32-S3 units can update directly via the web UI (`bootlib.update_firmware()`). Tags containing `-` (such as `v2026.11.1-rc1`) are published as pre-releases.
 
 ---
 
