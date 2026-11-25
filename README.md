@@ -37,7 +37,7 @@ flowchart TD
 * **Coordinated Multi-Axis Motion:** 3D linear interpolation (`G0`/`G1`) across X, Y, and Z axes with per-axis soft limits and E-stop locking.
 * **Smart Job Launcher (`.pat` & G-code):**
   * **Laser Mode (`.pat`):** Streams `zlib`-compressed 24 MHz scanline SPI packets. Filename suffixes enforce safe exposure handling: raw `*_e1_nocor.pat` files allow GUI `exposureperline` repetition (scaling the 24 MHz `calc_step_half_period()` step timing) and `singlefacet` mode, whereas pre-sliced / optically corrected files such as `*_e4_cor.pat` already contain 4× (`0.25` step/line) scanlines and are never re-repeated.
-  * **CNC Mode (`.gcode`, `.nc`, `.tap`):** On-board G-code interpreter supporting `G90`/`G91`, `G21`, `M3`/`M5` spindle control, and feedrates.
+  * **CNC Mode (`.gcode`, `.nc`, `.tap`):** On-board G-code interpreter supporting `G0`–`G3` (linear + `I`/`J`/`R` arcs), `G4` dwell, `G90`/`G91`, `G21`, `M3`/`M5` spindle control with spin-up delay, modal/compact blocks, and laser-to-spindle tool offset alignment.
 * **Peripherals & Diode Diagnostics:** Remote toggling/control for UV laser, rotating polygon prism, spindle PWM, cooling fan PWM, and photodiode facet jitter measurement (`test_diode` + saved reference `facetmeans`).
 * **Live Camera & On-Board 2D Calibration:** OV2640 capture, saved inspection target coordinates, FOV scan visibility, single/all-facet dot preview, and automated 2D facet calibration & verification.
 * **Settings & GitHub OTA:** Browser-based configuration for Wi-Fi, static IP, TMC2209/axis parameters, tool offsets, and direct-to-flash OTA updates fed by CalVer-tagged GitHub Releases (`vYYYY.MM.N`, e.g. `v2026.11.1`) built in CI.

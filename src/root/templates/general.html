@@ -29,6 +29,7 @@
             laserPower = {{ state['job']['laserpower'] }};
             exposure = {{ state['job']['exposureperline'] }};
             singleFacet = {{ 'true' if state['job']['singlefacet'] else 'false' }};
+            applyLaserOffset = {{ 'true' if state['job'].get('apply_laser_offset') else 'false' }};
             laneWidthCorrection = {{ state['job']['lanewidth_correction'] }};
             posX = {{ state['job']['workspace_origin'][0] }};
             posY = {{ state['job']['workspace_origin'][1] }};
@@ -115,13 +116,24 @@
                             </div>
                         </div>
 
-                        <div class="form-check form-switch mb-4">
+                        <div class="form-check form-switch mb-3">
                             <input class="form-check-input" type="checkbox" role="switch" id="singlefacet"
                                 x-model="singleFacet" :disabled="!canEditAdvancedSettings">
                             <label class="form-check-label text-light" for="singlefacet">
                                 Use single facet per rotation
                                 <span x-show="!canEditAdvancedSettings" class="text-warning small ms-1">(Locked)</span>
                             </label>
+                        </div>
+
+                        <div class="form-check form-switch mb-4">
+                            <input class="form-check-input" type="checkbox" role="switch" id="applylaseroffset"
+                                x-model="applyLaserOffset">
+                            <label class="form-check-label text-light" for="applylaseroffset">
+                                Apply laser tool offset (spindle origin)
+                            </label>
+                            <div class="form-text text-muted small">
+                                Shifts laser start to WPOS (-offset_x, -offset_y) so PCB exposure aligns with CNC milling zeroed on the spindle.
+                            </div>
                         </div>
                     </div>
 

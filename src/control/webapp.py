@@ -533,6 +533,9 @@ async def print_control(request, session):
             cfg_print["exposureperline"] = int(data["exposureperline"])
             cfg_print["singlefacet"] = bool(data["singlefacet"])
             cfg_print["lanewidth_correction"] = float(data["lanewidth_correction"])
+            cfg_print["apply_laser_offset"] = bool(
+                data.get("apply_laser_offset", False)
+            )
 
         # Shared settings
         cfg_print["workspace_origin"] = data["workspace_origin"]
@@ -545,10 +548,6 @@ async def print_control(request, session):
         async def run_job():
             try:
                 if is_gcode:
-                    if cfg_print["home_before_print"]:
-                        logger.info("Homing X and Y axes before G-code execution.")
-                        await laserhead.home_axes([1, 1, 0])
-
                     await laserhead.execute_gcode(filename)
                 else:
                     await laserhead.print_loop(filename)

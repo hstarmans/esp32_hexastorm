@@ -5,6 +5,7 @@
         "exposureperline": 4,
         "lanewidth_correction": 0.4,
         "singlefacet": false,
+        "apply_laser_offset": false,
         "home_before_print": false,
         "use_custom_start": false,
         "workspace_origin": [

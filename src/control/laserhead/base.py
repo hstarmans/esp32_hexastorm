@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import math
 import struct
 from random import randint
 from time import time
@@ -59,6 +60,140 @@ def _parse_job_suffix(fname):
     except ValueError:
         return None, None
     return file_exposures, cor_part == "cor"
+
+
+def _parse_gcode_words(raw_line: str) -> "list[tuple[str, float]]":
+    """Parse one G-code line into (letter, value) words, ignoring comments."""
+    cleaned_chars = []
+    paren_depth = 0
+    for ch in raw_line:
+        if ch == "(":
+            paren_depth += 1
+        elif ch == ")":
+            if paren_depth > 0:
+                paren_depth -= 1
+        elif ch == ";" and paren_depth == 0:
+            break
+        elif paren_depth == 0:
+            cleaned_chars.append(ch)
+    cleaned = "".join(cleaned_chars).strip().upper()
+    if not cleaned:
+        return []
+
+    words = []
+    idx = 0
+    n = len(cleaned)
+    while idx < n:
+        ch = cleaned[idx]
+        if ch.isalpha():
+            j = idx + 1
+            while j < n and cleaned[j].isspace():
+                j += 1
+            start = j
+            while (
+                j < n
+                and not cleaned[j].isalpha()
+                and not cleaned[j].isspace()
+                and cleaned[j] != "%"
+            ):
+                j += 1
+            if ch != "N" and j > start:
+                try:
+                    words.append((ch, float(cleaned[start:j])))
+                except ValueError:
+                    pass
+            idx = j
+        else:
+            idx += 1
+    return words
+
+
+def _linearize_arc_xy(
+    x0: float,
+    y0: float,
+    z0: float,
+    x1: float,
+    y1: float,
+    z1: float,
+    is_ccw: bool,
+    i_off: "float | None" = None,
+    j_off: "float | None" = None,
+    radius: "float | None" = None,
+    chord_tol_mm: float = 0.02,
+    max_seg_mm: float = 0.5,
+) -> "list[list[float]]":
+    """Convert an XY G2/G3 arc (with helical Z) into linear XYZ waypoints."""
+    dx = x1 - x0
+    dy = y1 - y0
+    chord = math.sqrt(dx * dx + dy * dy)
+
+    if i_off is not None or j_off is not None:
+        cx = x0 + (0.0 if i_off is None else i_off)
+        cy = y0 + (0.0 if j_off is None else j_off)
+        r = math.sqrt((x0 - cx) * (x0 - cx) + (y0 - cy) * (y0 - cy))
+        if r <= 1e-9:
+            raise ValueError("Invalid G2/G3 arc: zero radius")
+        r_end = math.sqrt((x1 - cx) * (x1 - cx) + (y1 - cy) * (y1 - cy))
+        if abs(r_end - r) > max(0.05, 0.05 * r):
+            raise ValueError(
+                f"Invalid G2/G3 arc: start radius ({r:.3f} mm) != end radius ({r_end:.3f} mm)"
+            )
+    elif radius is not None:
+        if chord < 1e-6:
+            raise ValueError("Full-circle G2/G3 arc requires I/J center offsets")
+        r = abs(radius)
+        half_chord = 0.5 * chord
+        if half_chord > r + 1e-4:
+            raise ValueError(
+                f"Invalid G2/G3 arc: chord ({chord:.3f} mm) exceeds diameter ({2.0 * r:.3f} mm)"
+            )
+        h = math.sqrt(max(0.0, r * r - half_chord * half_chord))
+        mx = 0.5 * (x0 + x1)
+        my = 0.5 * (y0 + y1)
+        nx = -dy / chord
+        ny = dx / chord
+        side = 1.0 if ((is_ccw and radius > 0.0) or (not is_ccw and radius < 0.0)) else -1.0
+        cx = mx + side * h * nx
+        cy = my + side * h * ny
+    else:
+        raise ValueError("G2/G3 arc requires I/J offsets or R radius")
+
+    a0 = math.atan2(y0 - cy, x0 - cx)
+    if chord < 1e-6:
+        da = 2.0 * math.pi if is_ccw else -2.0 * math.pi
+    else:
+        a1 = math.atan2(y1 - cy, x1 - cx)
+        da = a1 - a0
+        if is_ccw:
+            while da <= 0.0:
+                da += 2.0 * math.pi
+        else:
+            while da >= 0.0:
+                da -= 2.0 * math.pi
+
+    if r > chord_tol_mm:
+        ratio = max(-1.0, min(1.0, 1.0 - (chord_tol_mm / r)))
+        dtheta_max = 2.0 * math.acos(ratio)
+    else:
+        dtheta_max = 0.5 * math.pi
+    n_chord = math.ceil(abs(da) / max(dtheta_max, 1e-4))
+    n_len = math.ceil((r * abs(da)) / max_seg_mm)
+    min_segs = 4 if abs(da) > 0.2 else 1
+    n_segs = max(min_segs, min(128, max(n_chord, n_len)))
+
+    points = []
+    for step in range(1, n_segs):
+        frac = step / n_segs
+        ang = a0 + da * frac
+        points.append(
+            [
+                cx + r * math.cos(ang),
+                cy + r * math.sin(ang),
+                z0 + (z1 - z0) * frac,
+            ]
+        )
+    points.append([x1, y1, z1])
+    return points
 
 
 class BaseLaserhead:
@@ -129,6 +264,7 @@ class BaseLaserhead:
             "printingtime": 0,
             "exposureperline": 1,
             "singlefacet": False,
+            "apply_laser_offset": False,
             "laserpower": 130,
             "filename": "no file name",
             "workspace_origin": [0.0, 0.0, 0.0],
@@ -503,8 +639,216 @@ class BaseLaserhead:
     async def set_leds(self, blue=None, green=None, red=None):
         logger.debug(f"Mock set_leds: blue={blue}, green={green}, red={red}")
 
-    async def execute_gcode(self, fname):
-        logger.debug(f"Mock execute_gcode: {fname}")
+    async def execute_gcode(self, fname, spindle_spinup_s=1.0):
+        """Parse and execute a G-code file in workspace coordinates for 2.5D PCB milling."""
+        self._stop.clear()
+        self._pause.clear()
+        self.reset_state()
+        self.state["printing"] = True
+        self.state["paused"] = False
+        self.state["job"]["filename"] = fname
+        self.state["job"]["currentline"] = 0
+        await self.notify_listeners()
+
+        filepath = self.get_job_path(fname)
+        try:
+            with open(filepath) as f:  # noqa: ASYNC230
+                total_lines = sum(1 for _ in f)
+        except OSError as e:
+            await self.set_error(f"G-code file not found: {fname} ({e})")
+            return
+
+        self.state["job"]["totallines"] = total_lines
+        start_time = time()
+        self.enable_steppers = True
+        line_num = -1
+
+        try:
+            cfg_print = constants.CONFIG["defaultprint"]
+            if cfg_print.get("home_before_print", False):
+                logger.info("Homing X and Y axes before G-code execution.")
+                await self.home_axes([1, 1, 0])
+
+            custom_origin = cfg_print.get("workspace_origin")
+            if cfg_print.get("use_custom_start", False) and custom_origin is not None:
+                logger.info(
+                    f"Overriding workspace origin for G-code to custom MPOS: {custom_origin}"
+                )
+                self._work_offset = np.array(custom_origin, dtype=NP_FLOAT)
+                self._save_position()
+
+            gcode_pos = list(self.wpos)
+            is_absolute = True
+            active_motion = None
+            current_feedrate_mms = 10.0
+            rapid_speed_mms = 20.0
+
+            async def _sleep_interruptible(duration_s: float) -> bool:
+                remaining = max(0.0, float(duration_s))
+                while remaining > 0.0:
+                    if await self.handle_pausing_and_stopping():
+                        return True
+                    step = min(0.1, remaining)
+                    await asyncio.sleep(step)
+                    remaining -= step
+                return await self.handle_pausing_and_stopping()
+
+            with open(filepath) as f:  # noqa: ASYNC230
+                for line_num, raw_line in enumerate(f):
+                    if await self.handle_pausing_and_stopping():
+                        await self.set_error("G-code execution cancelled by user.")
+                        break
+
+                    words = _parse_gcode_words(raw_line)
+                    if not words:
+                        if line_num % 20 == 19:
+                            self.state["job"]["currentline"] = line_num + 1
+                            self.state["job"]["printingtime"] = round(
+                                time() - start_time
+                            )
+                            await self.notify_listeners()
+                        continue
+
+                    g_codes = [round(val) for cmd, val in words if cmd == "G"]
+                    m_codes = [round(val) for cmd, val in words if cmd == "M"]
+                    params = {cmd: val for cmd, val in words if cmd in "XYZFIJPRS"}
+
+                    abort_unsupported = False
+                    for g_val in g_codes:
+                        if g_val == 20:
+                            await self.set_error(
+                                "G20 (Inches) is not supported. Convert G-code to millimeters (G21)."
+                            )
+                            abort_unsupported = True
+                            break
+                        if g_val == 90:
+                            is_absolute = True
+                        elif g_val == 91:
+                            is_absolute = False
+                        elif g_val in (0, 1, 2, 3):
+                            active_motion = g_val
+                    if abort_unsupported:
+                        break
+
+                    if "F" in params and params["F"] > 0:
+                        current_feedrate_mms = params["F"] / 60.0
+
+                    if any(m in (3, 4) for m in m_codes):
+                        prev_spindle = int(self.state["components"].get("spindle", 0))
+                        spindle_speed = int(params.get("S", 255))
+                        await self.set_spindle(spindle_speed)
+                        if (
+                            prev_spindle == 0
+                            and int(self.state["components"].get("spindle", 0)) > 0
+                            and spindle_spinup_s > 0
+                        ) and await _sleep_interruptible(spindle_spinup_s):
+                            await self.set_error("G-code execution cancelled by user.")
+                            break
+
+                    if 4 in g_codes:
+                        dwell_s = params.get("S", params.get("P", 0.0))
+                        if dwell_s > 0 and await _sleep_interruptible(dwell_s):
+                            await self.set_error("G-code execution cancelled by user.")
+                            break
+
+                    did_move = False
+                    has_motion_param = any(k in params for k in ("X", "Y", "Z", "I", "J", "R"))
+                    if has_motion_param and active_motion is not None:
+                        did_move = True
+                        if active_motion in (0, 1):
+                            move_speed = (
+                                rapid_speed_mms
+                                if active_motion == 0
+                                else current_feedrate_mms
+                            )
+                            if is_absolute:
+                                target_pos = [
+                                    params.get("X", gcode_pos[0]),
+                                    params.get("Y", gcode_pos[1]),
+                                    params.get("Z", gcode_pos[2]),
+                                ]
+                                gcode_pos = list(target_pos)
+                            else:
+                                dx = params.get("X", 0.0)
+                                dy = params.get("Y", 0.0)
+                                dz = params.get("Z", 0.0)
+                                target_pos = [dx, dy, dz]
+                                gcode_pos[0] += dx
+                                gcode_pos[1] += dy
+                                gcode_pos[2] += dz
+
+                            await self.gotopoint(
+                                position=target_pos,
+                                speed=move_speed,
+                                absolute=is_absolute,
+                                workspace=True,
+                                check_sensors=False,
+                            )
+                        else:
+                            x0, y0, z0 = gcode_pos
+                            if is_absolute:
+                                x1 = params.get("X", x0)
+                                y1 = params.get("Y", y0)
+                                z1 = params.get("Z", z0)
+                            else:
+                                x1 = x0 + params.get("X", 0.0)
+                                y1 = y0 + params.get("Y", 0.0)
+                                z1 = z0 + params.get("Z", 0.0)
+                            waypoints = _linearize_arc_xy(
+                                x0,
+                                y0,
+                                z0,
+                                x1,
+                                y1,
+                                z1,
+                                is_ccw=(active_motion == 3),
+                                i_off=params.get("I"),
+                                j_off=params.get("J"),
+                                radius=params.get("R"),
+                            )
+                            arc_cancelled = False
+                            for pt in waypoints:
+                                if await self.handle_pausing_and_stopping():
+                                    await self.set_error(
+                                        "G-code execution cancelled by user."
+                                    )
+                                    arc_cancelled = True
+                                    break
+                                await self.gotopoint(
+                                    position=pt,
+                                    speed=current_feedrate_mms,
+                                    absolute=True,
+                                    workspace=True,
+                                    check_sensors=False,
+                                )
+                            if arc_cancelled:
+                                break
+                            gcode_pos = [x1, y1, z1]
+
+                    if 5 in m_codes:
+                        await self.set_spindle(0)
+
+                    if did_move or (line_num % 20 == 19) or (line_num + 1 == total_lines):
+                        self.state["job"]["currentline"] = line_num + 1
+                        self.state["job"]["printingtime"] = round(time() - start_time)
+                        await self.notify_listeners()
+
+                    if 2 in m_codes or 30 in m_codes:
+                        self.state["job"]["currentline"] = line_num + 1
+                        break
+
+            self.state["job"]["printingtime"] = round(time() - start_time)
+        except Exception as e:  # noqa: BLE001
+            line_label = line_num + 1 if line_num >= 0 else 0
+            await self.set_error(f"G-code error at line {line_label}: {e}")
+        finally:
+            await self.set_spindle(0)
+            await self.wait_fifo_empty()
+            self.enable_steppers = False
+            self.state["printing"] = False
+            self.state["paused"] = False
+            await self.notify_listeners()
+            logger.info("G-code execution finished.")
 
     async def synchronize(self, value=True) -> bool:
         logger.debug(f"Mock synchronize: {value}")
@@ -765,14 +1109,31 @@ class BaseLaserhead:
                     self._work_offset = np.array(custom_origin, dtype=NP_FLOAT)
                     self._save_position()
 
-                logger.info("Moving to workspace origin (WPOS 0, 0).")
+                start_x, start_y = 0.0, 0.0
+                if cfg_print.get("apply_laser_offset", False):
+                    laser_tool = constants.CONFIG.get("tools", {}).get("laser", {})
+                    offset_x = float(laser_tool.get("offset_x", 0.0))
+                    offset_y = float(laser_tool.get("offset_y", 0.0))
+                    start_x = -offset_x
+                    start_y = -offset_y
+                    logger.info(
+                        f"Applying laser tool offset ({offset_x}, {offset_y}) mm: "
+                        f"moving to WPOS ({start_x}, {start_y})."
+                    )
+                else:
+                    logger.info("Moving to workspace origin (WPOS 0, 0).")
                 current_wpos_z = float(self.wpos[2])
-                await self.gotopoint(
-                    [0.0, 0.0, current_wpos_z],
-                    absolute=True,
-                    workspace=True,
-                    check_sensors=False,
-                )
+                try:
+                    await self.gotopoint(
+                        [start_x, start_y, current_wpos_z],
+                        absolute=True,
+                        workspace=True,
+                        check_sensors=False,
+                    )
+                except Exception as e:  # noqa: BLE001
+                    self.enable_steppers = False
+                    await self.set_error(f"Failed moving to laser start position: {e}")
+                    return
 
                 # Ensure FPGA parsing is enabled so component commands take effect
                 await self.set_parsing(True)
